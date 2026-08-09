@@ -1,0 +1,115 @@
+# ==============
+# Rust 相关
+# ==============
+# 编译产物
+/target/
+# 依赖锁定文件（若为库项目建议保留，应用项目可忽略）
+# Cargo.lock 通常建议提交以保持依赖一致性，但若需忽略可取消下方注释
+# Cargo.lock
+
+# Rust 编译器输出
+*.rs.bk
+*.rlib
+*.prof*
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# ==============
+# Node.js / 前端依赖
+# ==============
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 前端构建输出
+dist/
+dist-ssr/
+*.local
+
+# 包管理器锁文件（根据实际使用保留或忽略）
+# 若多人协作，建议提交锁文件；若需忽略可取消注释
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ==============
+# Tauri 特定
+# ==============
+# Tauri 生成的 Windows 资源文件
+src-tauri/target/
+src-tauri/gen/
+# Tauri 构建产物（默认在 target/release 下）
+src-tauri/*.exe
+src-tauri/*.dmg
+src-tauri/*.deb
+src-tauri/*.rpm
+src-tauri/*.AppImage
+src-tauri/*.msi
+src-tauri/*.app
+# Tauri 临时文件
+src-tauri/.cargo-ok
+src-tauri/.env
+
+# ==============
+# 环境变量及敏感信息
+# ==============
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# ==============
+# 操作系统生成文件
+# ==============
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==============
+# IDE / 编辑器配置
+# ==============
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.iml
+
+# ==============
+# 其他
+# ==============
+# 日志文件
+*.log
+# 临时文件
+*.tmp
+*.temp
+# 备份文件
+*.bak
+*.backup

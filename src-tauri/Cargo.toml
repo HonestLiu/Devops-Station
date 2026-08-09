@@ -1,0 +1,53 @@
+[package]
+name = "devops-station"
+version = "0.1.0"
+description = "Modern cross-platform DevOps workspace: SSH + SFTP + Serial + Monitoring"
+authors = ["Hones"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "devops_station_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "net", "time", "sync", "process"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# `ring` backend avoids the aws-lc-sys build dependency (CMake + NASM) on Windows.
+russh = { version = "0.62", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "2.4"
+
+portable-pty = "0.9"
+serialport = "4.9"
+sysinfo = "0.39"
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+anyhow = "1"
+thiserror = "2"
+parking_lot = "0.12"
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "default-tls", "stream"] }
+base64 = "0.22"
+chrono = "0.4"
+font-kit = "0.13"
+encoding_rs = "0.8"
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
