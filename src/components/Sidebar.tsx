@@ -4,14 +4,12 @@ import {
   LayoutDashboard,
   Server,
   Settings,
-  Sparkles,
   TerminalSquare,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
-import { useAiStore } from "@/ai/useAiStore";
 
 interface NavItem {
   id: Page;
@@ -38,7 +36,6 @@ export function Sidebar() {
     /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
-  const aiOpen = useAiStore((s) => s.panelOpen);
   const tabs = useTabsStore((s) => s.tabs);
   const focusPage = useTabsStore((s) => s.focusPage);
 
@@ -87,19 +84,6 @@ export function Sidebar() {
         <p className="mb-0.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle select-none">
           Tools
         </p>
-        <button
-          onClick={() => useAiStore.getState().togglePanel()}
-          className={cn(
-            "no-drag flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-2.5 py-2 text-[12px] transition-colors hover:bg-hover",
-            aiOpen ? "text-accent ring-1 ring-inset ring-accent/25" : "text-muted",
-          )}
-        >
-          <Sparkles size={14} />
-          AI Assistant
-          <span className="ml-auto rounded-full bg-bg px-1.5 py-0.5 font-mono text-[10px] text-subtle">
-            ⌘.
-          </span>
-        </button>
         <button
           onClick={() => togglePalette()}
           className="no-drag flex items-center justify-between rounded-lg border border-border/70 bg-elevated px-2.5 py-2 text-[12px] text-muted transition-colors hover:bg-hover"

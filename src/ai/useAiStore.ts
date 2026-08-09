@@ -104,7 +104,7 @@ export const useAiStore = create<AIState>((set, get) => {
     sessions: loadSessions(),
     activeId: null,
     panelOpen: false,
-    width: 420,
+    width: 360,
 
     newSession: () => {
       const id = uid();

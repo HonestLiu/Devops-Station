@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
+import { THEMES } from "@/lib/themes";
 import type { AISettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp";
@@ -61,6 +62,20 @@ interface AppState {
   resetSettings: () => Promise<void>;
 }
 
+/**
+ * Sync the native window chrome (title bar / frame) with the UI theme. Tauri
+ * defaults to a dark frame otherwise, which looks wrong against the light
+ * theme. Fire-and-forget: in a plain browser (vite dev) the call just fails.
+ */
+function applyWindowTheme(settings: AppSettings) {
+  const dark = THEMES[settings.theme]?.dark ?? true;
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) =>
+      getCurrentWindow().setTheme(dark ? "dark" : "light"),
+    )
+    .catch(() => undefined);
+}
+
 /** Applies theme + typography to the document so CSS variables stay the single source of truth. */
 function applySettings(settings: AppSettings) {
   const root = document.documentElement;
@@ -68,6 +83,7 @@ function applySettings(settings: AppSettings) {
   root.style.setProperty("--font-mono", settings.fontFamily);
   root.style.setProperty("--terminal-font-size", `${settings.fontSize}px`);
   root.style.setProperty("--terminal-line-height", String(settings.lineHeight));
+  applyWindowTheme(settings);
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
