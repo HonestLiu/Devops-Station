@@ -77,10 +77,13 @@ export function Hosts() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-5">
+    <div className="page">
       {/* Header */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[18px] font-semibold text-fg">Hosts</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Hosts</h1>
+          <p className="page-subtitle">Saved SSH, serial, WSL and Frp targets</p>
+        </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setQcOpen(true)}>
             <Zap size={14} /> Quick Commands
@@ -92,8 +95,10 @@ export function Hosts() {
       </div>
 
       {/* Quick connect */}
-      <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface p-2">
-        <TerminalSquare size={15} className="ml-1 text-subtle" />
+      <div className="mb-4 flex items-center gap-2 rounded-xl border border-border/80 bg-surface px-2 py-1.5">
+        <span className="icon-chip h-7 w-7">
+          <TerminalSquare size={13} />
+        </span>
         <input
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
@@ -108,12 +113,12 @@ export function Hosts() {
 
       {/* Search */}
       <div className="relative mb-4 max-w-sm">
-        <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-subtle" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter hosts…"
-          className="select-text h-8 w-full rounded border border-border bg-surface pl-8 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none"
+          className="select-text h-9 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
         />
       </div>
 
@@ -139,6 +144,7 @@ export function Hosts() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((h) => {
             const Icon = KIND_ICON[h.kind];
+            const color = h.color || hashColor(h.name);
             const subtitle =
               h.kind === "serial"
                 ? `${h.serialPort ?? "?"} · ${h.baudRate ?? 115200} baud`
@@ -152,13 +158,15 @@ export function Hosts() {
             return (
               <div
                 key={h.id}
-                className="group flex flex-col rounded-lg border border-border bg-elevated p-3 hover:border-accent/50"
+                className="card card-interactive group flex flex-col"
               >
-                <div className="mb-2 flex items-center gap-2">
+                <div className="mb-3 flex items-center gap-2.5">
                   <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: h.color || hashColor(h.name) }}
-                  />
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold text-accent-fg"
+                    style={{ backgroundColor: color }}
+                  >
+                    {h.name.slice(0, 1).toUpperCase()}
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
                     {h.name}
                   </span>
@@ -176,7 +184,7 @@ export function Hosts() {
                     {h.tags.map((t) => (
                       <span
                         key={t}
-                        className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-subtle"
+                        className="rounded-full bg-hover px-2 py-0.5 text-[10px] text-subtle"
                       >
                         {t}
                       </span>

@@ -16,7 +16,7 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <span className="text-[12px] font-medium text-fg">Local Shell</span>
         <div className="no-drag">
           <TerminalAiButton tab={tab} />

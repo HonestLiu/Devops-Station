@@ -20,7 +20,7 @@ export function SftpWorkspace({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full flex-col bg-bg">
       {/* Toolbar */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <div className="flex min-w-0 items-center gap-2 text-[12px]">
           <span className="truncate font-medium text-fg">{tab.title}</span>
           <span className="truncate text-subtle">{tab.subtitle}</span>

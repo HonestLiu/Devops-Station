@@ -27,7 +27,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full flex-col bg-bg">
       {/* Toolbar */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <span className="truncate text-[12px] font-medium text-fg">{tab.title || "WSL"}</span>
         <div className="flex items-center gap-1.5 no-drag">
           <Button

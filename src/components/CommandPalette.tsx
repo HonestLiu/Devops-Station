@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEven
 import {
   Activity,
   Cable,
+  FolderOpen,
   Globe,
   LayoutDashboard,
   MonitorSmartphone,
@@ -76,6 +77,13 @@ export function CommandPalette() {
         group: "Navigation",
         icon: <Activity size={15} />,
         run: go("monitoring"),
+      },
+      {
+        id: "nav-sftp",
+        label: "Go to SFTP",
+        group: "Navigation",
+        icon: <FolderOpen size={15} />,
+        run: go("sftp"),
       },
       {
         id: "nav-settings",

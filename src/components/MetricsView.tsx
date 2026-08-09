@@ -15,10 +15,12 @@ function StatCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-elevated p-3">
-      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-subtle">
-        {icon}
-        {label}
+    <div className="card">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="icon-chip h-7 w-7">{icon}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+          {label}
+        </span>
       </div>
       {children}
     </div>
@@ -126,9 +128,12 @@ export function MetricsView({ metrics }: { metrics: HostMetrics | null }) {
       </div>
 
       {/* Disks */}
-      <div className="rounded-lg border border-border bg-elevated p-3">
-        <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-subtle">
-          <HardDrive size={13} /> Disks
+      <div className="card">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="icon-chip h-7 w-7">
+            <HardDrive size={13} />
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Disks</span>
         </div>
         <div className="space-y-2.5">
           {metrics.disks.map((d) => {
@@ -153,9 +158,14 @@ export function MetricsView({ metrics }: { metrics: HostMetrics | null }) {
 
       {/* Top processes */}
       {topProcs.length > 0 && (
-        <div className="rounded-lg border border-border bg-elevated p-3">
-          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-subtle">
-            <Activity size={13} /> Top Processes
+        <div className="card">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="icon-chip h-7 w-7">
+              <Activity size={13} />
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              Top Processes
+            </span>
           </div>
           <table className="w-full text-[12px]">
             <tbody>

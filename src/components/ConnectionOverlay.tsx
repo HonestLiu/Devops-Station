@@ -22,8 +22,10 @@ export function ConnectionOverlay({ tab }: { tab: Tab }) {
   if (tab.status === "connecting") {
     return (
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-bg">
-        <Loader2 size={28} className="animate-spin text-accent" />
-        <p className="text-[13px] text-muted">Connecting to {tab.title}…</p>
+        <div className="card flex flex-col items-center gap-3 px-10 py-8">
+          <Loader2 size={26} className="animate-spin text-accent" />
+          <p className="text-[13px] text-muted">Connecting to {tab.title}…</p>
+        </div>
       </div>
     );
   }
@@ -31,17 +33,19 @@ export function ConnectionOverlay({ tab }: { tab: Tab }) {
   if (tab.status === "error" || tab.status === "closed") {
     return (
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-bg/95 px-6 text-center backdrop-blur-sm">
-        <AlertTriangle size={28} className="text-danger" />
-        <p className="text-[13px] font-medium text-fg">
-          {tab.status === "closed" ? "Connection closed" : "Connection failed"}
-        </p>
-        {tab.error && (
-          <p className="max-w-md break-words text-[12px] text-muted">{tab.error}</p>
-        )}
-        <Button variant="primary" size="sm" onClick={() => void reconnect(tab.id)}>
-          <RotateCw size={13} />
-          Reconnect
-        </Button>
+        <div className="card flex max-w-md flex-col items-center gap-3 px-10 py-8">
+          <AlertTriangle size={26} className="text-danger" />
+          <p className="text-[13px] font-medium text-fg">
+            {tab.status === "closed" ? "Connection closed" : "Connection failed"}
+          </p>
+          {tab.error && (
+            <p className="max-w-md break-words text-[12px] text-muted">{tab.error}</p>
+          )}
+          <Button variant="primary" size="sm" onClick={() => void reconnect(tab.id)}>
+            <RotateCw size={13} />
+            Reconnect
+          </Button>
+        </div>
       </div>
     );
   }

@@ -194,7 +194,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full flex-col bg-bg">
       {/* Toolbar */}
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
         <div className="flex items-center gap-1 rounded-md border border-border bg-bg p-0.5">
           {MODES.map((m) => {
             const Icon = m.icon;

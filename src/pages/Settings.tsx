@@ -11,8 +11,11 @@ import type { AIProviderKind, AISettings, ThemeId } from "@/lib/types";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-border bg-elevated p-4">
-      <h2 className="mb-3 text-[13px] font-semibold text-fg">{title}</h2>
+    <section className="card">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        <h2 className="text-[13px] font-semibold text-fg">{title}</h2>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </section>
   );
@@ -31,9 +34,12 @@ export function Settings() {
     void updateSetting("ai", { ...settings.ai, [k]: v });
 
   return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-[18px] font-semibold text-fg">Settings</h1>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-subtitle">Appearance, terminal, connections and AI</p>
+        </div>
         <Button variant="ghost" size="sm" onClick={() => void resetSettings()}>
           <RotateCcw size={14} /> Reset to defaults
         </Button>

@@ -66,7 +66,15 @@ export function Dashboard() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-5">
+    <div className="page">
+      {/* Header */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Jump into a session or watch this machine's live metrics</p>
+        </div>
+      </div>
+
       {/* Quick connect */}
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -79,16 +87,16 @@ export function Dashboard() {
             onChange={(e) => setQuick(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && connect()}
             placeholder="Quick connect — ssh user@host[:port]"
-            className="select-text h-9 w-full rounded border border-border bg-surface pl-9 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
+            className="select-text h-10 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
         </div>
-        <Button variant="primary" onClick={connect} className="shrink-0">
+        <Button variant="primary" onClick={connect} className="h-10 shrink-0">
           Connect <ArrowRight size={14} />
         </Button>
       </div>
 
       {error && (
-        <div className="mb-4 rounded border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+        <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
           {error.includes("invoke") || error.includes("tauri")
             ? "Local metrics need the desktop runtime. Run with `npm run app:dev`."
             : error}
@@ -99,9 +107,11 @@ export function Dashboard() {
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <button
           onClick={() => void openLocal()}
-          className="flex items-center gap-3 rounded-lg border border-border bg-elevated p-3 text-left hover:bg-hover"
+          className="card card-interactive flex items-center gap-3 text-left"
         >
-          <MonitorSmartphone size={18} className="text-accent" />
+          <span className="icon-chip">
+            <MonitorSmartphone size={16} />
+          </span>
           <div>
             <p className="text-[13px] font-medium text-fg">Local Shell</p>
             <p className="text-[11px] text-subtle">Open a terminal on this machine</p>
@@ -112,9 +122,11 @@ export function Dashboard() {
             setPage("hosts");
             focusPage();
           }}
-          className="flex items-center gap-3 rounded-lg border border-border bg-elevated p-3 text-left hover:bg-hover"
+          className="card card-interactive flex items-center gap-3 text-left"
         >
-          <Server size={18} className="text-accent" />
+          <span className="icon-chip">
+            <Server size={16} />
+          </span>
           <div>
             <p className="text-[13px] font-medium text-fg">Saved Hosts</p>
             <p className="text-[11px] text-subtle">Manage your connections</p>
@@ -125,9 +137,11 @@ export function Dashboard() {
             setPage("hosts");
             focusPage();
           }}
-          className="flex items-center gap-3 rounded-lg border border-border bg-elevated p-3 text-left hover:bg-hover"
+          className="card card-interactive flex items-center gap-3 text-left"
         >
-          <Plug size={18} className="text-accent" />
+          <span className="icon-chip">
+            <Plug size={16} />
+          </span>
           <div>
             <p className="text-[13px] font-medium text-fg">Serial Devices</p>
             <p className="text-[11px] text-subtle">Connect to COM / tty ports</p>

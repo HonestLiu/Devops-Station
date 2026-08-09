@@ -35,8 +35,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded font-medium",
-        "transition-[background-color,filter,opacity] duration-100",
+        "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium",
+        "transition-[background-color,filter,opacity,box-shadow] duration-100",
         "disabled:cursor-not-allowed",
         size === "sm" ? "h-7 px-2.5 text-[12px]" : "h-8 px-3 text-[13px]",
         BUTTON_VARIANTS[variant],
@@ -57,7 +57,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       spellCheck={false}
       autoComplete="off"
       className={cn(
-        "h-8 w-full rounded border border-border bg-bg px-2.5 text-[13px] text-fg",
+        "h-8 w-full rounded-lg border border-border bg-bg px-2.5 text-[13px] text-fg",
         "placeholder:text-subtle",
         "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40",
         "disabled:opacity-50",
@@ -78,7 +78,7 @@ export const Select = forwardRef<
   <select
     ref={ref}
     className={cn(
-      "h-8 w-full rounded border border-border bg-bg px-2 text-[13px] text-fg",
+      "h-8 w-full rounded-lg border border-border bg-bg px-2 text-[13px] text-fg",
       "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40",
       className,
     )}

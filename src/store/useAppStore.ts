@@ -4,7 +4,7 @@ import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import type { AISettings, ThemeId } from "@/lib/types";
 
-export type Page = "dashboard" | "hosts" | "monitoring" | "settings";
+export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp";
 
 export interface AppSettings {
   theme: ThemeId;

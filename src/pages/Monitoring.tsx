@@ -59,9 +59,12 @@ export function Monitoring() {
   const sshHosts = hosts.filter((h) => h.kind === "ssh");
 
   return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[18px] font-semibold text-fg">Monitoring</h1>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Monitoring</h1>
+          <p className="page-subtitle">Live CPU, memory, disk, network and temperature</p>
+        </div>
         {sshSessions.length > 0 && (
           <div className="flex items-center gap-2">
             <Activity size={14} className="text-subtle" />
@@ -89,7 +92,7 @@ export function Monitoring() {
       </div>
 
       {error && (
-        <div className="mb-4 rounded border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+        <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
           {error}
         </div>
       )}

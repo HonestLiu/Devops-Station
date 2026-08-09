@@ -33,7 +33,7 @@ export function TabBar() {
   const closeTab = useTabsStore((s) => s.closeTab);
 
   return (
-    <div className="flex h-9 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-border bg-surface px-1.5 select-none">
+    <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 bg-surface px-2 select-none">
       {tabs.map((tab) => {
         const Icon = KIND_ICON[tab.kind];
         const active = tab.id === activeId;
@@ -42,13 +42,16 @@ export function TabBar() {
             key={tab.id}
             onClick={() => setActive(tab.id)}
             className={cn(
-              "group flex min-w-[140px] max-w-[220px] cursor-pointer items-center gap-2 rounded-t px-2.5 py-1.5 text-[12px] transition-colors",
+              "group flex h-7 min-w-[140px] max-w-[220px] cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12px] transition-colors",
               active
-                ? "bg-bg text-fg shadow-[inset_0_-2px_0_0_rgb(var(--c-accent))]"
+                ? "bg-elevated text-fg shadow-sm ring-1 ring-inset ring-border"
                 : "text-muted hover:bg-hover hover:text-fg",
             )}
           >
-            <Icon size={13} className="shrink-0" />
+            <Icon
+              size={13}
+              className={cn("shrink-0", active ? "text-accent" : "text-subtle")}
+            />
             <span className="flex-1 truncate">{tab.title}</span>
             <span
               className={cn(

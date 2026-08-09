@@ -6,18 +6,23 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
-  ArrowUp,
+  AlertCircle,
   ArrowLeftRight,
+  ArrowUp,
+  Check,
   Download,
   Eye,
   EyeOff,
   File as FileIcon,
   Folder,
   FolderPlus,
+  HardDrive,
   Home,
+  Loader2,
   LocateFixed,
   Pencil,
   RefreshCw,
+  Server,
   Sparkles,
   Trash2,
   Upload,
@@ -42,23 +47,15 @@ interface DragState {
   item: DragItem;
   x: number;
   y: number;
-  /** True once the pointer moved past the threshold (a real drag, not a click). */
   active: boolean;
-  /** Pane currently hovered while dragging. */
   over: "remote" | "local" | null;
-  /** Folder row currently hovered while dragging (takes priority on drop). */
   overFolder: { side: "remote" | "local"; path: string } | null;
 }
 
 /**
- * Dual-pane SFTP file manager: the left pane browses the connected remote host,
- * the right pane browses the local machine.
- *
- * Drag & drop is implemented with raw mouse events (mousedown → move past a
- * threshold → floating preview → mouseup) instead of HTML5 `draggable`:
- * WebView2 + Tauri's OS drag-drop handling makes HTML5 DnD unreliable (no-drop
- * cursor, empty dataTransfer), and a mouse-based drag works identically
- * everywhere. Drop targets are detected via onMouseEnter/onMouseLeave.
+ * Dual-pane SFTP file manager (remote host ⇄ local machine) with a modern,
+ * card-based UI. Drag & drop is mouse-driven (WebView2-safe, no HTML5 DnD):
+ * mousedown → move past threshold → floating preview → mouseup commits.
  */
 export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   // --- Remote pane state ---
@@ -232,7 +229,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       });
   };
 
-  // --- Custom mouse drag & drop (no HTML5 DnD — WebView2-safe) ---
+  // --- Custom mouse drag & drop (WebView2-safe) ---
   const patchDrag = (patch: Partial<DragState>) => {
     if (!dragRef.current) return;
     const next = { ...dragRef.current, ...patch };
@@ -240,21 +237,25 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
     setDrag(next);
   };
 
-  const commitDrop = (d: DragState) => {
+  const commitDrop = (d: DragState): boolean => {
     const target = d.overFolder
       ? d.overFolder
       : d.over
         ? { side: d.over, path: d.over === "remote" ? rPathRef.current : lPathRef.current }
         : null;
-    if (!target) return;
-    if (d.item.side === target.side) return; // same side — nothing to transfer
+    if (!target) return false;
+    if (d.item.side === target.side) return false; // same side — nothing to transfer
     if (target.side === "remote") startUpload(d.item.path, target.path);
     else startDownload(d.item.path, d.item.name, target.path);
+    return true;
   };
+
+  // Movement (px) before a press becomes a drag. Small enough for a comfortable
+  // drag, large enough that a plain click with a shaky hand still selects.
+  const DRAG_THRESHOLD = 10;
 
   const startRowDrag = (e: ReactMouseEvent, item: DragItem) => {
     if (e.button !== 0 || item.isDir) return;
-    // Don't hijack the row action buttons (download / rename / delete).
     if ((e.target as HTMLElement).closest("button")) return;
 
     const sx = e.clientX;
@@ -264,10 +265,9 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
     let moved = false;
 
     const onMove = (ev: MouseEvent) => {
-      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_THRESHOLD) return;
       if (!moved) {
         moved = true;
-        suppressClick.current = true;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
       }
@@ -284,7 +284,13 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       const d = dragRef.current;
       dragRef.current = null;
       setDrag(null);
-      if (moved && d) commitDrop(d);
+      if (moved && d) {
+        // Only swallow the click that follows a *real* transfer drop, so a
+        // plain click (no drag) always selects normally.
+        suppressClick.current = commitDrop(d);
+      } else {
+        suppressClick.current = false;
+      }
     };
 
     window.addEventListener("mousemove", onMove);
@@ -368,18 +374,19 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   const activeTransfers = Object.values(transfers);
 
   // Shared row props for a pane's file rows.
-  const rowDragProps = (item: DragItem, folderHover: { side: "remote" | "local"; path: string } | null) => ({
+  const rowDragProps = (
+    item: DragItem,
+    selected: boolean,
+    folderHover: boolean,
+  ) => ({
     onMouseDown: (e: ReactMouseEvent) => startRowDrag(e, item),
     onClick: () => {
       if (suppressClick.current) {
         suppressClick.current = false;
         return;
       }
-      if (item.side === "remote") {
-        setRSelected(item.path === rSelected ? undefined : item.path);
-      } else {
-        setLSelected(item.path === lSelected ? undefined : item.path);
-      }
+      if (item.side === "remote") setRSelected(item.path === rSelected ? undefined : item.path);
+      else setLSelected(item.path === lSelected ? undefined : item.path);
     },
     onMouseEnter: () => {
       if (item.isDir) patchDrag({ overFolder: { side: item.side, path: item.path } });
@@ -390,17 +397,21 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       }
     },
     className: cn(
-      "group cursor-pointer select-none border-b border-border/50 hover:bg-hover",
-      item.side === "remote" && rSelected === item.path && "bg-accent/10",
-      item.side === "local" && lSelected === item.path && "bg-accent/10",
-      folderHover && "bg-accent/15",
+      "group flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors hover:bg-hover",
+      selected && "bg-accent/10 hover:bg-accent/15",
+      folderHover && "bg-accent/15 ring-1 ring-inset ring-accent/40",
     ),
   });
 
+  const rowActionBtn =
+    "rounded-md p-1 text-muted transition-colors hover:bg-bg hover:text-fg";
+  const navBtn =
+    "flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg";
+
   return (
-    <div className="relative flex h-full flex-col bg-surface">
+    <div className="relative flex h-full flex-col gap-2 bg-surface p-2">
       {osDrag && (
-        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-accent/10 text-[12px] font-medium text-accent">
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg bg-accent/10 text-[12px] font-medium text-accent backdrop-blur-[1px]">
           Drop files to upload to {rPath}
         </div>
       )}
@@ -408,30 +419,38 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       {/* Floating drag preview */}
       {drag?.active && (
         <div
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border border-accent bg-elevated px-2.5 py-1.5 text-[12px] text-fg shadow-xl"
+          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border border-accent/40 bg-elevated/95 px-3 py-2 text-[12px] text-fg shadow-2xl backdrop-blur"
           style={{ left: drag.x + 14, top: drag.y + 12 }}
         >
-          <FileIcon size={13} className="text-accent" />
+          <FileIcon size={14} className="text-accent" />
           <span className="max-w-[220px] truncate font-mono">{drag.item.name}</span>
-          <span className="text-[10px] text-subtle">
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+              drag.item.side === "remote" ? "bg-accent/15 text-accent" : "bg-hover text-muted",
+            )}
+          >
             {drag.item.side === "remote" ? "→ local" : "→ remote"}
           </span>
         </div>
       )}
 
-      {/* Hint bar */}
-      <div className="flex h-7 shrink-0 items-center justify-center gap-2 border-b border-border bg-bg/50 text-[11px] text-subtle">
-        <ArrowLeftRight size={12} />
-        Drag files across the panes to transfer — remote → local downloads, local → remote uploads
+      {/* Header hint */}
+      <div className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-border/60 bg-bg/50 text-[11px] text-subtle">
+        <ArrowLeftRight size={13} className="text-accent" />
+        <span>
+          <span className="font-medium text-accent">Remote</span> ⇄ <span className="font-medium text-muted">Local</span> —
+          drag files across to transfer
+        </span>
       </div>
 
       {/* Two panes */}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-2">
         {/* ============ Remote pane (left) ============ */}
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col border-r border-border",
-            drag?.over === "remote" && drag.active && "bg-accent/5",
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-bg/30 transition-shadow",
+            drag?.over === "remote" && drag.active && "border-accent/50 ring-2 ring-accent/30",
           )}
           onMouseEnter={() => patchDrag({ over: "remote" })}
           onMouseLeave={() => {
@@ -443,27 +462,30 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
             });
           }}
         >
-          {/* Path bar */}
-          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
-            <Button variant="ghost" size="sm" onClick={() => void loadRemote("/")} title="Root">
+          {/* Pane header */}
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-bg/50 px-2">
+            <Server size={13} className="shrink-0 text-accent" />
+            <button className={navBtn} onClick={() => void loadRemote("/")} title="Root">
               <Home size={14} />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void loadRemote(parentPath(rPath))} title="Up">
+            </button>
+            <button className={navBtn} onClick={() => void loadRemote(parentPath(rPath))} title="Up">
               <ArrowUp size={14} />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void loadRemote(rPath)} title="Refresh">
+            </button>
+            <button className={navBtn} onClick={() => void loadRemote(rPath)} title="Refresh">
               <RefreshCw size={14} />
-            </Button>
-            <span className="min-w-0 flex-1 select-text truncate px-1 font-mono text-[11px] text-muted">
+            </button>
+            <span className="min-w-0 flex-1 select-text truncate rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted">
               {rPath}
             </span>
-            <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">remote</span>
+            <span className="shrink-0 rounded-md bg-accent/15 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent">
+              REMOTE
+            </span>
           </div>
 
           {/* Toolbar */}
-          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Button
-              variant={autoFollow ? "primary" : "secondary"}
+              variant={autoFollow ? "primary" : "ghost"}
               size="sm"
               onClick={() =>
                 setAutoFollow((on) => {
@@ -478,7 +500,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               {autoFollow ? "Following" : "Follow"}
             </Button>
             <Button
-              variant={rShowHidden ? "primary" : "secondary"}
+              variant={rShowHidden ? "primary" : "ghost"}
               size="sm"
               onClick={() => setRShowHidden((v) => !v)}
               title={rShowHidden ? "Hide hidden files" : "Show hidden files"}
@@ -486,15 +508,15 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               {rShowHidden ? <EyeOff size={13} /> : <Eye size={13} />}
               Hidden
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => void newRemoteFolder()}>
+            <Button variant="ghost" size="sm" onClick={() => void newRemoteFolder()} title="New folder">
               <FolderPlus size={13} /> New
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => void uploadHere()} title="Upload local files (or drop them anywhere)">
+            <Button variant="ghost" size="sm" onClick={() => void uploadHere()} title="Upload local files (or drop them anywhere)">
               <Upload size={13} /> Upload
             </Button>
-            <div className="mx-1 h-4 w-px bg-border" />
+            <div className="mx-0.5 h-4 w-px bg-border/70" />
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               disabled={!rSelected}
               title={rSelected ? `Explain ${rSelected}` : "Select a remote file first"}
@@ -503,7 +525,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               <Sparkles size={13} /> Explain
             </Button>
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               disabled={!rSelected}
               title={rSelected ? "Diff this file against another" : "Select a remote file first"}
@@ -518,78 +540,84 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
           </div>
 
           {/* File list */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
             {rLoading && rFiles.length === 0 ? (
-              <p className="p-4 text-[12px] text-subtle">Loading…</p>
+              <div className="flex h-full items-center justify-center gap-2 text-[12px] text-subtle">
+                <Loader2 size={14} className="animate-spin text-accent" /> Loading…
+              </div>
             ) : rError ? (
-              <p className="p-4 text-[12px] text-danger">{rError}</p>
+              <div className="flex h-full items-center justify-center gap-2 px-4 text-[12px] text-danger">
+                <AlertCircle size={14} /> {rError}
+              </div>
             ) : (
-              <table className="w-full text-[12px]">
-                <tbody>
-                  {rVisible.map((f) => {
-                    const item: DragItem = { side: "remote", path: f.path, name: f.name, isDir: f.isDir };
-                    const folderHover =
-                      drag?.overFolder?.side === "remote" && drag.overFolder.path === f.path ? drag.overFolder : null;
-                    return (
-                      <tr
-                        key={f.path}
-                        {...rowDragProps(item, folderHover)}
-                        onDoubleClick={() => (f.isDir ? void loadRemote(f.path) : startDownload(f.path, f.name, lPath))}
-                      >
-                        <td className="w-6 pl-2">
-                          {f.isDir ? <Folder size={14} className="text-accent" /> : <FileIcon size={14} className="text-subtle" />}
-                        </td>
-                        <td className="max-w-[160px] truncate py-1.5 pr-2 font-mono text-fg">{f.name}</td>
-                        <td className="px-2 text-right text-muted">{formatBytes(f.size)}</td>
-                        <td className="hidden px-2 text-subtle sm:table-cell">{formatMtime(f.modified)}</td>
-                        <td className="pr-2 text-right">
-                          <span className="invisible flex justify-end gap-1 group-hover:visible">
-                            {!f.isDir && (
-                              <button
-                                className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
-                                title="Download to local folder"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startDownload(f.path, f.name, lPathRef.current);
-                                }}
-                              >
-                                <Download size={13} />
-                              </button>
-                            )}
-                            <button
-                              className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
-                              title="Rename"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void doRenameRemote(f);
-                              }}
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              className="rounded p-1 text-muted hover:bg-bg hover:text-danger"
-                              title="Delete"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void doDeleteRemote(f);
-                              }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {rVisible.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-4 text-center text-[12px] text-subtle">
-                        Empty directory — drop local files here to upload
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="space-y-0.5">
+                {rVisible.map((f) => {
+                  const item: DragItem = { side: "remote", path: f.path, name: f.name, isDir: f.isDir };
+                  const selected = rSelected === f.path;
+                  const folderHover = drag?.overFolder?.side === "remote" && drag.overFolder.path === f.path;
+                  return (
+                    <div
+                      key={f.path}
+                      {...rowDragProps(item, selected, !!folderHover)}
+                      onDoubleClick={() =>
+                        f.isDir ? void loadRemote(f.path) : startDownload(f.path, f.name, lPathRef.current)
+                      }
+                      title={f.isDir ? "Double-click to open" : "Drag to the right side to download"}
+                    >
+                      {f.isDir ? (
+                        <Folder size={15} className="shrink-0 text-accent" />
+                      ) : (
+                        <FileIcon size={15} className="shrink-0 text-subtle" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-mono text-fg">{f.name}</span>
+                      <span className="shrink-0 w-14 text-right text-[11px] text-muted">{formatBytes(f.size)}</span>
+                      <span className="hidden w-24 shrink-0 text-right text-[11px] text-subtle sm:block">
+                        {formatMtime(f.modified)}
+                      </span>
+                      <span className="invisible flex shrink-0 items-center gap-0.5 group-hover:visible">
+                        {!f.isDir && (
+                          <button
+                            className={cn(rowActionBtn, "hover:text-accent")}
+                            title="Download to local folder"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startDownload(f.path, f.name, lPathRef.current);
+                            }}
+                          >
+                            <Download size={13} />
+                          </button>
+                        )}
+                        <button
+                          className={rowActionBtn}
+                          title="Rename"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void doRenameRemote(f);
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          className={cn(rowActionBtn, "hover:text-danger")}
+                          title="Delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void doDeleteRemote(f);
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })}
+                {rVisible.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-12 text-[12px] text-subtle">
+                    <Folder size={22} className="text-border" />
+                    Empty directory — drop local files here to upload
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -597,8 +625,8 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
         {/* ============ Local pane (right) ============ */}
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col",
-            drag?.over === "local" && drag.active && "bg-accent/5",
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-bg/30 transition-shadow",
+            drag?.over === "local" && drag.active && "border-accent/50 ring-2 ring-accent/30",
           )}
           onMouseEnter={() => patchDrag({ over: "local" })}
           onMouseLeave={() => {
@@ -610,27 +638,30 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
             });
           }}
         >
-          {/* Path bar */}
-          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
-            <Button variant="ghost" size="sm" onClick={() => void loadLocal(lPath)} title="Home">
+          {/* Pane header */}
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-bg/50 px-2">
+            <HardDrive size={13} className="shrink-0 text-muted" />
+            <button className={navBtn} onClick={() => void loadLocal(lPath)} title="Home">
               <Home size={14} />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void loadLocal(localParent(lPath))} title="Up">
+            </button>
+            <button className={navBtn} onClick={() => void loadLocal(localParent(lPath))} title="Up">
               <ArrowUp size={14} />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => void loadLocal(lPath)} title="Refresh">
+            </button>
+            <button className={navBtn} onClick={() => void loadLocal(lPath)} title="Refresh">
               <RefreshCw size={14} />
-            </Button>
-            <span className="min-w-0 flex-1 select-text truncate px-1 font-mono text-[11px] text-muted">
+            </button>
+            <span className="min-w-0 flex-1 select-text truncate rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted">
               {lPath || "loading…"}
             </span>
-            <span className="shrink-0 rounded bg-hover px-1.5 py-0.5 text-[10px] text-muted">local</span>
+            <span className="shrink-0 rounded-md bg-hover px-2 py-0.5 text-[10px] font-semibold tracking-wider text-muted">
+              LOCAL
+            </span>
           </div>
 
           {/* Toolbar */}
-          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Button
-              variant={lShowHidden ? "primary" : "secondary"}
+              variant={lShowHidden ? "primary" : "ghost"}
               size="sm"
               onClick={() => setLShowHidden((v) => !v)}
               title={lShowHidden ? "Hide hidden files" : "Show hidden files"}
@@ -638,47 +669,53 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               {lShowHidden ? <EyeOff size={13} /> : <Eye size={13} />}
               Hidden
             </Button>
-            <span className="text-[11px] text-subtle">Drop remote files here to download</span>
+            <span className="ml-auto text-[11px] text-subtle">Drop remote files here to download</span>
           </div>
 
           {/* File list */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
             {lLoading && lFiles.length === 0 ? (
-              <p className="p-4 text-[12px] text-subtle">Loading…</p>
+              <div className="flex h-full items-center justify-center gap-2 text-[12px] text-subtle">
+                <Loader2 size={14} className="animate-spin text-accent" /> Loading…
+              </div>
             ) : lError ? (
-              <p className="p-4 text-[12px] text-danger">{lError}</p>
+              <div className="flex h-full items-center justify-center gap-2 px-4 text-[12px] text-danger">
+                <AlertCircle size={14} /> {lError}
+              </div>
             ) : (
-              <table className="w-full text-[12px]">
-                <tbody>
-                  {lVisible.map((f) => {
-                    const item: DragItem = { side: "local", path: f.path, name: f.name, isDir: f.isDir };
-                    const folderHover =
-                      drag?.overFolder?.side === "local" && drag.overFolder.path === f.path ? drag.overFolder : null;
-                    return (
-                      <tr
-                        key={f.path}
-                        {...rowDragProps(item, folderHover)}
-                        onDoubleClick={() => f.isDir && void loadLocal(f.path)}
-                      >
-                        <td className="w-6 pl-2">
-                          {f.isDir ? <Folder size={14} className="text-accent" /> : <FileIcon size={14} className="text-subtle" />}
-                        </td>
-                        <td className="max-w-[160px] truncate py-1.5 pr-2 font-mono text-fg">{f.name}</td>
-                        <td className="px-2 text-right text-muted">{formatBytes(f.size)}</td>
-                        <td className="hidden px-2 text-subtle sm:table-cell">{formatMtime(f.modified)}</td>
-                        <td className="pr-2" />
-                      </tr>
-                    );
-                  })}
-                  {lVisible.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-4 text-center text-[12px] text-subtle">
-                        Empty folder — drop remote files here to download
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="space-y-0.5">
+                {lVisible.map((f) => {
+                  const item: DragItem = { side: "local", path: f.path, name: f.name, isDir: f.isDir };
+                  const selected = lSelected === f.path;
+                  const folderHover = drag?.overFolder?.side === "local" && drag.overFolder.path === f.path;
+                  return (
+                    <div
+                      key={f.path}
+                      {...rowDragProps(item, selected, !!folderHover)}
+                      onDoubleClick={() => f.isDir && void loadLocal(f.path)}
+                      title={f.isDir ? "Double-click to open" : "Drag to the left side to upload"}
+                    >
+                      {f.isDir ? (
+                        <Folder size={15} className="shrink-0 text-accent" />
+                      ) : (
+                        <FileIcon size={15} className="shrink-0 text-subtle" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-mono text-fg">{f.name}</span>
+                      <span className="shrink-0 w-14 text-right text-[11px] text-muted">{formatBytes(f.size)}</span>
+                      <span className="hidden w-24 shrink-0 text-right text-[11px] text-subtle sm:block">
+                        {formatMtime(f.modified)}
+                      </span>
+                      <span className="w-7 shrink-0" />
+                    </div>
+                  );
+                })}
+                {lVisible.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-12 text-[12px] text-subtle">
+                    <HardDrive size={22} className="text-border" />
+                    Empty folder — drop remote files here to download
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -686,19 +723,32 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
 
       {/* Transfers */}
       {activeTransfers.length > 0 && (
-        <div className="max-h-32 shrink-0 space-y-1.5 overflow-y-auto border-t border-border p-2">
+        <div className="max-h-36 shrink-0 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-bg/40 px-3 py-2">
           {activeTransfers.map((t) => {
             const pct = t.total > 0 ? (t.transferred / t.total) * 100 : t.done ? 100 : 0;
             return (
-              <div key={t.transferId} className="text-[11px]">
-                <div className="mb-0.5 flex justify-between text-muted">
-                  <span className="truncate">{t.fileName}</span>
-                  <span className="shrink-0 text-subtle">
-                    {t.done ? (t.error ? "error" : "done") : `${Math.round(pct)}%`}
-                  </span>
+              <div key={t.transferId} className="flex items-center gap-2 text-[11px]">
+                {t.done ? (
+                  t.error ? (
+                    <AlertCircle size={13} className="shrink-0 text-danger" />
+                  ) : (
+                    <Check size={13} className="shrink-0 text-success" />
+                  )
+                ) : (
+                  <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-muted">{t.fileName}</span>
+                <span className="w-10 shrink-0 text-right text-subtle">
+                  {t.done ? (t.error ? "error" : "done") : `${Math.round(pct)}%`}
+                </span>
+                <div className="w-24 shrink-0">
+                  <Bar value={pct} tone={t.error ? "danger" : "accent"} />
                 </div>
-                <Bar value={pct} tone={t.error ? "danger" : "accent"} />
-                {t.error && <p className="mt-0.5 text-[10px] text-danger">{t.error}</p>}
+                {t.error && (
+                  <span className="max-w-[220px] truncate text-[10px] text-danger" title={t.error}>
+                    {t.error}
+                  </span>
+                )}
               </div>
             );
           })}
