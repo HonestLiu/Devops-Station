@@ -22,6 +22,8 @@ interface TabsState {
   openLocal: () => Promise<string>;
   openWsl: (config: WslLaunchConfig, title?: string) => Promise<string>;
   openFrp: (config: FrpLaunchConfig, title?: string) => Promise<string>;
+  /** Open a dedicated SFTP tab backed by an SSH session to a saved host. */
+  openSftp: (host: Host, title?: string) => Promise<string>;
   openFromHost: (host: Host) => Promise<string>;
 
   reconnect: (id: string) => Promise<void>;
@@ -45,7 +47,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     if (tab?.sessionId) {
       // Fire-and-forget: a dead session shouldn't block closing the tab.
       const teardown =
-        tab.kind === "ssh"
+        tab.kind === "ssh" || tab.kind === "sftp"
           ? ssh.disconnect
           : tab.kind === "serial"
             ? serial.close
@@ -81,6 +83,53 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           subtitle: `${config.hostname}:${config.port}`,
           status: "connecting",
           hostId: config.hostId,
+        },
+      ],
+      activeId: id,
+    }));
+
+    try {
+      const result = await ssh.connect(config);
+      get().patch(id, {
+        status: "connected",
+        sessionId: result.sessionId,
+        cwd: result.homeDir,
+        fingerprint: result.serverKeyFingerprint,
+      });
+    } catch (err) {
+      get().patch(id, { status: "error", error: (err as Error).message });
+    }
+    return id;
+  },
+
+  openSftp: async (host, title) => {
+    const config: SshConnectConfig = {
+      hostId: host.id,
+      hostname: host.hostname ?? "",
+      port: host.port ?? 22,
+      username: host.username ?? "",
+      // Sentinel — the backend swaps it for the decrypted secret.
+      password: host.password ?? undefined,
+      privateKeyPath: host.privateKeyPath ?? undefined,
+      passphrase: host.passphrase ?? undefined,
+      cols: 120,
+      rows: 32,
+      term: "xterm-256color",
+    };
+
+    const id = nextId();
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        {
+          id,
+          kind: "sftp",
+          title: title || `${config.username}@${config.hostname}`,
+          subtitle: `${config.hostname}:${config.port} · SFTP`,
+          status: "connecting",
+          hostId: host.id,
+          // Stash the config so Reconnect can re-resolve saved credentials.
+          sftpConfig: config,
         },
       ],
       activeId: id,
@@ -287,6 +336,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       } else if (tab.kind === "frp" && tab.frp) {
         const sessionId = await frp.spawn(tab.frp, 120, 32);
         get().patch(id, { status: "connected", sessionId });
+      } else if (tab.kind === "sftp" && tab.sftpConfig) {
+        const result = await ssh.connect(tab.sftpConfig);
+        get().patch(id, {
+          status: "connected",
+          sessionId: result.sessionId,
+          cwd: result.homeDir,
+          fingerprint: result.serverKeyFingerprint,
+        });
       } else {
         // SSH reconnect needs the original credentials, which only the Hosts
         // page holds — surface a clear message instead of failing silently.

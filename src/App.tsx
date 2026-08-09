@@ -14,6 +14,7 @@ import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
 import { LocalWorkspace } from "./components/workspace/LocalWorkspace";
 import { WslWorkspace } from "./components/workspace/WslWorkspace";
 import { FrpWorkspace } from "./components/workspace/FrpWorkspace";
+import { SftpWorkspace } from "./components/workspace/SftpWorkspace";
 import { AiPanel } from "./ai/AiPanel";
 import { useAiStore } from "./ai/useAiStore";
 
@@ -40,6 +41,7 @@ function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "serial") return <SerialWorkspace tab={tab} />;
   if (tab.kind === "wsl") return <WslWorkspace tab={tab} />;
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
+  if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
   return <LocalWorkspace tab={tab} />;
 }
 

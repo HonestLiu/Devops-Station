@@ -14,7 +14,8 @@ interface ActiveTerminal {
 function getActiveTerminal(): ActiveTerminal | null {
   const { tabs, activeId } = useTabsStore.getState();
   const tab = tabs.find((t) => t.id === activeId);
-  if (!tab || !tab.sessionId) return null;
+  // SFTP-only tabs have no terminal to write into.
+  if (!tab || !tab.sessionId || tab.kind === "sftp") return null;
   return { tab, sessionId: tab.sessionId, kind: tab.kind };
 }
 

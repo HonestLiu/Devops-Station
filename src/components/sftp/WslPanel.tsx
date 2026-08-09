@@ -498,7 +498,7 @@ export function WslPanel({
                     {t.done ? (t.error ? "error" : "done") : `${Math.round(pct)}%`}
                   </span>
                 </div>
-                <Bar value={pct} tone={t.error ? "danger" : undefined} />
+                <Bar value={pct} tone={t.error ? "danger" : "accent"} />
                 {t.error && <p className="mt-0.5 text-[10px] text-danger">{t.error}</p>}
               </div>
             );

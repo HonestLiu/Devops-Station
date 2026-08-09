@@ -5,6 +5,7 @@ mod error;
 mod fonts;
 mod frp;
 mod kb;
+mod local_fs;
 mod pty;
 mod serial;
 mod ssh;
@@ -548,6 +549,8 @@ pub fn run() {
             fonts::read_font,
             kb::kb_scan,
             kb::kb_read,
+            local_fs::local_home,
+            local_fs::local_list,
             db_list_hosts,
             db_save_host,
             db_delete_host,

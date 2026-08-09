@@ -1,4 +1,4 @@
-import { Cable, Globe, MonitorSmartphone, Terminal, TerminalSquare, X } from "lucide-react";
+import { Cable, FolderOpen, Globe, MonitorSmartphone, Terminal, TerminalSquare, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -10,6 +10,7 @@ const KIND_ICON: Record<TabKind, typeof Terminal> = {
   wsl: TerminalSquare,
   frp: Globe,
   local: MonitorSmartphone,
+  sftp: FolderOpen,
 };
 
 function statusColor(tab: Tab): string {

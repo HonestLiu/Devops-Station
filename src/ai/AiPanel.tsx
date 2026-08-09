@@ -222,7 +222,9 @@ export function AiPanel() {
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabId = useTabsStore((s) => s.activeId);
-  const activeTab = tabs.find((t) => t.id === activeTabId && t.sessionId);
+  const activeTab = tabs.find(
+    (t) => t.id === activeTabId && t.sessionId && t.kind !== "sftp",
+  );
 
   const onInsert = useCallback(
     (cmd: string) => {

@@ -5,6 +5,7 @@ import type {
   Attached,
   Host,
   HostMetrics,
+  LocalEntry,
   QuickCommand,
   RemoteFile,
   SerialOpenConfig,
@@ -248,4 +249,11 @@ export const ai = {
 export const kb = {
   scan: (root: string) => call<{ path: string; name: string; content: string }[]>("kb_scan", { root }),
   read: (path: string) => call<string>("kb_read", { path }),
+};
+
+// --- Local filesystem (dual-pane SFTP tab, right pane) ---------------------
+
+export const localFs = {
+  home: () => call<string>("local_home"),
+  list: (path: string) => call<LocalEntry[]>("local_list", { path }),
 };

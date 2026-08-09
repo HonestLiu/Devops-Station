@@ -1,5 +1,7 @@
+import { useMemo, useState } from "react";
 import {
   Activity,
+  FolderOpen,
   LayoutDashboard,
   Server,
   Settings,
@@ -10,25 +12,27 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useHostsStore } from "@/store/useHostsStore";
 import { useAiStore } from "@/ai/useAiStore";
 
-interface NavItem {
-  id: Page;
-  label: string;
-  icon: typeof LayoutDashboard;
-}
+type SidebarEntry =
+  | { kind: "page"; id: Page; label: string; icon: typeof LayoutDashboard }
+  | { kind: "sftp"; label: string; icon: typeof FolderOpen };
 
-const NAV: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "hosts", label: "Hosts", icon: Server },
-  { id: "monitoring", label: "Monitoring", icon: Activity },
-  { id: "settings", label: "Settings", icon: Settings },
+/** Top navigation, in display order. SFTP sits with the primary pages. */
+const SIDEBAR: SidebarEntry[] = [
+  { kind: "page", id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { kind: "page", id: "hosts", label: "Hosts", icon: Server },
+  { kind: "page", id: "monitoring", label: "Monitoring", icon: Activity },
+  { kind: "sftp", label: "SFTP", icon: FolderOpen },
+  { kind: "page", id: "settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
   const togglePalette = useAppStore((s) => s.togglePalette);
+  const [sftpOpen, setSftpOpen] = useState(false);
 
   const isMac =
     typeof navigator !== "undefined" &&
@@ -38,10 +42,19 @@ export function Sidebar() {
   const aiOpen = useAiStore((s) => s.panelOpen);
   const tabs = useTabsStore((s) => s.tabs);
   const focusPage = useTabsStore((s) => s.focusPage);
+  const openSftp = useTabsStore((s) => s.openSftp);
+  const hosts = useHostsStore((s) => s.hosts);
+  const sshHosts = useMemo(() => hosts.filter((h) => h.kind === "ssh"), [hosts]);
 
   const go = (id: Page) => {
     setPage(id);
     focusPage();
+  };
+
+  const pickSftp = (hostId: string) => {
+    const host = sshHosts.find((h) => h.id === hostId);
+    setSftpOpen(false);
+    if (host) void openSftp(host, host.name);
   };
 
   return (
@@ -55,23 +68,94 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-2">
-        {NAV.map((item) => {
-          const active = page === item.id;
+        {SIDEBAR.map((item) => {
+          if (item.kind === "page") {
+            const active = page === item.id;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => go(item.id)}
+                className={cn(
+                  "flex items-center gap-2.5 rounded px-2.5 py-2 text-[13px] transition-colors no-drag",
+                  active
+                    ? "bg-accent/15 font-medium text-accent"
+                    : "text-muted hover:bg-hover hover:text-fg",
+                )}
+              >
+                <Icon size={16} strokeWidth={2} />
+                {item.label}
+              </button>
+            );
+          }
+
+          // SFTP — a first-class entry: opens a dedicated SFTP tab on a saved SSH host.
           const Icon = item.icon;
           return (
-            <button
-              key={item.id}
-              onClick={() => go(item.id)}
-              className={cn(
-                "flex items-center gap-2.5 rounded px-2.5 py-2 text-[13px] transition-colors no-drag",
-                active
-                  ? "bg-accent/15 font-medium text-accent"
-                  : "text-muted hover:bg-hover hover:text-fg",
+            <div key="sftp" className="relative">
+              <button
+                onClick={() => setSftpOpen((v) => !v)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-[13px] transition-colors no-drag",
+                  sftpOpen
+                    ? "bg-accent/15 font-medium text-accent"
+                    : "text-muted hover:bg-hover hover:text-fg",
+                )}
+              >
+                <Icon size={16} strokeWidth={2} />
+                SFTP
+                <span
+                  className={cn(
+                    "ml-auto rounded px-1.5 py-0.5 font-mono text-[10px]",
+                    sftpOpen ? "bg-accent/20 text-accent" : "bg-bg text-subtle",
+                  )}
+                >
+                  {sshHosts.length}
+                </span>
+              </button>
+              {sftpOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setSftpOpen(false)} />
+                  <div className="absolute left-full top-0 z-50 ml-2 w-64 overflow-hidden rounded-lg border border-border bg-elevated shadow-xl">
+                    <div className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-subtle">
+                      Open SFTP on saved SSH host
+                    </div>
+                    {sshHosts.length === 0 ? (
+                      <div className="px-3 py-3 text-[12px] text-subtle">
+                        No saved SSH hosts yet.
+                        <button
+                          onClick={() => {
+                            setSftpOpen(false);
+                            go("hosts");
+                          }}
+                          className="mt-2 block w-full rounded-md border border-border px-2 py-1.5 text-left text-[12px] text-fg hover:bg-hover"
+                        >
+                          Go to Hosts to add one →
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {sshHosts.map((h) => (
+                          <button
+                            key={h.id}
+                            onClick={() => pickSftp(h.id)}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-fg hover:bg-hover"
+                            title={`${h.hostname}:${h.port ?? 22}`}
+                          >
+                            <FolderOpen size={13} className="shrink-0 text-muted" />
+                            <span className="truncate">{h.name}</span>
+                            <span className="ml-auto shrink-0 truncate font-mono text-[10px] text-subtle">
+                              {h.username ? `${h.username}@` : ""}
+                              {h.hostname}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
-            >
-              <Icon size={16} strokeWidth={2} />
-              {item.label}
-            </button>
+            </div>
           );
         })}
       </nav>

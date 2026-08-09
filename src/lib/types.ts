@@ -63,6 +63,15 @@ export interface RemoteFile {
   group?: string | null;
 }
 
+/** A local directory listing entry (dual-pane SFTP tab, right pane). */
+export interface LocalEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modified: number;
+}
+
 export interface DiskUsage {
   mount: string;
   totalKb: number;
@@ -163,7 +172,7 @@ export interface TransferProgress {
 
 export type ThemeId = "tokyo-night" | "dark" | "light" | "nord" | "dracula";
 
-export type TabKind = "ssh" | "serial" | "local" | "wsl" | "frp";
+export type TabKind = "ssh" | "serial" | "local" | "wsl" | "frp" | "sftp";
 
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -186,6 +195,8 @@ export interface Tab {
   wsl?: WslLaunchConfig;
   /** Frp only — kept so Reconnect can respawn the same tunnel. */
   frp?: FrpLaunchConfig;
+  /** SFTP-only tab — the underlying SSH connect config, kept for Reconnect. */
+  sftpConfig?: SshConnectConfig;
 }
 
 /** One installed WSL distribution, from `wsl -l -v`. */

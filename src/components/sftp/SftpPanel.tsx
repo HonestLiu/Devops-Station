@@ -59,9 +59,12 @@ async function pickSave(name: string): Promise<string | null> {
 export function SftpPanel({
   sessionId,
   onClose,
+  fullWidth = false,
 }: {
   sessionId: string;
   onClose: () => void;
+  /** Render as a full-window tab (dedicated SFTP tab) instead of a side panel. */
+  fullWidth?: boolean;
 }) {
   const [path, setPath] = useState("/");
   const [files, setFiles] = useState<RemoteFile[]>([]);
@@ -129,7 +132,7 @@ export function SftpPanel({
     }
   }, [remoteCwd, autoFollow, load]);
 
-  // Transfer progress â†’ reload the listing when a transfer finishes.
+  // Transfer progress â†? reload the listing when a transfer finishes.
   useEffect(() => {
     const un = sftp.onProgress((p) => {
       setTransfers((prev) => ({ ...prev, [p.transferId]: p }));
@@ -300,7 +303,10 @@ export function SftpPanel({
   return (
     <div
       className={cn(
-        "relative flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-surface",
+        "relative flex h-full flex-col bg-surface",
+        fullWidth
+          ? "w-full"
+          : "w-[360px] shrink-0 border-l border-border",
         dragActive && "ring-2 ring-accent",
       )}
     >
@@ -392,7 +398,7 @@ export function SftpPanel({
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading && files.length === 0 ? (
-          <p className="p-4 text-[12px] text-subtle">Loadingâ€¦</p>
+          <p className="p-4 text-[12px] text-subtle">Loadingâ€?</p>
         ) : error ? (
           <p className="p-4 text-[12px] text-danger">{error}</p>
         ) : (
@@ -492,7 +498,7 @@ export function SftpPanel({
                     {t.done ? (t.error ? "error" : "done") : `${Math.round(pct)}%`}
                   </span>
                 </div>
-                <Bar value={pct} tone={t.error ? "danger" : undefined} />
+                <Bar value={pct} tone={t.error ? "danger" : "accent"} />
                 {t.error && <p className="mt-0.5 text-[10px] text-danger">{t.error}</p>}
               </div>
             );

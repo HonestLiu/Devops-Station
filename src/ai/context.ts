@@ -12,13 +12,19 @@ export function buildContext(): string | null {
   const tab = tabs.find((t) => t.id === activeId);
   if (!tab || !tab.sessionId) return null;
 
-  const cwd = useSessionStore.getState().cwdBySession[tab.sessionId];
+  const cwd =
+    useSessionStore.getState().cwdBySession[tab.sessionId] ?? tab.cwd;
   const lines: string[] = [];
   lines.push(`Connection type: ${tab.kind.toUpperCase()}`);
   if (tab.subtitle) lines.push(`Target: ${tab.subtitle}`);
   if (cwd) lines.push(`Current directory: ${cwd}`);
 
-  if (tab.kind === "ssh" || tab.kind === "wsl" || tab.kind === "frp") {
+  if (
+    tab.kind === "ssh" ||
+    tab.kind === "wsl" ||
+    tab.kind === "frp" ||
+    tab.kind === "sftp"
+  ) {
     lines.push(
       "The user is a Linux / embedded operator. Prefer concise, copy-pasteable commands " +
         "and call out risks (e.g. destructive rm, reboot) before suggesting them.",
