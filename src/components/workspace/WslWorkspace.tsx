@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { FolderClosed, FolderOpen, RotateCw } from "lucide-react";
+import { FolderClosed, FolderOpen, RotateCw, Usb } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { ConnectionOverlay } from "@/components/ConnectionOverlay";
-import { Terminal } from "@/components/terminal/Terminal";
+import { SplitView } from "@/components/terminal/SplitView";
+import { SplitControls } from "@/components/terminal/SplitControls";
 import { WslPanel } from "@/components/sftp/WslPanel";
+import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
 import { TerminalAiButton } from "@/ai/TerminalAiButton";
-import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -14,21 +14,33 @@ import type { Tab } from "@/lib/types";
  * A WSL session *is* a local PTY session — `wsl.exe` is spawned on the ConPTY
  * slave, so the Terminal component talks to it over the exact same `pty-*`
  * events as the local shell. Only the spawn side differs (handled in the
- * store / backend). We reuse the LocalWorkspace layout verbatim.
+ * store / backend).
  */
 export function WslWorkspace({ tab }: { tab: Tab }) {
   const [wslOpen, setWslOpen] = useState(false);
-  const t = useTerminalTheme();
+  const [usbOpen, setUsbOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
-  const patch = useTabsStore((s) => s.patch);
+  const splitPane = useTabsStore((s) => s.splitPane);
+  const closePane = useTabsStore((s) => s.closePane);
 
   const connected = tab.status === "connected" && !!tab.sessionId;
+  const paneCount = tab.panes?.length ?? 1;
+  const canSplit = paneCount < 4;
+  const canClosePane = (tab.panes?.length ?? 0) > 1;
+  const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
 
   return (
     <div className="flex h-full flex-col bg-bg">
       {/* Toolbar */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
-        <span className="truncate text-[12px] font-medium text-fg">{tab.title || "WSL"}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12px] font-medium text-fg">{tab.title || "WSL"}</span>
+          {paneCount > 1 && (
+            <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+              {paneCount} screens
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 no-drag">
           <Button
             variant={wslOpen ? "primary" : "ghost"}
@@ -39,6 +51,22 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             {wslOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
             Files
           </Button>
+          <Button
+            variant={usbOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setUsbOpen((v) => !v)}
+            title="Toggle WSL USB Device Manager"
+          >
+            <Usb size={14} />
+            USB
+          </Button>
+          <SplitControls
+            paneCount={paneCount}
+            canSplit={canSplit}
+            canClosePane={canClosePane}
+            onSplit={(axis) => void splitPane(tab.id, axis)}
+            onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
+          />
           <TerminalAiButton tab={tab} />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart session">
             <RotateCw size={14} />
@@ -49,23 +77,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
       {/* Body */}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          {connected && tab.sessionId && (
-            <Terminal
-              key={tab.sessionId}
-              sessionId={tab.sessionId}
-              transport="pty"
-              trackCwd
-              theme={t.theme}
-              fontFamily={t.fontFamily}
-              fontSize={t.fontSize}
-              lineHeight={t.lineHeight}
-              cursorBlink={t.cursorBlink}
-              cursorStyle={t.cursorStyle}
-              scrollback={t.scrollback}
-              onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
-            />
-          )}
-          {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+          <SplitView tab={tab} />
         </div>
 
         {wslOpen && connected && tab.sessionId && (
@@ -73,6 +85,14 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             sessionId={tab.sessionId}
             distro={tab.wsl?.distro}
             onClose={() => setWslOpen(false)}
+          />
+        )}
+
+        {usbOpen && (
+          <WSLUSBPanel
+            distro={tab.wsl?.distro ?? ""}
+            connected={connected}
+            onClose={() => setUsbOpen(false)}
           />
         )}
       </div>

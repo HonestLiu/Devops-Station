@@ -15,6 +15,8 @@ import type {
   SshConnectResult,
   StreamChunk,
   TransferProgress,
+  UsbDevice,
+  UsbVerify,
   WslDistro,
   WslLaunchConfig,
   FrpConfig,
@@ -156,6 +158,27 @@ export const wsl = {
 export const frp = {
   spawn: (cfg: FrpLaunchConfig, cols: number, rows: number) =>
     call<string>("frp_spawn", { config: cfg.config, cols, rows }),
+};
+
+// --- WSL USB Device Manager (usbipd-win) ----------------------------------
+//
+// Wraps the backend's `usbip_*` commands. `attach`/`detach`/`verify` run on a
+// dedicated blocking pool so they can never stall terminal input.
+
+export const usb = {
+  /** Whether `usbipd-win` is installed on the Windows host. */
+  isInstalled: () => call<boolean>("usbip_installed"),
+  /** Enumerate embedded-dev USB devices currently visible to Windows. */
+  list: () => call<UsbDevice[]>("usbip_list"),
+  /** Bind (if needed) + attach a device into a WSL distro, then verify. */
+  attach: (busid: string, distro: string) =>
+    call<UsbVerify>("usbip_attach", { busid, distro }),
+  /** Detach a device, returning it to Windows. */
+  detach: (busid: string) => call<void>("usbip_detach", { busid }),
+  /** Re-verify an attached device inside WSL. */
+  verify: (distro: string) => call<UsbVerify>("usbip_verify", { distro }),
+  /** Launch the interactive winget installer for usbipd-win. */
+  install: () => call<void>("usbip_install"),
 };
 
 // --- WSL filesystem (mirrors `sftp`, but on the local `\\wsl$\` share) -------

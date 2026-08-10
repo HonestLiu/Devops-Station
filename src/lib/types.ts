@@ -176,13 +176,21 @@ export type TabKind = "ssh" | "serial" | "local" | "wsl" | "frp" | "sftp";
 
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
+/** One terminal in a split-pane tab. The first pane mirrors the tab itself. */
+export interface TermPane {
+  id: string;
+  sessionId?: string;
+  status: TabStatus;
+  error?: string;
+}
+
 export interface Tab {
   id: string;
   kind: TabKind;
   title: string;
   subtitle: string;
   status: TabStatus;
-  /** Backend session id; absent while connecting. */
+  /** Backend session id of the FOCUSED pane; absent while connecting. */
   sessionId?: string;
   hostId?: string;
   error?: string;
@@ -197,6 +205,14 @@ export interface Tab {
   frp?: FrpLaunchConfig;
   /** SFTP-only tab — the underlying SSH connect config, kept for Reconnect. */
   sftpConfig?: SshConnectConfig;
+  /** SSH only — cached credentials/config so Reconnect and Split can reconnect. */
+  sshConfig?: SshConnectConfig;
+  /** Split panes (2/4 terminals in one tab). Undefined = single terminal. */
+  panes?: TermPane[];
+  /** Which pane is focused (used for split keyboard nav + shared sessionId). */
+  focusedPaneId?: string;
+  /** 2-pane split orientation: "col" = side by side, "row" = stacked. */
+  splitAxis?: "col" | "row";
 }
 
 /** One installed WSL distribution, from `wsl -l -v`. */
@@ -215,6 +231,53 @@ export interface WslLaunchConfig {
   distro?: string;
   user?: string;
   cwd?: string;
+}
+
+// --- WSL USB Device Manager (usbipd-win) ---------------------------------
+
+export type UsbCategory = "USB Serial" | "Debug Probe" | "MCU Dev Board" | "USB-JTAG";
+
+/** Coarse lifecycle status of a USB device. */
+export type UsbDeviceStatus =
+  | "Available"
+  | "Bound"
+  | "Connected"
+  | "Connecting"
+  | "Error";
+
+/** A USB device as returned by the Rust backend (`usbip_list`). */
+export interface UsbDevice {
+  busid: string;
+  vid: string;
+  pid: string;
+  /** Raw Windows device name. */
+  name: string;
+  /** Friendly, human-readable name (e.g. "ESP32-S3 Dev Board"). */
+  friendly_name: string;
+  category: UsbCategory;
+  status: "Available" | "Bound" | "Connected";
+  /** Whether the device is currently attached into WSL. */
+  wsl_attached: boolean;
+  /** Detected Linux serial ports (e.g. "/dev/ttyACM0") after attach. */
+  serial_ports: string[];
+}
+
+/** Verification result after attach (`lsusb` + serial port probe). */
+export interface UsbVerify {
+  attached: boolean;
+  serial_ports: string[];
+  lsusb: string;
+  /** Optional note (e.g. fallback explanation) from the backend. */
+  note?: string;
+}
+
+/** Embeddev-specific quick actions surfaced on a device card. */
+export interface UsbAction {
+  label: string;
+  /** Event name emitted to other panels (e.g. the future Serial Terminal). */
+  event: string;
+  /** Optional payload (e.g. serial port for "Open Serial"). */
+  port?: string;
 }
 
 // --- Frp (fast reverse proxy) ----------------------------------------------

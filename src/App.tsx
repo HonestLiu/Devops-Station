@@ -90,6 +90,52 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [togglePalette]);
 
+  // Split-pane shortcuts (active SSH tab only), capture phase so the shell never
+  // sees them: Ctrl+Shift+D split right · Ctrl+Shift+E split below ·
+  // Ctrl+Shift+W close focused pane · Ctrl+Shift+←/→/↑/↓ focus move.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      const tabs = useTabsStore.getState();
+      const tab = tabs.tabs.find((t) => t.id === tabs.activeId);
+      if (!tab || !["ssh", "local", "wsl"].includes(tab.kind)) return;
+
+      const guard = () => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      if (e.code === "KeyD") {
+        guard();
+        void tabs.splitPane(tab.id, "col");
+      } else if (e.code === "KeyE") {
+        guard();
+        void tabs.splitPane(tab.id, "row");
+      } else if (e.code === "KeyW") {
+        guard();
+        const fid = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+        if (fid && (tab.panes?.length ?? 0) > 1) void tabs.closePane(tab.id, fid);
+      } else if (
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight" ||
+        e.key === "ArrowUp" ||
+        e.key === "ArrowDown"
+      ) {
+        if (!tab.panes || tab.panes.length < 2) return;
+        guard();
+        const order = tab.panes.map((p) => p.id);
+        const cur = order.indexOf(tab.focusedPaneId ?? order[0]);
+        const next =
+          e.key === "ArrowLeft" || e.key === "ArrowUp"
+            ? Math.max(0, cur - 1)
+            : Math.min(order.length - 1, cur + 1);
+        tabs.focusPane(tab.id, order[next]);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg text-fg">
       <Sidebar />

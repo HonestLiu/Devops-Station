@@ -1,24 +1,41 @@
 import { RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { ConnectionOverlay } from "@/components/ConnectionOverlay";
-import { Terminal } from "@/components/terminal/Terminal";
+import { SplitView } from "@/components/terminal/SplitView";
+import { SplitControls } from "@/components/terminal/SplitControls";
 import { TerminalAiButton } from "@/ai/TerminalAiButton";
-import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
 export function LocalWorkspace({ tab }: { tab: Tab }) {
-  const t = useTerminalTheme();
   const reconnect = useTabsStore((s) => s.reconnect);
-  const patch = useTabsStore((s) => s.patch);
-  const connected = tab.status === "connected" && !!tab.sessionId;
+  const splitPane = useTabsStore((s) => s.splitPane);
+  const closePane = useTabsStore((s) => s.closePane);
+
+  const paneCount = tab.panes?.length ?? 1;
+  const canSplit = paneCount < 4;
+  const canClosePane = (tab.panes?.length ?? 0) > 1;
+  const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
 
   return (
     <div className="flex h-full flex-col bg-bg">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
-        <span className="text-[12px] font-medium text-fg">Local Shell</span>
-        <div className="no-drag">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12px] font-medium text-fg">Local Shell</span>
+          {paneCount > 1 && (
+            <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+              {paneCount} screens
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 no-drag">
+          <SplitControls
+            paneCount={paneCount}
+            canSplit={canSplit}
+            canClosePane={canClosePane}
+            onSplit={(axis) => void splitPane(tab.id, axis)}
+            onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
+          />
           <TerminalAiButton tab={tab} />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart shell">
             <RotateCw size={14} />
@@ -27,22 +44,7 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {connected && tab.sessionId && (
-          <Terminal
-            key={tab.sessionId}
-            sessionId={tab.sessionId}
-            transport="pty"
-            theme={t.theme}
-            fontFamily={t.fontFamily}
-            fontSize={t.fontSize}
-            lineHeight={t.lineHeight}
-            cursorBlink={t.cursorBlink}
-            cursorStyle={t.cursorStyle}
-            scrollback={t.scrollback}
-            onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
-          />
-        )}
-        {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+        <SplitView tab={tab} />
       </div>
     </div>
   );

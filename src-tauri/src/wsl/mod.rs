@@ -7,6 +7,16 @@
 //! 2. Spawning a console program from a GUI process pops a black console
 //!    window. Since the distro picker re-scans on a timer, that would strobe
 //!    the screen — so we pass `CREATE_NO_WINDOW`.
+//!
+//! The `usbip` submodule implements the WSL USB Device Manager: it enumerates
+//! embedded-dev USB devices via `usbipd-win`, binds+attaches them into a WSL
+//! distro, and verifies/detaches them. See `usbip.rs` for the pitfall fixes
+//! (timeout-guarded process calls, best-effort verify, `--distribution`
+//! fallback, sticky Connected state).
+
+pub mod device_filter;
+pub mod parser;
+pub mod usbip;
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};

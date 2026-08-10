@@ -388,6 +388,69 @@ async fn wsl_upload(
 }
 
 // ===========================================================================
+// WSL USB Device Manager (usbipd-win)
+//
+// These commands invoke external processes (`usbipd`, `wsl.exe`) that can block
+// or hang. They run on Tauri's *dedicated blocking pool* via `spawn_blocking`
+// (not the compute pool that runs `pty_write`/`ssh_write`), so a slow or stuck
+// `usbipd list` can never freeze terminal input. Each underlying process call
+// also has its own hard timeout (see `wsl::usbip::run_captured`).
+// ===========================================================================
+
+/// Whether `usbipd-win` is installed on the Windows host.
+#[tauri::command]
+async fn usbip_installed() -> bool {
+    tauri::async_runtime::spawn_blocking(crate::wsl::usbip::is_installed)
+        .await
+        .unwrap_or(false)
+}
+
+/// Enumerate embedded-dev USB devices currently visible to Windows.
+#[tauri::command]
+async fn usbip_list() -> AppResult<Vec<crate::wsl::usbip::UsbDevice>> {
+    tauri::async_runtime::spawn_blocking(crate::wsl::usbip::list_devices)
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(AppError::Other)
+}
+
+/// Bind (if needed) and attach a device into the given WSL distro, then verify.
+#[tauri::command]
+async fn usbip_attach(busid: String, distro: String) -> AppResult<crate::wsl::usbip::UsbVerify> {
+    tauri::async_runtime::spawn_blocking(move || crate::wsl::usbip::attach(&busid, &distro))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(AppError::Other)
+}
+
+/// Detach a device, returning it to Windows.
+#[tauri::command]
+async fn usbip_detach(busid: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::wsl::usbip::detach(&busid))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(AppError::Other)
+}
+
+/// Re-verify an attached device inside WSL (`lsusb` + serial port probe).
+#[tauri::command]
+async fn usbip_verify(distro: String) -> AppResult<crate::wsl::usbip::UsbVerify> {
+    tauri::async_runtime::spawn_blocking(move || crate::wsl::usbip::verify(&distro))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(AppError::Other)
+}
+
+/// Launch the interactive winget installer for usbipd-win.
+#[tauri::command]
+async fn usbip_install() -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(crate::wsl::usbip::install)
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(AppError::Other)
+}
+
+// ===========================================================================
 // Frp
 // ===========================================================================
 
@@ -541,6 +604,12 @@ pub fn run() {
             wsl_rename,
             wsl_download,
             wsl_upload,
+            usbip_installed,
+            usbip_list,
+            usbip_attach,
+            usbip_detach,
+            usbip_verify,
+            usbip_install,
             frp_spawn,
             ai_chat,
             fonts::list_fonts,

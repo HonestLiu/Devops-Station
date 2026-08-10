@@ -1,10 +1,21 @@
 import { create } from "zustand";
 
 import { frp, pty, serial, ssh, wsl } from "@/lib/api";
-import type { FrpConfig, FrpLaunchConfig, Host, SerialOpenConfig, SshConnectConfig, Tab, WslLaunchConfig } from "@/lib/types";
+import type {
+  FrpConfig,
+  FrpLaunchConfig,
+  Host,
+  SerialOpenConfig,
+  SshConnectConfig,
+  Tab,
+  TermPane,
+  WslLaunchConfig,
+} from "@/lib/types";
 
 let counter = 0;
 const nextId = () => `tab-${++counter}`;
+let paneCounter = 0;
+const nextPaneId = () => `pane-${++paneCounter}`;
 
 interface TabsState {
   tabs: Tab[];
@@ -16,6 +27,8 @@ interface TabsState {
   closeTab: (id: string) => Promise<void>;
   closeAll: () => Promise<void>;
   patch: (id: string, patch: Partial<Tab>) => void;
+  /** Update a single pane inside a tab. */
+  patchPane: (tabId: string, paneId: string, patch: Partial<TermPane>) => void;
 
   openSsh: (config: SshConnectConfig, title?: string) => Promise<string>;
   openSerial: (config: SerialOpenConfig, title?: string) => Promise<string>;
@@ -25,6 +38,13 @@ interface TabsState {
   /** Open a dedicated SFTP tab backed by an SSH session to a saved host. */
   openSftp: (host: Host, title?: string) => Promise<string>;
   openFromHost: (host: Host) => Promise<string>;
+
+  /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
+  splitPane: (tabId: string, axis: "col" | "row") => Promise<void>;
+  /** Close one split pane (the last pane closes the tab). */
+  closePane: (tabId: string, paneId: string) => Promise<void>;
+  /** Focus a pane; keeps tab.sessionId in sync for AI/cwd consumers. */
+  focusPane: (tabId: string, paneId: string) => void;
 
   reconnect: (id: string) => Promise<void>;
 }
@@ -42,17 +62,31 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
     })),
 
+  patchPane: (tabId, paneId, patch) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.panes
+          ? { ...t, panes: t.panes.map((p) => (p.id === paneId ? { ...p, ...patch } : p)) }
+          : t,
+      ),
+    })),
+
   closeTab: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
-    if (tab?.sessionId) {
+    const teardown =
+      tab?.kind === "ssh" || tab?.kind === "sftp"
+        ? ssh.disconnect
+        : tab?.kind === "serial"
+          ? serial.close
+          : pty.close;
+    // Tear down the focused session plus every split-pane session.
+    const sessions = [
+      tab?.sessionId,
+      ...(tab?.panes?.map((p) => p.sessionId) ?? []),
+    ].filter((s): s is string => !!s);
+    for (const sid of new Set(sessions)) {
       // Fire-and-forget: a dead session shouldn't block closing the tab.
-      const teardown =
-        tab.kind === "ssh" || tab.kind === "sftp"
-          ? ssh.disconnect
-          : tab.kind === "serial"
-            ? serial.close
-            : pty.close;
-      teardown(tab.sessionId).catch(() => undefined);
+      teardown(sid).catch(() => undefined);
     }
     set((s) => {
       const tabs = s.tabs.filter((t) => t.id !== id);
@@ -83,6 +117,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           subtitle: `${config.hostname}:${config.port}`,
           status: "connecting",
           hostId: config.hostId,
+          // Cache the connect config so Reconnect / Split can re-open sessions.
+          sshConfig: config,
         },
       ],
       activeId: id,
@@ -318,26 +354,123 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     );
   },
 
+  splitPane: async (tabId, axis) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    // Split works for the terminal kinds (serial/sftp excluded).
+    if (!tab || tab.kind === "serial" || tab.kind === "sftp") return;
+    if (tab.kind === "ssh" && !tab.sshConfig) return;
+    if (tab.kind === "wsl" && !tab.wsl) return;
+    if (tab.kind === "frp" && !tab.frp) return;
+
+    const panes: TermPane[] = tab.panes ?? [
+      { id: nextPaneId(), sessionId: tab.sessionId, status: tab.status },
+    ];
+    if (panes.length >= 4) return; // max 4 screens
+
+    const pId = nextPaneId();
+    const nextPanes = [...panes, { id: pId, status: "connecting" as TermPane["status"] }];
+    get().patch(tabId, {
+      panes: nextPanes,
+      splitAxis: axis,
+      focusedPaneId: pId,
+      sessionId: undefined,
+    });
+
+    try {
+      let sessionId: string;
+      let homeDir: string | undefined;
+      let fingerprint: string | undefined;
+      if (tab.kind === "ssh" && tab.sshConfig) {
+        const r = await ssh.connect(tab.sshConfig);
+        sessionId = r.sessionId;
+        homeDir = r.homeDir;
+        fingerprint = r.serverKeyFingerprint;
+      } else if (tab.kind === "wsl" && tab.wsl) {
+        sessionId = await wsl.spawn(tab.wsl, 120, 32);
+      } else if (tab.kind === "frp" && tab.frp) {
+        sessionId = await frp.spawn(tab.frp, 120, 32);
+      } else {
+        sessionId = await pty.spawn(120, 32);
+      }
+      get().patchPane(tabId, pId, { status: "connected", sessionId });
+      // Focus the new pane so typing goes there immediately.
+      get().patch(tabId, { sessionId, cwd: homeDir, fingerprint });
+    } catch (err) {
+      get().patchPane(tabId, pId, { status: "error", error: (err as Error).message });
+    }
+  },
+
+  closePane: async (tabId, paneId) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const panes = tab.panes ?? [];
+    if (panes.length === 0) return;
+    const pane = panes.find((p) => p.id === paneId);
+    if (pane?.sessionId) {
+      const teardown =
+        tab.kind === "ssh" || tab.kind === "sftp"
+          ? ssh.disconnect
+          : tab.kind === "serial"
+            ? serial.close
+            : pty.close;
+      teardown(pane.sessionId).catch(() => undefined);
+    }
+
+    const rest = panes.filter((p) => p.id !== paneId);
+    if (rest.length === 0) {
+      // Closing the last pane closes the whole tab.
+      return void get().closeTab(tabId);
+    }
+    const focusId = tab.focusedPaneId === paneId ? rest[rest.length - 1].id : tab.focusedPaneId;
+    const focus = rest.find((p) => p.id === focusId) ?? rest[0];
+    get().patch(tabId, {
+      panes: rest,
+      focusedPaneId: focus.id,
+      sessionId: focus.sessionId,
+      splitAxis: rest.length === 2 ? tab.splitAxis : undefined,
+    });
+  },
+
+  focusPane: (tabId, paneId) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    const pane = tab?.panes?.find((p) => p.id === paneId);
+    if (!pane) return;
+    get().patch(tabId, { focusedPaneId: paneId, sessionId: pane.sessionId });
+  },
+
   reconnect: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab) return;
     get().patch(id, { status: "connecting", error: undefined, sessionId: undefined });
 
     try {
+      const syncPane = (sessionId: string) => {
+        const paneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+        if (paneId && tab.panes) get().patchPane(id, paneId, { status: "connected", sessionId });
+        return sessionId;
+      };
       if (tab.kind === "serial" && tab.serial) {
         const sessionId = await serial.open(tab.serial);
         get().patch(id, { status: "connected", sessionId });
       } else if (tab.kind === "local") {
-        const sessionId = await pty.spawn(120, 32);
-        get().patch(id, { status: "connected", sessionId });
+        get().patch(id, { status: "connected", sessionId: syncPane(await pty.spawn(120, 32)) });
       } else if (tab.kind === "wsl" && tab.wsl) {
-        const sessionId = await wsl.spawn(tab.wsl, 120, 32);
-        get().patch(id, { status: "connected", sessionId });
+        get().patch(id, { status: "connected", sessionId: syncPane(await wsl.spawn(tab.wsl, 120, 32)) });
       } else if (tab.kind === "frp" && tab.frp) {
-        const sessionId = await frp.spawn(tab.frp, 120, 32);
-        get().patch(id, { status: "connected", sessionId });
+        get().patch(id, { status: "connected", sessionId: syncPane(await frp.spawn(tab.frp, 120, 32)) });
       } else if (tab.kind === "sftp" && tab.sftpConfig) {
         const result = await ssh.connect(tab.sftpConfig);
+        get().patch(id, {
+          status: "connected",
+          sessionId: result.sessionId,
+          cwd: result.homeDir,
+          fingerprint: result.serverKeyFingerprint,
+        });
+      } else if (tab.kind === "ssh" && tab.sshConfig) {
+        // Reconnect the focused pane (or the whole tab when not split).
+        const result = await ssh.connect(tab.sshConfig);
+        const paneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+        if (paneId && tab.panes) get().patchPane(id, paneId, { status: "connected", sessionId: result.sessionId });
         get().patch(id, {
           status: "connected",
           sessionId: result.sessionId,
