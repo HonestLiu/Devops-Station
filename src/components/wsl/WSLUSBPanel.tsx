@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Usb as UsbIcon, X } from "lucide-react";
 
-import { Button } from "@/components/ui";
+import { Button, SideIconButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { usb, wsl } from "@/lib/api";
 import type { UsbDevice, UsbDeviceStatus } from "@/lib/types";
@@ -239,26 +239,19 @@ export function WSLUSBPanel({ distro, connected, onClose }: WSLUSBPanelProps) {
     <div className="relative flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-surface">
       {/* Header */}
       <div className="flex h-9 items-center gap-2 border-b border-border px-2.5">
-        <UsbIcon size={14} className="text-accent" />
+        <span className="icon-chip h-6 w-6 shrink-0">
+          <UsbIcon size={13} />
+        </span>
         <span className="flex-1 truncate text-[12px] font-semibold text-fg">
           USB Devices
         </span>
-        <button
-          className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+        <SideIconButton
+          label="Refresh device list"
           onClick={loadList}
-          disabled={loading || installed === null}
-          title="Refresh device list"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : undefined} />
-        </button>
+          icon={<RefreshCw size={14} className={loading ? "animate-spin" : undefined} />}
+        />
         {onClose && (
-          <button
-            className="rounded p-1 text-muted hover:bg-hover hover:text-fg"
-            onClick={onClose}
-            title="Close USB panel"
-          >
-            <X size={14} />
-          </button>
+          <SideIconButton label="Close USB panel" onClick={onClose} icon={<X size={14} />} />
         )}
       </div>
 

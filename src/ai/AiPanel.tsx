@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui";
+import { Button, SideIconButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useAiStore } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
@@ -37,17 +37,11 @@ function SessionList() {
 
   return (
     <div className="flex h-full w-full flex-col bg-surface">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/70 px-3">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-2.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle">
           History
         </span>
-        <button
-          onClick={() => newSession()}
-          title="New chat"
-          className="rounded-lg p-1 text-muted transition-colors hover:bg-hover hover:text-fg"
-        >
-          <Plus size={14} />
-        </button>
+        <SideIconButton label="New chat" onClick={() => newSession()} icon={<Plus size={14} />} />
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
         {sessions.length === 0 && (
@@ -362,7 +356,7 @@ export function AiPanel() {
 
   return (
     <div
-      className="relative flex h-full shrink-0 flex-col border-l border-border/70 bg-surface"
+      className="relative flex h-full shrink-0 flex-col border-l border-border bg-surface"
       style={{ width }}
     >
       <div
@@ -371,77 +365,68 @@ export function AiPanel() {
         title="Drag to resize"
       />
       {/* Header */}
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            className="rounded-lg p-1 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title={showHistory ? "Collapse chat history" : "Show chat history"}
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
+        <SideIconButton
+          label={showHistory ? "Collapse chat history" : "Show chat history"}
+          onClick={() => setShowHistory((v) => !v)}
+          active={showHistory}
+          icon={showHistory ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+        />
+        <SideIconButton
+          label="New chat"
+          onClick={() => useAiStore.getState().newSession()}
+          icon={<Plus size={14} />}
+        />
+        <span className="icon-chip h-6 w-6 shrink-0">
+          <MessageSquare size={12} />
+        </span>
+        <span className="flex-1 truncate text-[12px] font-semibold text-fg">AI Assistant</span>
+        {contextOn && (
+          <span
+            className="pill shrink-0 bg-accent/15 text-accent"
+            title="Terminal environment context is attached to your messages"
           >
-            {showHistory ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-          </button>
-          <button
-            onClick={() => useAiStore.getState().newSession()}
-            className="rounded-lg p-1 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title="New chat"
-          >
-            <Plus size={14} />
-          </button>
-          <span className="icon-chip h-6 w-6 shrink-0">
-            <MessageSquare size={12} />
+            context on
           </span>
-          <span className="truncate text-[13px] font-semibold text-fg">AI Assistant</span>
-          {contextOn && (
-            <span
-              className="pill shrink-0 bg-accent/15 text-accent"
-              title="Terminal environment context is attached to your messages"
-            >
-              context on
-            </span>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {agentMode && (
-            <label
-              className="mr-0.5 flex cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
-              title="Automatically execute agent commands"
-            >
-              <input
-                type="checkbox"
-                checked={agentAuto}
-                onChange={(e) => setAgentAuto(e.target.checked)}
-                className="h-3 w-3 accent-[rgb(var(--c-accent))]"
-              />
-              auto-run
-            </label>
-          )}
-          <button
-            onClick={() => setAgentMode((v) => !v)}
-            className={toolBtn(agentMode)}
-            title="Agent mode: the model plans and runs commands in the active terminal"
+        )}
+        {agentMode && (
+          <label
+            className="flex cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
+            title="Automatically execute agent commands"
           >
-            <Bot size={13} /> Agent
-          </button>
-          <button
-            onClick={() => void loadKb()}
-            className={toolBtn(!!(kbNote && !kbNote.includes("error") && kbNote.startsWith("KB:")))}
-            title="Load the local knowledge base (path configured in Settings)"
-          >
-            <BookOpen size={13} /> KB
-          </button>
-          {kbNote && (
-            <span className="max-w-[120px] truncate text-[10px] text-subtle" title={kbNote}>
-              {kbNote}
-            </span>
-          )}
-          <button
-            onClick={() => togglePanel(false)}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title="Close (Esc)"
-          >
-            <X size={14} />
-          </button>
-        </div>
+            <input
+              type="checkbox"
+              checked={agentAuto}
+              onChange={(e) => setAgentAuto(e.target.checked)}
+              className="h-3 w-3 accent-[rgb(var(--c-accent))]"
+            />
+            auto-run
+          </label>
+        )}
+        <button
+          onClick={() => setAgentMode((v) => !v)}
+          className={toolBtn(agentMode)}
+          title="Agent mode: the model plans and runs commands in the active terminal"
+        >
+          <Bot size={13} /> Agent
+        </button>
+        <button
+          onClick={() => void loadKb()}
+          className={toolBtn(!!(kbNote && !kbNote.includes("error") && kbNote.startsWith("KB:")))}
+          title="Load the local knowledge base (path configured in Settings)"
+        >
+          <BookOpen size={13} /> KB
+        </button>
+        {kbNote && (
+          <span className="max-w-[120px] truncate text-[10px] text-subtle" title={kbNote}>
+            {kbNote}
+          </span>
+        )}
+        <SideIconButton
+          label="Close (Esc)"
+          onClick={() => togglePanel(false)}
+          icon={<X size={14} />}
+        />
       </div>
 
       {/* Body: history is a floating overlay so it never eats panel width */}

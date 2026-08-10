@@ -6,7 +6,7 @@
 
 基于 **Tauri v2 + Rust + React 18 + TypeScript** 构建，原生性能，安装包体积小。
 
----
+![](img/image-20260810204728253.png)
 
 ## 功能特性
 

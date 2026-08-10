@@ -48,6 +48,42 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
+// --- Side icon button ------------------------------------------------------
+// Square, icon-only button used in the headers of side panels (Files / USB /
+// AI). Kept visually identical across panels so the right-rail feels like one
+// family.
+
+export function SideIconButton({
+  icon,
+  label,
+  onClick,
+  active,
+  className,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn(
+        "flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:bg-hover hover:text-fg",
+        active && "bg-accent/15 text-accent",
+        className,
+      )}
+    >
+      {icon}
+    </button>
+  );
+}
+
+
 // --- Input -----------------------------------------------------------------
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
