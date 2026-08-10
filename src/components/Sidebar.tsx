@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { NotificationBell } from "./NotificationBell";
 
 interface NavItem {
   id: Page;
@@ -108,6 +109,9 @@ export function Sidebar() {
         <span className="text-[10px] text-subtle">
           {tabs.length} connection{tabs.length === 1 ? "" : "s"} open
         </span>
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
       </div>
     </aside>
   );

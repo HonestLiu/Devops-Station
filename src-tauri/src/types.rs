@@ -311,6 +311,22 @@ pub struct StreamChunk {
     pub data: String,
 }
 
+/// Emitted whenever the output stream of a session looks like a vibecoding CLI
+/// (Claude Code, Codex, Gemini CLI, Aider, Cursor, …) waiting for the user to
+/// approve an action. The frontend shows an in-app bell entry and the backend
+/// also raises an OS-level system notification so the user is pulled back.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermRequest {
+    pub session_id: String,
+    /// Human label of the tool we think is asking (e.g. "Claude Code").
+    pub tool: String,
+    /// The prompt text we captured (ANSI stripped, truncated).
+    pub snippet: String,
+    /// Unix epoch millis when the prompt was detected.
+    pub ts: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionClosed {

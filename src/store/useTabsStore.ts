@@ -46,6 +46,9 @@ interface TabsState {
   /** Focus a pane; keeps tab.sessionId in sync for AI/cwd consumers. */
   focusPane: (tabId: string, paneId: string) => void;
 
+  /** Jump to whichever tab/pane owns `sessionId` (used by the notif bell). */
+  focusBySession: (sessionId: string) => void;
+
   reconnect: (id: string) => Promise<void>;
 }
 
@@ -436,6 +439,18 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const pane = tab?.panes?.find((p) => p.id === paneId);
     if (!pane) return;
     get().patch(tabId, { focusedPaneId: paneId, sessionId: pane.sessionId });
+  },
+
+  focusBySession: (sessionId) => {
+    const { tabs, setActive, focusPane } = get();
+    for (const t of tabs) {
+      const pane = t.panes?.find((p) => p.sessionId === sessionId);
+      if (t.sessionId === sessionId || pane) {
+        setActive(t.id);
+        if (pane) focusPane(t.id, pane.id);
+        return;
+      }
+    }
   },
 
   reconnect: async (id) => {

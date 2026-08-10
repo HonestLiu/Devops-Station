@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 import { Sidebar } from "./components/Sidebar";
 import { TabBar } from "./components/TabBar";
@@ -21,8 +22,9 @@ import { useAiStore } from "./ai/useAiStore";
 
 import { useAppStore, type Page } from "./store/useAppStore";
 import { useTabsStore } from "./store/useTabsStore";
+import { usePermStore } from "./store/usePermStore";
 import { cn } from "./lib/utils";
-import type { Tab } from "./lib/types";
+import type { Tab, PermRequest } from "./lib/types";
 
 function PageContent({ page }: { page: Page }) {
   switch (page) {
@@ -72,6 +74,17 @@ export default function App() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [toggleAi]);
+
+  // Permission-request alerts from the backend (vibecoding CLI approval prompts).
+  // The OS-level notification is raised in Rust; here we just feed the in-app bell.
+  useEffect(() => {
+    const un = listen<PermRequest>("perm-request", (e) => {
+      usePermStore.getState().push(e.payload);
+    });
+    return () => {
+      void un.then((fn) => fn());
+    };
+  }, []);
 
   // Global command palette shortcut: Cmd+K on macOS, Ctrl+K on Windows/Linux.
   // Registered in the CAPTURE phase and stopPropagation'd so the keystroke never
