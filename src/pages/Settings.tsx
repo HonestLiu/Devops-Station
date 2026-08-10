@@ -233,6 +233,11 @@ export function Settings() {
               onChange={(v) => setAi("terminalContext", v)}
             />
             <Checkbox
+              label="Proactive error hints in the terminal"
+              checked={settings.ai.errorHints}
+              onChange={(v) => setAi("errorHints", v)}
+            />
+            <Checkbox
               label="Use local knowledge base to augment prompts"
               checked={settings.ai.useKnowledgeBase}
               onChange={(v) => setAi("useKnowledgeBase", v)}

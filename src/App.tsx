@@ -10,6 +10,7 @@ import { Hosts } from "./pages/Hosts";
 import { Monitoring } from "./pages/Monitoring";
 import { Settings } from "./pages/Settings";
 import { SftpPage } from "./pages/SftpPage";
+import { SerialPage } from "./pages/SerialPage";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
@@ -38,6 +39,8 @@ function PageContent({ page }: { page: Page }) {
       return <Settings />;
     case "sftp":
       return <SftpPage />;
+    case "serial":
+      return <SerialPage />;
   }
 }
 

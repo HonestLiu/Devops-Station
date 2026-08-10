@@ -378,6 +378,8 @@ export interface AISettings {
   temperature: number;
   /** Inject the active terminal's host/cwd as a system context message. */
   terminalContext: boolean;
+  /** Surface a dismissible "let AI fix it?" hint when the output trips a known error. */
+  errorHints: boolean;
   /** Use the local knowledge base (when a path is configured) to augment prompts. */
   useKnowledgeBase: boolean;
   /** Root directory scanned for the local knowledge base. */

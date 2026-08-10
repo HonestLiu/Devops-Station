@@ -7,6 +7,7 @@ import { buildContext } from "./context";
 import { writeToTerminal } from "./terminalAi";
 import { getTerminalText } from "./terminalBridge";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useAiAgent, type AgentStep } from "./useAiAgent";
 import { AGENT_SYSTEM } from "./prompts";
 
 const MAX_STEPS = 8;
@@ -90,12 +91,30 @@ async function complete(
  *
  * `autoRun=false` (default) types the command for the operator to review before
  * pressing Enter; `autoRun=true` executes immediately.
+ *
+ * `inline=false` (default) keeps the side panel as the display surface
+ * (legacy path, unchanged). `inline=true` is the "agent lives in the terminal"
+ * path: it does NOT open the panel and instead streams each step (command +
+ * captured result) into `useAiAgent`, which the inline composer renders as a
+ * compact block. The dedicated chat session is still created so the panel can
+ * show the full transcript if the user opens it.
  */
-export async function runAgent(goal: string, autoRun = false): Promise<void> {
+export async function runAgent(
+  goal: string,
+  autoRun = false,
+  inline = false,
+): Promise<void> {
   const store = useAiStore.getState();
-  store.togglePanel(true);
   const sid = store.newSession();
   store.selectSession(sid);
+  if (!inline) store.togglePanel(true);
+
+  const agent = inline ? useAiAgent.getState() : null;
+  if (agent) {
+    agent.reset();
+    agent.setGoal(goal);
+    agent.setRunning(true);
+  }
 
   const history: Turn[] = [{ role: "user", content: goal }];
   store.addUserMessage(goal);
@@ -104,31 +123,49 @@ export async function runAgent(goal: string, autoRun = false): Promise<void> {
     ? buildContext() ?? undefined
     : undefined;
 
-  for (let step = 0; step < MAX_STEPS; step += 1) {
-    const aid = useAiStore.getState().addAssistantMessage();
-    const text = await complete(
-      sid,
-      aid,
-      [{ role: "system", content: AGENT_SYSTEM }, ...history],
-      ctx,
-    );
-    history.push({ role: "assistant", content: text });
+  try {
+    for (let step = 0; step < MAX_STEPS; step += 1) {
+      const aid = useAiStore.getState().addAssistantMessage();
+      const text = await complete(
+        sid,
+        aid,
+        [{ role: "system", content: AGENT_SYSTEM }, ...history],
+        ctx,
+      );
+      history.push({ role: "assistant", content: text });
 
-    const cmd = extractTool(text);
-    if (!cmd || isDone(text)) break;
+      const cmd = extractTool(text);
+      if (!cmd || isDone(text)) {
+        if (agent) agent.setRunning(false);
+        break;
+      }
 
-    // Execute (or type) the proposed command in the active terminal.
-    writeToTerminal(cmd, autoRun);
-    await new Promise((r) => setTimeout(r, RESULT_WAIT_MS));
+      // Execute (or type) the proposed command in the active terminal.
+      writeToTerminal(cmd, autoRun);
+      await new Promise((r) => setTimeout(r, RESULT_WAIT_MS));
 
-    let result = "(no terminal output captured)";
-    const sid2 = activeSessionId();
-    if (sid2) {
-      const screen = getTerminalText(sid2);
-      result = screen.length > 4000 ? screen.slice(-4000) : screen;
+      let result = "(no terminal output captured)";
+      let status: AgentStep["status"] = "ok";
+      const sid2 = activeSessionId();
+      if (sid2) {
+        const screen = getTerminalText(sid2);
+        result = screen.length > 4000 ? screen.slice(-4000) : screen;
+        if (!screen.trim()) {
+          result = "(no output)";
+          status = "empty";
+        }
+      }
+      const resultMsg = `TOOL RESULT:\n${result}`;
+      useAiStore.getState().addUserMessage(resultMsg);
+      history.push({ role: "user", content: resultMsg });
+
+      if (agent) agent.pushStep({ cmd, result, status });
     }
-    const resultMsg = `TOOL RESULT:\n${result}`;
-    useAiStore.getState().addUserMessage(resultMsg);
-    history.push({ role: "user", content: resultMsg });
+  } catch (e) {
+    if (agent) {
+      agent.setError(String(e));
+      agent.setRunning(false);
+    }
+    throw e;
   }
 }

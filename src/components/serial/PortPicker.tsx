@@ -195,14 +195,16 @@ export function PortPicker({
         )}
       </div>
 
-      <PortStatus
-        error={error}
-        manual={manual}
-        missing={missing}
-        scanned={scanned}
-        selected={selected}
-        count={ports.length}
-      />
+      <div className="min-h-[16px] truncate text-[11px]">
+        <PortStatus
+          error={error}
+          manual={manual}
+          missing={missing}
+          scanned={scanned}
+          selected={selected}
+          count={ports.length}
+        />
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
+import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,7 @@ export function SplitView({ tab }: { tab: Tab }) {
   const count = panes.length;
 
   const container = cn(
-    "flex h-full min-h-0 bg-bg",
+    "flex min-h-0 bg-bg",
     count === 1 && "flex-col",
     count === 2 && (tab.splitAxis === "row" ? "flex-col" : "flex-row"),
     count >= 3 && "grid grid-cols-2 grid-rows-2",
@@ -87,42 +88,45 @@ export function SplitView({ tab }: { tab: Tab }) {
   };
 
   return (
-    <div className={container}>
-      {panes.map((p) => {
-        const focused = count > 1 && tab.focusedPaneId === p.id;
-        return (
-          <div
-            key={p.id}
-            onClick={() => count > 1 && focusPane(tab.id, p.id)}
-            className={cn(
-              "relative min-h-0 min-w-0 overflow-hidden bg-bg",
-              count === 1 ? "h-full" : "flex-1",
-              focused && "z-10 ring-2 ring-inset ring-accent/60",
-            )}
-          >
-            {p.status === "connected" && p.sessionId ? (
-              <Terminal
-                key={p.sessionId}
-                sessionId={p.sessionId}
-                transport={transport}
-                trackCwd={trackCwd}
-                theme={t.theme}
-                fontFamily={t.fontFamily}
-                fontSize={t.fontSize}
-                lineHeight={t.lineHeight}
-                cursorBlink={t.cursorBlink}
-                cursorStyle={t.cursorStyle}
-                scrollback={t.scrollback}
-                onClosed={(info) => handleClosed(p.id, info.reason)}
-              />
-            ) : count === 1 ? (
-              <ConnectionOverlay tab={tab} />
-            ) : (
-              <PaneOverlay tab={tab} pane={p} />
-            )}
-          </div>
-        );
-      })}
+    <div className="flex h-full min-h-0 flex-col bg-bg">
+      <div className={cn(container, "min-h-0 flex-1")}>
+        {panes.map((p) => {
+          const focused = count > 1 && tab.focusedPaneId === p.id;
+          return (
+            <div
+              key={p.id}
+              onClick={() => count > 1 && focusPane(tab.id, p.id)}
+              className={cn(
+                "relative min-h-0 min-w-0 overflow-hidden bg-bg",
+                count === 1 ? "h-full" : "flex-1",
+                focused && "z-10 ring-2 ring-inset ring-accent/60",
+              )}
+            >
+              {p.status === "connected" && p.sessionId ? (
+                <Terminal
+                  key={p.sessionId}
+                  sessionId={p.sessionId}
+                  transport={transport}
+                  trackCwd={trackCwd}
+                  theme={t.theme}
+                  fontFamily={t.fontFamily}
+                  fontSize={t.fontSize}
+                  lineHeight={t.lineHeight}
+                  cursorBlink={t.cursorBlink}
+                  cursorStyle={t.cursorStyle}
+                  scrollback={t.scrollback}
+                  onClosed={(info) => handleClosed(p.id, info.reason)}
+                />
+              ) : count === 1 ? (
+                <ConnectionOverlay tab={tab} />
+              ) : (
+                <PaneOverlay tab={tab} pane={p} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <TerminalInlineAsk tab={tab} />
     </div>
   );
 }

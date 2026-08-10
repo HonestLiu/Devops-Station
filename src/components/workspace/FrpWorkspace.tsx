@@ -3,6 +3,7 @@ import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
+import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -36,23 +37,26 @@ export function FrpWorkspace({ tab }: { tab: Tab }) {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1">
-        {connected && tab.sessionId && (
-          <Terminal
-            key={tab.sessionId}
-            sessionId={tab.sessionId}
-            transport="pty"
-            theme={t.theme}
-            fontFamily={t.fontFamily}
-            fontSize={t.fontSize}
-            lineHeight={t.lineHeight}
-            cursorBlink={t.cursorBlink}
-            cursorStyle={t.cursorStyle}
-            scrollback={t.scrollback}
-            onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
-          />
-        )}
-        {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="relative min-h-0 flex-1">
+          {connected && tab.sessionId && (
+            <Terminal
+              key={tab.sessionId}
+              sessionId={tab.sessionId}
+              transport="pty"
+              theme={t.theme}
+              fontFamily={t.fontFamily}
+              fontSize={t.fontSize}
+              lineHeight={t.lineHeight}
+              cursorBlink={t.cursorBlink}
+              cursorStyle={t.cursorStyle}
+              scrollback={t.scrollback}
+              onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
+            />
+          )}
+          {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+        </div>
+        <TerminalInlineAsk tab={tab} />
       </div>
     </div>
   );

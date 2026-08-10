@@ -1,5 +1,6 @@
 import {
   Activity,
+  Cable,
   FolderOpen,
   LayoutDashboard,
   Server,
@@ -24,6 +25,7 @@ const NAV: NavItem[] = [
   { id: "hosts", label: "Hosts", icon: Server },
   { id: "monitoring", label: "Monitoring", icon: Activity },
   { id: "sftp", label: "SFTP", icon: FolderOpen },
+  { id: "serial", label: "Serial", icon: Cable },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

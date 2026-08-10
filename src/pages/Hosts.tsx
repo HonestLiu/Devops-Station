@@ -49,9 +49,12 @@ export function Hosts() {
   const [qcOpen, setQcOpen] = useState(false);
 
   const filtered = useMemo(() => {
+    // Serial devices now live on their own sidebar page, so keep them out of
+    // the combined Hosts grid.
+    const nonSerial = hosts.filter((h) => h.kind !== "serial");
     const q = query.trim().toLowerCase();
-    if (!q) return hosts;
-    return hosts.filter(
+    if (!q) return nonSerial;
+    return nonSerial.filter(
       (h) =>
         h.name.toLowerCase().includes(q) ||
         (h.hostname ?? "").toLowerCase().includes(q) ||
@@ -82,7 +85,7 @@ export function Hosts() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Hosts</h1>
-          <p className="page-subtitle">Saved SSH, serial, WSL and Frp targets</p>
+          <p className="page-subtitle">Saved SSH, WSL and Frp targets</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setQcOpen(true)}>
@@ -129,7 +132,7 @@ export function Hosts() {
           title={hosts.length === 0 ? "No hosts yet" : "No matches"}
           description={
             hosts.length === 0
-              ? "Add a host to start managing SSH, serial, local, and Frp connections."
+              ? "Add a host to start managing SSH, local, and Frp connections."
               : "Try a different search term."
           }
           action={

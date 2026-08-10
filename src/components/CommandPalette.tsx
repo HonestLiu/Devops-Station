@@ -42,6 +42,7 @@ export function CommandPalette() {
   const openFromHost = useTabsStore((s) => s.openFromHost);
   const openLocal = useTabsStore((s) => s.openLocal);
   const openSsh = useTabsStore((s) => s.openSsh);
+  const openSerial = useTabsStore((s) => s.openSerial);
 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -86,6 +87,13 @@ export function CommandPalette() {
         run: go("sftp"),
       },
       {
+        id: "nav-serial",
+        label: "Go to Serial",
+        group: "Navigation",
+        icon: <Cable size={15} />,
+        run: go("serial"),
+      },
+      {
         id: "nav-settings",
         label: "Go to Settings",
         group: "Navigation",
@@ -123,6 +131,30 @@ export function CommandPalette() {
               term: "xterm-256color",
             },
             p.username ? `${p.username}@${p.hostname}` : p.hostname,
+          );
+        },
+      },
+      {
+        id: "conn-serial",
+        label: "Open serial port…",
+        group: "Connections",
+        icon: <Cable size={15} />,
+        run: () => {
+          close();
+          const target = window.prompt("Serial port (e.g. COM3 or /dev/ttyUSB0)");
+          if (!target) return;
+          const port = target.trim();
+          if (!port) return;
+          void openSerial(
+            {
+              port,
+              baudRate: 115200,
+              dataBits: 8,
+              stopBits: 1,
+              parity: "none",
+              flowControl: "none",
+            },
+            port,
           );
         },
       },

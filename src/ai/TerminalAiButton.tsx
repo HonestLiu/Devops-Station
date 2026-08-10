@@ -5,21 +5,22 @@ import { useAiStore } from "./useAiStore";
 import type { Tab } from "@/lib/types";
 
 /**
- * Toolbar button that toggles the AI assistant panel (right-aligned docked
- * panel with collapsible chat history). The panel itself lives in AiPanel.
+ * Secondary entry point to the full AI assistant panel (chat history, knowledge
+ * base, agent mode). The *primary* entry is now the inline composer docked at
+ * the bottom of the terminal, so this is intentionally a quiet icon — the panel
+ * itself is on-demand.
  */
 export function TerminalAiButton({ tab: _tab }: { tab: Tab }) {
   const open = useAiStore((s) => s.panelOpen);
 
   return (
     <Button
-      variant={open ? "primary" : "ghost"}
+      variant={open ? "secondary" : "ghost"}
       size="sm"
       onClick={() => useAiStore.getState().togglePanel()}
-      title={open ? "Collapse AI assistant" : "Open AI assistant: chat, commands, log analysis…"}
+      title={open ? "Collapse AI assistant" : "Open AI assistant (history, knowledge base, agent)"}
     >
       <Sparkles size={14} />
-      AI
     </Button>
   );
 }

@@ -1,6 +1,7 @@
 import { ssh, pty, serial } from "@/lib/api";
 import { textToBase64 } from "@/lib/utils";
 import { useAiStore } from "./useAiStore";
+import { useAiComposer } from "./useAiComposer";
 import { useTerminalSelection } from "./terminalBridge";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab, TabKind } from "@/lib/types";
@@ -45,26 +46,34 @@ export function writeToTerminal(cmd: string, execute: boolean): void {
   void writer(sessionId, textToBase64(data));
 }
 
-const EXPLAIN_SYSTEM =
+export const EXPLAIN_SYSTEM =
   "You are a senior Linux / embedded ops engineer. The user selected text from their terminal. " +
   "If it is a shell command, explain concisely what it does, its key flags, and any risks " +
   "(e.g. destructive rm, reboot, chmod 777). If it is command output, summarize what it shows. " +
   "Use short bullet points, under 180 words.";
 
-const GENERATE_SYSTEM =
+export const FIX_SYSTEM =
+  "You are a senior Linux / embedded ops engineer. The user has selected a terminal excerpt that " +
+  "shows a problem (an error, a failure, or unexpected behavior). Diagnose the root cause in one " +
+  "or two sentences, then give the exact command(s) to fix it as a single fenced bash code block. " +
+  "Prefer safe, reversible commands and avoid destructive actions unless they are strictly required. " +
+  "Under 200 words.";
+
+export const GENERATE_SYSTEM =
   "You are a Linux / ops command generator. Return ONLY the shell command(s) the user needs, " +
   "as a single fenced bash code block, with no extra prose or explanation. If multiple " +
   "commands are required, put them on separate lines inside the one block. Prefer safe, " +
   "idempotent commands and avoid destructive actions unless explicitly requested.";
 
-/** Explain the currently-selected terminal text in the AI panel. */
+/**
+ * Explain the currently-selected terminal text. Routes into the inline composer
+ * (not the side panel) so the explanation streams back inside the terminal flow.
+ */
 export function explainSelection(): void {
   const text = useTerminalSelection.getState().text.trim();
   if (!text) return;
   const message = `Explain the following terminal selection:\n\n${text}`;
-  const store = useAiStore.getState();
-  store.togglePanel(true);
-  void store.send(message, { title: "Explain selection", system: EXPLAIN_SYSTEM });
+  useAiComposer.getState().setPrefill(message, true, EXPLAIN_SYSTEM);
 }
 
 /** Generate a command from a natural-language request and stream it to the panel. */

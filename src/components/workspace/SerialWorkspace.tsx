@@ -13,6 +13,7 @@ import {
 import { Badge, Button, Select } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
+import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { parseSerialProtocol } from "@/ai/tasks";
 import { SerialPlot } from "@/components/serial/SerialPlot";
@@ -272,18 +273,23 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
           {mode === "terminal" && connected && sessionId && (
-            <Terminal
-              key={sessionId}
-              sessionId={sessionId}
-              transport="serial"
-              theme={t.theme}
-              fontFamily={t.fontFamily}
-              fontSize={t.fontSize}
-              lineHeight={t.lineHeight}
-              cursorBlink={t.cursorBlink}
-              cursorStyle={t.cursorStyle}
-              scrollback={t.scrollback}
-            />
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="relative min-h-0 flex-1">
+                <Terminal
+                  key={sessionId}
+                  sessionId={sessionId}
+                  transport="serial"
+                  theme={t.theme}
+                  fontFamily={t.fontFamily}
+                  fontSize={t.fontSize}
+                  lineHeight={t.lineHeight}
+                  cursorBlink={t.cursorBlink}
+                  cursorStyle={t.cursorStyle}
+                  scrollback={t.scrollback}
+                />
+              </div>
+              <TerminalInlineAsk tab={tab} />
+            </div>
           )}
           {mode === "plot" && connected && sessionId && <SerialPlot sessionId={sessionId} />}
           {mode === "normal" && (

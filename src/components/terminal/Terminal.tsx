@@ -4,7 +4,6 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Sparkles } from "lucide-react";
 import type { ITheme } from "@xterm/xterm";
 
 import { ssh, pty, serial } from "@/lib/api";
@@ -12,8 +11,11 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { base64ToBytes, textToBase64 } from "@/lib/utils";
 import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
+import { useAppStore } from "@/store/useAppStore";
+import { scanForError } from "@/ai/errorScan";
+import { useAiSuggestion } from "@/ai/useAiSuggestion";
 import { registerTerminal, unregisterTerminal, useTerminalSelection } from "@/ai/terminalBridge";
-import { explainSelection } from "@/ai/terminalAi";
+import { SelectionMenu } from "@/ai/SelectionMenu";
 
 export interface TerminalProps {
   sessionId: string;
@@ -68,6 +70,9 @@ export function Terminal(props: TerminalProps) {
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const closedRef = useRef(false);
+  // Recent decoded output for the lightweight proactive-error scan. We keep a
+  // small tail so cross-chunk errors are still caught without scanning forever.
+  const recentRef = useRef("");
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   // Kept in a ref so a changing callback never re-runs the session effect.
@@ -158,9 +163,29 @@ export function Terminal(props: TerminalProps) {
           const bytes = base64ToBytes(chunk.data);
           if (!flushed) {
             parked.push(bytes);
-            return;
+          } else {
+            term.write(bytes);
           }
-          term.write(bytes);
+          // Proactive error hint: scan decoded output for high-signal errors and
+          // offer a dismissible "let AI fix it?" prompt. Gated by Settings → AI.
+          if (useAppStore.getState().settings.ai.errorHints) {
+            try {
+              const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+              if (text) {
+                recentRef.current = (recentRef.current + text).slice(-2000);
+                const hit = scanForError(recentRef.current);
+                if (hit) {
+                  useAiSuggestion.getState().offer({
+                    sessionId,
+                    label: hit.label,
+                    snippet: hit.snippet,
+                  });
+                }
+              }
+            } catch {
+              /* decode/scan must never break the terminal stream */
+            }
+          }
         });
         if (disposed) return void stopData();
         unlisteners.push(stopData);
@@ -252,18 +277,7 @@ export function Terminal(props: TerminalProps) {
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="h-full w-full bg-transparent" />
-      {selText.trim() && (
-        <button
-          type="button"
-          // Prevent the mousedown from clearing the xterm selection before we read it.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => explainSelection()}
-          className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-accent-fg shadow-lg hover:opacity-90"
-          title="Explain the selected text with AI"
-        >
-          <Sparkles size={12} /> Explain
-        </button>
-      )}
+      <SelectionMenu text={selText} />
     </div>
   );
 }

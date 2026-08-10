@@ -5,7 +5,7 @@ import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
 import type { AISettings, ThemeId } from "@/lib/types";
 
-export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp";
+export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial";
 
 export interface AppSettings {
   theme: ThemeId;
@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     model: "gpt-4o-mini",
     temperature: 0.3,
     terminalContext: true,
+    errorHints: true,
     useKnowledgeBase: false,
     knowledgeBasePath: "",
   },
