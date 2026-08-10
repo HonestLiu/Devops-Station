@@ -63,6 +63,16 @@ export interface RemoteFile {
   group?: string | null;
 }
 
+/** Detailed probe of a single remote file (permission editor + resume stat). */
+export interface RemoteFileMeta {
+  path: string;
+  size: number;
+  permissions: number;
+  owner?: string | null;
+  group?: string | null;
+  modified: number;
+}
+
 /** A local directory listing entry (dual-pane SFTP tab, right pane). */
 export interface LocalEntry {
   name: string;

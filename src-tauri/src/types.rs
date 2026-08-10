@@ -169,6 +169,20 @@ pub struct RemoteFile {
     pub group: Option<String>,
 }
 
+/// Detailed metadata for a single remote file — used by the permission editor
+/// and the resumable-transfer stat call. (`RemoteFile` is the directory-listing
+/// shape; this is the richer per-file probe.)
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteFileMeta {
+    pub path: String,
+    pub size: u64,
+    pub permissions: u32,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    pub modified: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Monitoring
 // ---------------------------------------------------------------------------

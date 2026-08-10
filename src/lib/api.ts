@@ -8,6 +8,7 @@ import type {
   LocalEntry,
   QuickCommand,
   RemoteFile,
+  RemoteFileMeta,
   SerialOpenConfig,
   SerialPortInfo,
   SessionClosed,
@@ -73,10 +74,51 @@ export const sftp = {
     call<void>("sftp_remove", { sessionId, path, isDir }),
   rename: (sessionId: string, from: string, to: string) =>
     call<void>("sftp_rename", { sessionId, from, to }),
-  download: (sessionId: string, remotePath: string, localPath: string, transferId: string) =>
-    call<void>("sftp_download", { sessionId, remotePath, localPath, transferId }),
-  upload: (sessionId: string, localPath: string, remoteDir: string, transferId: string) =>
-    call<string>("sftp_upload", { sessionId, localPath, remoteDir, transferId }),
+  stat: (sessionId: string, path: string) =>
+    call<RemoteFileMeta>("sftp_stat", { sessionId, path }),
+  /** Read a remote text file for inline editing (server enforces a size cap). */
+  read: (sessionId: string, remotePath: string) =>
+    call<string>("sftp_read", { sessionId, remotePath }),
+  /** Overwrite a remote file with text content. */
+  write: (sessionId: string, remotePath: string, content: string) =>
+    call<void>("sftp_write", { sessionId, remotePath, content }),
+  /** Change a remote file's mode and/or owner/group (names resolved remotely). */
+  setPerms: (
+    sessionId: string,
+    path: string,
+    permissions: number | null,
+    owner: string | null,
+    group: string | null,
+  ) =>
+    call<void>("sftp_set_perms", { sessionId, path, permissions, owner, group }),
+  download: (
+    sessionId: string,
+    remotePath: string,
+    localPath: string,
+    transferId: string,
+    offset?: number,
+  ) =>
+    call<void>("sftp_download", {
+      sessionId,
+      remotePath,
+      localPath,
+      transferId,
+      offset: offset ?? null,
+    }),
+  upload: (
+    sessionId: string,
+    localPath: string,
+    remoteDir: string,
+    transferId: string,
+    offset?: number,
+  ) =>
+    call<string>("sftp_upload", {
+      sessionId,
+      localPath,
+      remoteDir,
+      transferId,
+      offset: offset ?? null,
+    }),
 
   onProgress: (cb: (p: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>("sftp-progress", (e) => cb(e.payload)),

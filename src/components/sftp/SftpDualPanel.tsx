@@ -18,10 +18,12 @@ import {
   FolderPlus,
   HardDrive,
   Home,
+  KeyRound,
   Loader2,
   LocateFixed,
   Pencil,
   RefreshCw,
+  RotateCw,
   Server,
   Sparkles,
   Trash2,
@@ -31,6 +33,8 @@ import {
 import { sftp } from "@/lib/api";
 import { localFs } from "@/lib/api";
 import { Bar, Button } from "@/components/ui";
+import { RemoteFileEditor } from "./RemoteFileEditor";
+import { PermsDialog } from "./PermsDialog";
 import { cn, formatBytes, formatMtime, parentPath } from "@/lib/utils";
 import { explainFile, diffFiles } from "@/ai/tasks";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -87,6 +91,19 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   const dragRef = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const [osDrag, setOsDrag] = useState(false);
+
+  // --- Inline remote-file editor + permission dialog ---
+  const [editing, setEditing] = useState<{ path: string; name: string } | null>(null);
+  const [permTarget, setPermTarget] = useState<RemoteFile | null>(null);
+
+  // Remembers the source/target of each transfer so a failed one can be resumed
+  // from the last acknowledged byte offset.
+  const transferMeta = useRef<
+    Record<
+      string,
+      { kind: "up" | "down"; localPath: string; remotePath?: string; remoteDir?: string }
+    >
+  >({});
 
   const loadRemote = useCallback(
     async (p: string) => {
@@ -178,11 +195,14 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       if (p.done) {
         const tid = p.transferId;
         const side = transferSide.current[tid];
+        // Keep failed rows so the user can hit "Resume" — only clean up on success.
+        if (p.error) return;
         window.setTimeout(() => {
           setTransfers((prev) => {
             const next = { ...prev };
             delete next[tid];
             delete transferSide.current[tid];
+            delete transferMeta.current[tid];
             return next;
           });
           if (side === "remote") void loadRemote(rPathRef.current);
@@ -196,37 +216,76 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   }, [loadRemote, loadLocal]);
 
   // --- Transfers ---
-  const startUpload = (localPath: string, remoteDir: string) => {
+  const startUpload = (localPath: string, remoteDir: string, offset?: number) => {
     const id = crypto.randomUUID();
     const name = localPath.split(/[\\/]/).pop() ?? "file";
     transferSide.current[id] = "remote";
+    transferMeta.current[id] = { kind: "up", localPath, remoteDir };
     setTransfers((prev) => ({
       ...prev,
-      [id]: { transferId: id, fileName: name, transferred: 0, total: 0, done: false },
-    }));
-    void sftp.upload(sessionId, localPath, remoteDir, id).catch((e) => {
-      setTransfers((prev) => ({
-        ...prev,
-        [id]: { transferId: id, fileName: name, transferred: 0, total: 0, done: true, error: (e as Error).message },
-      }));
-    });
-  };
-
-  const startDownload = (remotePath: string, name: string, localDir: string) => {
-    const id = crypto.randomUUID();
-    transferSide.current[id] = "local";
-    setTransfers((prev) => ({
-      ...prev,
-      [id]: { transferId: id, fileName: name, transferred: 0, total: 0, done: false },
+      [id]: {
+        transferId: id,
+        fileName: name,
+        transferred: offset ?? 0,
+        total: 0,
+        done: false,
+      },
     }));
     void sftp
-      .download(sessionId, remotePath, joinLocal(localDir, name), id)
+      .upload(sessionId, localPath, remoteDir, id, offset)
       .catch((e) => {
         setTransfers((prev) => ({
           ...prev,
-          [id]: { transferId: id, fileName: name, transferred: 0, total: 0, done: true, error: (e as Error).message },
+          [id]: { ...prev[id], done: true, error: (e as Error).message },
         }));
       });
+  };
+
+  const startDownload = (remotePath: string, name: string, localDir: string, offset?: number) => {
+    const id = crypto.randomUUID();
+    transferSide.current[id] = "local";
+    transferMeta.current[id] = { kind: "down", remotePath, localPath: joinLocal(localDir, name) };
+    setTransfers((prev) => ({
+      ...prev,
+      [id]: {
+        transferId: id,
+        fileName: name,
+        transferred: offset ?? 0,
+        total: 0,
+        done: false,
+      },
+    }));
+    void sftp
+      .download(sessionId, remotePath, joinLocal(localDir, name), id, offset)
+      .catch((e) => {
+        setTransfers((prev) => ({
+          ...prev,
+          [id]: { ...prev[id], done: true, error: (e as Error).message },
+        }));
+      });
+  };
+
+  // Resume a failed transfer from the last acknowledged byte offset. Reuses the
+  // same transfer id so the existing row updates in place.
+  const resumeTransfer = (t: TransferProgress) => {
+    const meta = transferMeta.current[t.transferId];
+    if (!meta) return;
+    const offset = t.transferred;
+    const tid = t.transferId;
+    setTransfers((prev) => ({
+      ...prev,
+      [tid]: { ...prev[tid], done: false, error: null },
+    }));
+    const fail = (e: unknown) =>
+      setTransfers((prev) => ({
+        ...prev,
+        [tid]: { ...prev[tid], done: true, error: (e as Error).message },
+      }));
+    if (meta.kind === "up") {
+      void sftp.upload(sessionId, meta.localPath, meta.remoteDir!, tid, offset).catch(fail);
+    } else {
+      void sftp.download(sessionId, meta.remotePath!, meta.localPath!, tid, offset).catch(fail);
+    }
   };
 
   // --- Custom mouse drag & drop (WebView2-safe) ---
@@ -560,9 +619,15 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                       key={f.path}
                       {...rowDragProps(item, selected, !!folderHover)}
                       onDoubleClick={() =>
-                        f.isDir ? void loadRemote(f.path) : startDownload(f.path, f.name, lPathRef.current)
+                        f.isDir
+                          ? void loadRemote(f.path)
+                          : setEditing({ path: f.path, name: f.name })
                       }
-                      title={f.isDir ? "Double-click to open" : "Drag to the right side to download"}
+                      title={
+                        f.isDir
+                          ? "Double-click to open"
+                          : "Double-click to edit · drag to the right side to download"
+                      }
                     >
                       {f.isDir ? (
                         <Folder size={15} className="shrink-0 text-accent" />
@@ -587,6 +652,26 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                             <Download size={13} />
                           </button>
                         )}
+                        <button
+                          className={cn(rowActionBtn, "hover:text-accent")}
+                          title="Edit file"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditing({ path: f.path, name: f.name });
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          className={rowActionBtn}
+                          title="Permissions (chmod / chown)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPermTarget(f);
+                          }}
+                        >
+                          <KeyRound size={13} />
+                        </button>
                         <button
                           className={rowActionBtn}
                           title="Rename"
@@ -744,15 +829,50 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                 <div className="w-24 shrink-0">
                   <Bar value={pct} tone={t.error ? "danger" : "accent"} />
                 </div>
-                {t.error && (
-                  <span className="max-w-[220px] truncate text-[10px] text-danger" title={t.error}>
-                    {t.error}
-                  </span>
+                {t.error ? (
+                  <>
+                    <span className="max-w-[200px] truncate text-[10px] text-danger" title={t.error}>
+                      {t.error}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 shrink-0 px-1.5"
+                      onClick={() => resumeTransfer(t)}
+                      title="Resume from the last transferred byte"
+                    >
+                      <RotateCw size={12} /> Resume
+                    </Button>
+                  </>
+                ) : (
+                  t.done && <Check size={13} className="shrink-0 text-success" />
                 )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Inline remote-file editor */}
+      {editing && (
+        <RemoteFileEditor
+          sessionId={sessionId}
+          path={editing.path}
+          name={editing.name}
+          onClose={() => setEditing(null)}
+          onSaved={() => void loadRemote(rPathRef.current)}
+          onDownload={(p, n) => startDownload(p, n, lPathRef.current)}
+        />
+      )}
+
+      {/* Permission editor (chmod / chown) */}
+      {permTarget && (
+        <PermsDialog
+          sessionId={sessionId}
+          file={permTarget}
+          onClose={() => setPermTarget(null)}
+          onApplied={() => void loadRemote(rPathRef.current)}
+        />
       )}
     </div>
   );

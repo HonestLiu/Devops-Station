@@ -177,9 +177,10 @@ async fn sftp_download(
     remote_path: String,
     local_path: String,
     transfer_id: String,
+    offset: Option<u64>,
 ) -> AppResult<()> {
     let session = state.ssh.get(&session_id).await?;
-    ssh::sftp::download(&app, &session, &remote_path, &local_path, &transfer_id).await
+    ssh::sftp::download(&app, &session, &remote_path, &local_path, &transfer_id, offset).await
 }
 
 #[tauri::command]
@@ -190,9 +191,54 @@ async fn sftp_upload(
     local_path: String,
     remote_dir: String,
     transfer_id: String,
+    offset: Option<u64>,
 ) -> AppResult<String> {
     let session = state.ssh.get(&session_id).await?;
-    ssh::sftp::upload(&app, &session, &local_path, &remote_dir, &transfer_id).await
+    ssh::sftp::upload(&app, &session, &local_path, &remote_dir, &transfer_id, offset).await
+}
+
+#[tauri::command]
+async fn sftp_stat(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> AppResult<RemoteFileMeta> {
+    let session = state.ssh.get(&session_id).await?;
+    ssh::sftp::stat(&session, &path).await
+}
+
+#[tauri::command]
+async fn sftp_read(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+) -> AppResult<String> {
+    let session = state.ssh.get(&session_id).await?;
+    ssh::sftp::read_string(&session, &remote_path).await
+}
+
+#[tauri::command]
+async fn sftp_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+    content: String,
+) -> AppResult<()> {
+    let session = state.ssh.get(&session_id).await?;
+    ssh::sftp::write_string(&session, &remote_path, &content).await
+}
+
+#[tauri::command]
+async fn sftp_set_perms(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    permissions: Option<u32>,
+    owner: Option<String>,
+    group: Option<String>,
+) -> AppResult<()> {
+    let session = state.ssh.get(&session_id).await?;
+    ssh::sftp::set_perms(&session, &path, permissions, owner, group).await
 }
 
 // ===========================================================================
@@ -581,6 +627,10 @@ pub fn run() {
             sftp_rename,
             sftp_download,
             sftp_upload,
+            sftp_stat,
+            sftp_read,
+            sftp_write,
+            sftp_set_perms,
             remote_metrics,
             local_metrics,
             serial_list_ports,
