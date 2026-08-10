@@ -24,7 +24,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::types::PermRequest;
 
@@ -205,11 +204,7 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         } else {
             snippet2
         };
-        let _ = app2
-            .notification()
-            .builder()
-            .title(&title)
-            .body(&body)
-            .show();
+        // Attribute the OS notification to this app (see crate::notify).
+        crate::notify::show(&app2, &title, &body);
     });
 }

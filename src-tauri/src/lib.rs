@@ -6,6 +6,7 @@ mod fonts;
 mod frp;
 mod kb;
 mod local_fs;
+mod notify;
 mod perm;
 mod pty;
 mod serial;
@@ -583,8 +584,14 @@ fn db_set_setting(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+            .plugin(tauri_plugin_notification::init())
+            .setup(|app| {
+            // Ensure OS notifications are attributed to this app (not
+            // "Windows PowerShell") by registering our Start Menu shortcut +
+            // AUMID on Windows. Safe no-op on other platforms / release builds
+            // that already ship the shortcut via the installer.
+            crate::notify::register_aumid();
+
             let data_dir = app
                 .path()
                 .app_data_dir()
