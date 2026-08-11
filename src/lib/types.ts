@@ -30,6 +30,8 @@ export interface Host {
   tags: string[];
   lastUsed?: number | null;
   createdAt?: number | null;
+  /** Last write time (unix seconds) — used by export/import and future sync. */
+  updatedAt?: number | null;
 }
 
 export interface SshConnectConfig {
@@ -174,6 +176,8 @@ export interface QuickCommand {
   scope: "ssh" | "serial" | "both";
   isHex: boolean;
   sortOrder: number;
+  /** Last write time (unix seconds) — used by export/import and future sync. */
+  updatedAt?: number | null;
 }
 
 export interface StreamChunk {
@@ -468,4 +472,40 @@ export interface PermRequest {
   snippet: string;
   /** Unix epoch millis when detected. */
   ts: number;
+}
+
+// --- J-Link (SEGGER debug probe) ---------------------------------------------
+
+/** Target connection settings for J-Link operations. */
+export interface JLinkConfig {
+  /** Device name as understood by J-Link, e.g. "STM32F103C8". */
+  device: string;
+  /** Transport: "SWD" (default) or "JTAG". */
+  iface: "SWD" | "JTAG";
+  /** Interface speed in kHz; 0 means "auto". */
+  speed: number;
+}
+
+/** Result of any J-Link operation (one-shot or GDB server control). */
+export interface JLinkResponse {
+  success: boolean;
+  output: string;
+}
+
+/** Summary returned after exporting the unified data profile. */
+export interface ProfileExportInfo {
+  path: string;
+  hosts: number;
+  quickCommands: number;
+  settings: number;
+  includeSecrets: boolean;
+  exportedAt: string;
+}
+
+/** Summary returned after importing a data profile. */
+export interface ProfileImportInfo {
+  hosts: number;
+  quickCommands: number;
+  settings: number;
+  mode: string;
 }

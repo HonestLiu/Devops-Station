@@ -5,6 +5,7 @@ mod ble;
 mod error;
 mod fonts;
 mod frp;
+mod jlink;
 mod kb;
 mod local_fs;
 mod notify;
@@ -14,11 +15,13 @@ mod serial;
 mod ssh;
 mod storage;
 mod stream;
+mod sync;
 mod system;
 mod types;
 mod wsl;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
 use ble::BleManager;
@@ -26,7 +29,7 @@ use error::{AppError, AppResult};
 use pty::PtyManager;
 use serial::SerialManager;
 use ssh::{metrics::MetricsCache, SshManager};
-use storage::Store;
+use storage::{ProfileExportInfo, ProfileImportInfo, Store};
 use stream::Attached;
 use system::LocalMonitor;
 use types::*;
@@ -639,6 +642,49 @@ fn db_set_setting(
     state.store.set_setting(&key, &value)
 }
 
+#[tauri::command]
+fn profile_export(
+    state: State<'_, AppState>,
+    path: String,
+    include_secrets: bool,
+) -> AppResult<ProfileExportInfo> {
+    state.store.export_profile(
+        Path::new(&path),
+        include_secrets,
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+
+#[tauri::command]
+fn profile_import(
+    state: State<'_, AppState>,
+    path: String,
+    mode: String,
+) -> AppResult<ProfileImportInfo> {
+    state.store.import_profile(Path::new(&path), &mode)
+}
+
+#[tauri::command]
+async fn sync_test(cfg: sync::SyncConfig) -> AppResult<sync::SyncTestResult> {
+    sync::sync_test(cfg).await
+}
+
+#[tauri::command]
+async fn sync_push(
+    state: State<'_, AppState>,
+    cfg: sync::SyncConfig,
+) -> AppResult<sync::SyncPushResult> {
+    sync::sync_push(cfg, &state.store).await
+}
+
+#[tauri::command]
+async fn sync_pull(
+    state: State<'_, AppState>,
+    cfg: sync::SyncConfig,
+) -> AppResult<sync::SyncPullResult> {
+    sync::sync_pull(cfg, &state.store).await
+}
+
 // ===========================================================================
 // Bootstrap
 // ===========================================================================
@@ -753,6 +799,17 @@ pub fn run() {
             local_fs::local_list,
             local_fs::reveal_path,
             local_fs::open_path,
+            jlink::jlink_available,
+            jlink::jlink_connect,
+            jlink::jlink_reset,
+            jlink::jlink_read_mem,
+            jlink::jlink_write_mem,
+            jlink::jlink_erase,
+            jlink::jlink_program,
+            jlink::jlink_gdb_start,
+            jlink::jlink_gdb_stop,
+            jlink::jlink_gdb_running,
+            jlink::jlink_devices,
             db_list_hosts,
             db_save_host,
             db_delete_host,
@@ -761,6 +818,11 @@ pub fn run() {
             db_delete_quick_command,
             db_get_settings,
             db_set_setting,
+            profile_export,
+            profile_import,
+            sync_test,
+            sync_push,
+            sync_pull,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DevOps Station");

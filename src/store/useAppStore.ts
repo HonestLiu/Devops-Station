@@ -5,7 +5,7 @@ import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
 import type { AISettings, ThemeId } from "@/lib/types";
 
-export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial";
+export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink";
 
 export interface AppSettings {
   theme: ThemeId;
@@ -21,6 +21,8 @@ export interface AppSettings {
   confirmOnClose: boolean;
   /** Default shell for Local Shell tabs. "default" uses the OS login shell. */
   localShell: string;
+  /** Custom path to the J-Link executable (JLink.exe / JLinkExe). Empty = auto-detect. */
+  jlinkPath: string;
   ai: AISettings;
   /** Families of user-imported fonts, re-registered at startup. */
   importedFonts: string[];
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metricsInterval: 2000,
   confirmOnClose: true,
   localShell: "default",
+  jlinkPath: "",
   importedFonts: [],
   ai: {
     provider: "openai",

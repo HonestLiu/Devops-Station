@@ -24,7 +24,14 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use serde::Serialize;
+
+/// Windows process creation flag: run without allocating a console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 use crate::wsl::device_filter;
 use crate::wsl::parser::{self, Section};
@@ -73,10 +80,13 @@ struct Captured {
 /// cannot leak a thread or a zombie process. Returns `Err` on spawn failure,
 /// timeout, or child crash.
 fn run_captured(program: &str, args: &[&str], timeout: Duration) -> Result<Captured, String> {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("无法运行 {program}：{e}"))?;
 

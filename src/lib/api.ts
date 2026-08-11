@@ -26,6 +26,10 @@ import type {
   FrpLaunchConfig,
   AIProviderConfig,
   AIChatMessage,
+  JLinkConfig,
+  JLinkResponse,
+  ProfileExportInfo,
+  ProfileImportInfo,
 } from "./types";
 
 /**
@@ -351,4 +355,49 @@ export const localFs = {
   list: (path: string) => call<LocalEntry[]>("local_list", { path }),
   reveal: (path: string) => call<void>("reveal_path", { path }),
   open: (path: string) => call<void>("open_path", { path }),
+};
+
+// --- J-Link (SEGGER debug probe) -------------------------------------------
+
+/** Normalize an optional custom J-Link path: blank → undefined (auto-detect). */
+function jlinkExe(v?: string): string | undefined {
+  return v && v.trim() ? v.trim() : undefined;
+}
+
+export const jlink = {
+  available: (exePath?: string) =>
+    call<boolean>("jlink_available", { exePath: jlinkExe(exePath) }),
+  /** List every device supported by the installed J-Link driver. */
+  devices: (exePath?: string) =>
+    call<string[]>("jlink_devices", { exePath: jlinkExe(exePath) }),
+  connect: (config: JLinkConfig, exePath?: string) =>
+    call<JLinkResponse>("jlink_connect", { config, exePath: jlinkExe(exePath) }),
+  reset: (config: JLinkConfig, mode: "reset" | "halt" | "go", exePath?: string) =>
+    call<JLinkResponse>("jlink_reset", { config, mode, exePath: jlinkExe(exePath) }),
+  readMem: (config: JLinkConfig, addr: string, len: number, exePath?: string) =>
+    call<JLinkResponse>("jlink_read_mem", { config, addr, len, exePath: jlinkExe(exePath) }),
+  writeMem: (config: JLinkConfig, addr: string, data: string, exePath?: string) =>
+    call<JLinkResponse>("jlink_write_mem", { config, addr, data, exePath: jlinkExe(exePath) }),
+  erase: (config: JLinkConfig, exePath?: string) =>
+    call<JLinkResponse>("jlink_erase", { config, exePath: jlinkExe(exePath) }),
+  program: (config: JLinkConfig, file: string, addr?: string, exePath?: string) =>
+    call<JLinkResponse>("jlink_program", { config, file, addr, exePath: jlinkExe(exePath) }),
+  gdbStart: (config: JLinkConfig, port: number, exePath?: string) =>
+    call<JLinkResponse>("jlink_gdb_start", { config, port, exePath: jlinkExe(exePath) }),
+  gdbStop: () => call<JLinkResponse>("jlink_gdb_stop"),
+  gdbRunning: () => call<boolean>("jlink_gdb_running"),
+  /** Subscribe to J-Link GDB Server log lines. */
+  onGdbLog: (cb: (line: string) => void): Promise<UnlistenFn> =>
+    listen<string>("jlink-gdb-log", (e) => cb(e.payload)),
+};
+
+// --- Unified data profile (export / import / future sync) -------------------
+
+export const profile = {
+  /** Write settings + hosts + quick commands to one versioned JSON file. */
+  export: (path: string, includeSecrets: boolean) =>
+    call<ProfileExportInfo>("profile_export", { path, includeSecrets }),
+  /** Apply a profile file. mode: "merge" (upsert) or "replace" (wipe first). */
+  import: (path: string, mode: "merge" | "replace") =>
+    call<ProfileImportInfo>("profile_import", { path, mode }),
 };

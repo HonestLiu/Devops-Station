@@ -1,8 +1,11 @@
+import { useState } from "react";
 import {
   Activity,
   Cable,
   FolderOpen,
+  Info,
   LayoutDashboard,
+  Microchip,
   Server,
   Settings,
   TerminalSquare,
@@ -12,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { NotificationBell } from "./NotificationBell";
+import { AboutDialog } from "./AboutDialog";
 
 interface NavItem {
   id: Page;
@@ -26,6 +30,7 @@ const NAV: NavItem[] = [
   { id: "monitoring", label: "Monitoring", icon: Activity },
   { id: "sftp", label: "SFTP", icon: FolderOpen },
   { id: "serial", label: "Serial", icon: Cable },
+  { id: "jlink", label: "J-Link", icon: Microchip },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -41,6 +46,8 @@ export function Sidebar() {
 
   const tabs = useTabsStore((s) => s.tabs);
   const focusPage = useTabsStore((s) => s.focusPage);
+
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const go = (id: Page) => {
     setPage(id);
@@ -82,37 +89,44 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Quick actions */}
-      <div className="flex flex-col gap-1.5 px-2 pb-3">
-        <p className="mb-0.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle select-none">
-          Tools
-        </p>
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+
+      {/* Bottom cluster: utility actions + connection status */}
+      <div className="flex flex-col gap-0.5 border-t border-border/70 px-2 py-2">
         <button
           onClick={() => togglePalette()}
-          className="no-drag flex items-center justify-between rounded-lg border border-border/70 bg-elevated px-2.5 py-2 text-[12px] text-muted transition-colors hover:bg-hover"
+          className="no-drag flex items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg"
         >
-          <span className="flex items-center gap-2">
-            <TerminalSquare size={14} />
+          <span className="flex items-center gap-2.5">
+            <TerminalSquare size={16} strokeWidth={2} />
             Command Palette
           </span>
           <span className="rounded-full bg-bg px-1.5 py-0.5 font-mono text-[10px] text-subtle">
             {paletteShortcut}
           </span>
         </button>
-      </div>
 
-      <div className="flex items-center gap-2 border-t border-border/70 px-3 py-2.5 select-none">
-        <span
-          className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            tabs.length > 0 ? "bg-success" : "bg-subtle",
-          )}
-        />
-        <span className="text-[10px] text-subtle">
-          {tabs.length} connection{tabs.length === 1 ? "" : "s"} open
-        </span>
-        <div className="ml-auto">
-          <NotificationBell />
+        <button
+          onClick={() => setAboutOpen(true)}
+          className="no-drag flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg"
+        >
+          <Info size={16} strokeWidth={2} />
+          About
+        </button>
+
+        <div className="flex items-center gap-2 px-1 pt-1.5 select-none">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              tabs.length > 0 ? "bg-success" : "bg-subtle",
+            )}
+          />
+          <span className="text-[10px] text-subtle">
+            {tabs.length} connection{tabs.length === 1 ? "" : "s"} open
+          </span>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </div>
       </div>
     </aside>

@@ -102,6 +102,10 @@ pub struct Host {
     pub last_used: Option<i64>,
     #[serde(default)]
     pub created_at: Option<i64>,
+    /// Last write time (unix seconds). Kept for export/import and future sync
+    /// (last-write-wins merge).
+    #[serde(default)]
+    pub updated_at: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +342,9 @@ pub struct QuickCommand {
     pub is_hex: bool,
     #[serde(default)]
     pub sort_order: i64,
+    /// Last write time (unix seconds). Kept for export/import and future sync.
+    #[serde(default)]
+    pub updated_at: Option<i64>,
 }
 
 fn default_scope() -> String {

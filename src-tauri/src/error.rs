@@ -88,3 +88,9 @@ impl From<serde_json::Error> for AppError {
         AppError::Other(e.to_string())
     }
 }
+
+impl From<reqwest::Error> for AppError {
+    fn from(e: reqwest::Error) -> Self {
+        AppError::Other(e.to_string())
+    }
+}

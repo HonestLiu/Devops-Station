@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Cable,
   FolderOpen,
+  Microchip,
   MonitorSmartphone,
   Server,
   Settings as SettingsIcon,
@@ -19,6 +20,7 @@ import { Monitoring } from "./pages/Monitoring";
 import { Settings } from "./pages/Settings";
 import { SftpPage } from "./pages/SftpPage";
 import { SerialPage } from "./pages/SerialPage";
+import { JLinkPage } from "./pages/JLinkPage";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
@@ -50,6 +52,8 @@ function PageContent({ page }: { page: Page }) {
       return <SftpPage />;
     case "serial":
       return <SerialPage />;
+    case "jlink":
+      return <JLinkPage />;
   }
 }
 
@@ -109,6 +113,15 @@ export default function App() {
         onClick: () => {
           closeCtx();
           setPageCtx("serial");
+        },
+      },
+      {
+        id: "jlink",
+        label: "打开 J-Link",
+        icon: <Microchip size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("jlink");
         },
       },
       {

@@ -6,7 +6,14 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use serde::Serialize;
+
+/// Windows process creation flag: run without allocating a console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,10 +148,12 @@ pub fn open_path(path: String) -> Result<(), String> {
         {
             // `start` opens the file with its default association. The empty ""
             // is the required window-title placeholder; the quoted path survives
-            // spaces.
-            std::process::Command::new("cmd")
-                .args(["/c", "start", "", &format!("\"{}\"", path)])
-                .status()
+            // spaces. CREATE_NO_WINDOW suppresses the cmd.exe console flash.
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/c", "start", "", &format!("\"{}\"", path)]);
+            #[cfg(windows)]
+            c.creation_flags(CREATE_NO_WINDOW);
+            c.status()
         }
         #[cfg(target_os = "macos")]
         {

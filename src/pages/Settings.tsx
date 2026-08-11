@@ -1,11 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { Check, RotateCcw, Type } from "lucide-react";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
+import { Check, Download, RotateCcw, Type, Upload } from "lucide-react";
 
 import { Button, Checkbox, Field, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
+import { profile } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
 import { useAppStore } from "@/store/useAppStore";
+import { useHostsStore } from "@/store/useHostsStore";
 import type { AppSettings } from "@/store/useAppStore";
 import type { AIProviderKind, AISettings, ThemeId } from "@/lib/types";
 
@@ -34,6 +37,68 @@ export function Settings() {
 
   const setAi = <K extends keyof AISettings>(k: K, v: AISettings[K]) =>
     void updateSetting("ai", { ...settings.ai, [k]: v });
+
+  // --- Data export / import ------------------------------------------------
+  const [includeSecrets, setIncludeSecrets] = useState(false);
+  const [dataBusy, setDataBusy] = useState(false);
+  const [dataStatus, setDataStatus] = useState("");
+
+  const doExport = async () => {
+    setDataBusy(true);
+    setDataStatus("");
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const picked = await save({
+        title: "导出数据",
+        defaultPath: `devops-station-profile-${stamp}.json`,
+        filters: [{ name: "DevOps Station Profile", extensions: ["json"] }],
+      });
+      if (!picked) return;
+      const info = await profile.export(picked, includeSecrets);
+      setDataStatus(
+        `已导出 ${info.hosts} 个主机、${info.quickCommands} 条快捷命令、${info.settings} 项设置` +
+          (info.includeSecrets ? "（含密码明文）" : "") +
+          ` → ${info.path}`,
+      );
+    } catch (err) {
+      setDataStatus(`导出失败：${String(err)}`);
+    } finally {
+      setDataBusy(false);
+    }
+  };
+
+  const doImport = async (mode: "merge" | "replace") => {
+    setDataBusy(true);
+    setDataStatus("");
+    try {
+      const picked = await open({
+        multiple: false,
+        filters: [{ name: "DevOps Station Profile", extensions: ["json"] }],
+      });
+      const file = Array.isArray(picked) ? picked[0] : picked;
+      if (!file) return;
+      if (mode === "replace") {
+        const ok = await confirm(
+          "替换导入会清空当前所有主机、快捷命令与设置，且不可撤销。确定继续？",
+          { title: "替换导入", kind: "warning" },
+        );
+        if (!ok) return;
+      }
+      const info = await profile.import(file, mode);
+      // Reflect imported data immediately in every store.
+      await Promise.all([
+        useAppStore.getState().loadSettings(),
+        useHostsStore.getState().load(),
+      ]);
+      setDataStatus(
+        `已${mode === "replace" ? "替换" : "合并"}导入 ${info.hosts} 个主机、${info.quickCommands} 条快捷命令、${info.settings} 项设置`,
+      );
+    } catch (err) {
+      setDataStatus(`导入失败：${String(err)}`);
+    } finally {
+      setDataBusy(false);
+    }
+  };
 
   return (
     <div className="page">
@@ -287,6 +352,99 @@ export function Settings() {
               )}
             </Select>
           </Field>
+        </Section>
+
+        {/* J-Link */}
+        <Section title="J-Link">
+          <Field
+            label="J-Link 可执行文件路径"
+            hint="留空则自动检测（默认安装目录 / 系统 PATH）。可指定 JLink.exe / JLinkExe 的完整路径，用于多版本共存或自定义安装位置。"
+            className="sm:col-span-2"
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                value={settings.jlinkPath}
+                onChange={(e) => set("jlinkPath", e.target.value)}
+                placeholder={
+                  isWindows
+                    ? "如 C:\\Program Files (x86)\\SEGGER\\JLink\\JLink.exe"
+                    : "/opt/SEGGER/JLink/JLinkExe"
+                }
+                className="font-mono text-[12px]"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  const picked = await open({
+                    multiple: false,
+                    filters: isWindows
+                      ? [{ name: "J-Link Executable", extensions: ["exe"] }]
+                      : undefined,
+                  });
+                  if (typeof picked === "string" && picked) {
+                    set("jlinkPath", picked);
+                  }
+                }}
+              >
+                浏览…
+              </Button>
+            </div>
+          </Field>
+        </Section>
+
+        {/* Data */}
+        <Section title="数据管理 (Data)">
+          <Field
+            label="导出"
+            hint="将设置、主机与快捷命令打包为一个 JSON 数据文件，便于备份、迁移与后续同步。"
+            className="sm:col-span-2"
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Checkbox
+                label="包含已保存的密码等敏感信息（明文写入文件）"
+                checked={includeSecrets}
+                onChange={setIncludeSecrets}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={dataBusy}
+                onClick={() => void doExport()}
+              >
+                <Download size={14} /> 导出数据…
+              </Button>
+            </div>
+          </Field>
+          <Field
+            label="导入"
+            hint="合并：保留现有数据并按 ID 覆盖；替换：清空后整体导入（需二次确认）。导入后立即生效。"
+            className="sm:col-span-2"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={dataBusy}
+                onClick={() => void doImport("merge")}
+              >
+                <Upload size={14} /> 合并导入…
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={dataBusy}
+                onClick={() => void doImport("replace")}
+              >
+                <Upload size={14} /> 替换导入…
+              </Button>
+            </div>
+          </Field>
+          {dataStatus && (
+            <p className="break-all font-mono text-[11px] text-subtle sm:col-span-2">
+              {dataStatus}
+            </p>
+          )}
         </Section>
       </div>
     </div>
