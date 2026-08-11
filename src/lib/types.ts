@@ -137,6 +137,36 @@ export interface SerialOpenConfig {
   flowControl: "none" | "software" | "hardware";
 }
 
+/** One peripheral seen during a BLE discovery window. */
+export interface BleDeviceInfo {
+  /** Backend handle id — pass this to `ble.open`. */
+  id: string;
+  /** Advertised local name; empty for nameless beacons. */
+  name: string;
+  address: string;
+  /** Signal strength in dBm when the adapter reports one. */
+  rssi?: number | null;
+  services: string[];
+  connected: boolean;
+}
+
+/**
+ * GATT serial-bridge profile plus target device. UUIDs accept 16-bit ("FFE0"),
+ * 32-bit or full 128-bit forms — see `lib/bleGatt.ts`.
+ */
+export interface BleOpenConfig {
+  hostId?: string;
+  deviceId: string;
+  deviceName?: string;
+  service: string;
+  /** Host -> device characteristic. */
+  writeCharacteristic: string;
+  /** Device -> host characteristic; omit for a write-only link. */
+  notifyCharacteristic?: string;
+  /** Bytes per GATT write; defaults to the 20-byte unnegotiated ATT payload. */
+  chunkSize?: number;
+}
+
 export interface QuickCommand {
   id: string;
   name: string;
@@ -182,7 +212,7 @@ export interface TransferProgress {
 
 export type ThemeId = "tokyo-night" | "dark" | "light" | "nord" | "dracula";
 
-export type TabKind = "ssh" | "serial" | "local" | "wsl" | "frp" | "sftp";
+export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp";
 
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -209,6 +239,8 @@ export interface Tab {
   fingerprint?: string;
   /** Serial only */
   serial?: SerialOpenConfig;
+  /** BLE only — the GATT profile + device, kept so Reconnect can re-open it. */
+  ble?: BleOpenConfig;
   /** WSL only — kept so Reconnect can respawn with the same distro/user. */
   wsl?: WslLaunchConfig;
   /** Frp only — kept so Reconnect can respawn the same tunnel. */

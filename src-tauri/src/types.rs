@@ -280,6 +280,48 @@ fn default_flow() -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Bluetooth Low Energy
+// ---------------------------------------------------------------------------
+
+/// One peripheral seen during a BLE discovery window.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BleDeviceInfo {
+    /// btleplug's per-adapter handle id — what `ble_open` expects.
+    pub id: String,
+    /// Advertised local name; empty for nameless beacons.
+    pub name: String,
+    pub address: String,
+    /// Signal strength in dBm, when the backend reports one.
+    pub rssi: Option<i16>,
+    /// Advertised service UUIDs, lowercase 128-bit form.
+    pub services: Vec<String>,
+    pub connected: bool,
+}
+
+/// GATT serial-bridge profile plus the target device.
+///
+/// UUIDs accept 16-bit ("FFE0" / "0xFFE0"), 32-bit or full 128-bit forms.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BleOpenConfig {
+    #[serde(default)]
+    pub host_id: Option<String>,
+    pub device_id: String,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    pub service: String,
+    /// Host -> device characteristic.
+    pub write_characteristic: String,
+    /// Device -> host characteristic. Omit for a write-only link.
+    #[serde(default)]
+    pub notify_characteristic: Option<String>,
+    /// Bytes per GATT write; defaults to the 20-byte unnegotiated ATT payload.
+    #[serde(default)]
+    pub chunk_size: Option<usize>,
+}
+
+// ---------------------------------------------------------------------------
 // Quick commands / settings
 // ---------------------------------------------------------------------------
 

@@ -1,8 +1,10 @@
 import { create } from "zustand";
 
-import { frp, pty, serial, ssh, wsl } from "@/lib/api";
+import { ble, frp, pty, serial, ssh, wsl } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
+import { useHostsStore } from "@/store/useHostsStore";
 import type {
+  BleOpenConfig,
   FrpConfig,
   FrpLaunchConfig,
   Host,
@@ -33,6 +35,8 @@ interface TabsState {
 
   openSsh: (config: SshConnectConfig, title?: string) => Promise<string>;
   openSerial: (config: SerialOpenConfig, title?: string) => Promise<string>;
+  /** BLE transparent-transmission session — same workspace as serial. */
+  openBle: (config: BleOpenConfig, title?: string) => Promise<string>;
   openLocal: (cwd?: string) => Promise<string>;
   openWsl: (config: WslLaunchConfig, title?: string) => Promise<string>;
   openFrp: (config: FrpLaunchConfig, title?: string) => Promise<string>;
@@ -49,6 +53,9 @@ interface TabsState {
 
   /** Jump to whichever tab/pane owns `sessionId` (used by the notif bell). */
   focusBySession: (sessionId: string) => void;
+
+  /** Re-open a fresh tab of the same kind using the cached connect config. */
+  duplicateTab: (id: string) => Promise<void>;
 
   reconnect: (id: string) => Promise<void>;
 }
@@ -82,7 +89,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         ? ssh.disconnect
         : tab?.kind === "serial"
           ? serial.close
-          : pty.close;
+          : tab?.kind === "ble"
+            ? ble.close
+            : pty.close;
     // Tear down the focused session plus every split-pane session.
     const sessions = [
       tab?.sessionId,
@@ -209,6 +218,34 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
     try {
       const sessionId = await serial.open(config);
+      get().patch(id, { status: "connected", sessionId });
+    } catch (err) {
+      get().patch(id, { status: "error", error: (err as Error).message });
+    }
+    return id;
+  },
+
+  openBle: async (config, title) => {
+    const id = nextId();
+    const label = title || config.deviceName || config.deviceId;
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        {
+          id,
+          kind: "ble",
+          title: label,
+          subtitle: "BLE",
+          status: "connecting",
+          hostId: config.hostId,
+          ble: config,
+        },
+      ],
+      activeId: id,
+    }));
+
+    try {
+      const sessionId = await ble.open(config);
       get().patch(id, { status: "connected", sessionId });
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
@@ -363,8 +400,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   splitPane: async (tabId, axis) => {
     const tab = get().tabs.find((t) => t.id === tabId);
-    // Split works for the terminal kinds (serial/sftp excluded).
-    if (!tab || tab.kind === "serial" || tab.kind === "sftp") return;
+    // Split works for the terminal kinds (serial/ble/sftp excluded).
+    if (!tab || tab.kind === "serial" || tab.kind === "ble" || tab.kind === "sftp") return;
     if (tab.kind === "ssh" && !tab.sshConfig) return;
     if (tab.kind === "wsl" && !tab.wsl) return;
     if (tab.kind === "frp" && !tab.frp) return;
@@ -419,7 +456,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           ? ssh.disconnect
           : tab.kind === "serial"
             ? serial.close
-            : pty.close;
+            : tab.kind === "ble"
+              ? ble.close
+              : pty.close;
       teardown(pane.sessionId).catch(() => undefined);
     }
 
@@ -457,6 +496,36 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     }
   },
 
+  duplicateTab: async (id) => {
+    const tab = get().tabs.find((t) => t.id === id);
+    if (!tab) return;
+    switch (tab.kind) {
+      case "ssh":
+        if (tab.sshConfig) return void get().openSsh(tab.sshConfig, tab.title);
+        break;
+      case "serial":
+        if (tab.serial) return void get().openSerial(tab.serial, tab.title);
+        break;
+      case "ble":
+        if (tab.ble) return void get().openBle(tab.ble, tab.title);
+        break;
+      case "local":
+        return void get().openLocal(tab.cwd);
+      case "wsl":
+        if (tab.wsl) return void get().openWsl(tab.wsl, tab.title);
+        break;
+      case "frp":
+        if (tab.frp) return void get().openFrp(tab.frp, tab.title);
+        break;
+      case "sftp": {
+        const host = useHostsStore.getState().hosts.find((h) => h.id === tab.hostId);
+        if (host) return void get().openSftp(host, tab.title);
+        if (tab.sftpConfig) return void get().openSsh(tab.sftpConfig, tab.title);
+        break;
+      }
+    }
+  },
+
   reconnect: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab) return;
@@ -470,6 +539,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       };
       if (tab.kind === "serial" && tab.serial) {
         const sessionId = await serial.open(tab.serial);
+        get().patch(id, { status: "connected", sessionId });
+      } else if (tab.kind === "ble" && tab.ble) {
+        // The backend re-scans when its peripheral cache is cold, so this also
+        // works after the device has drifted out of range and come back.
+        const sessionId = await ble.open(tab.ble);
         get().patch(id, { status: "connected", sessionId });
       } else if (tab.kind === "local") {
         get().patch(id, { status: "connected", sessionId: syncPane(await pty.spawn(120, 32)) });

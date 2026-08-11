@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { Event, UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import {
@@ -31,6 +31,7 @@ import {
 } from "@/lib/utils";
 import type { RemoteFile, TransferProgress } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
+import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 
 // `open`/`save` resolve to real local filesystem paths inside Tauri. In a bare
 // browser preview they reject, which we catch and surface as a hint.
@@ -132,7 +133,7 @@ export function SftpPanel({
     }
   }, [remoteCwd, autoFollow, load]);
 
-  // Transfer progress �? reload the listing when a transfer finishes.
+  // Transfer progress �? reload the listing when a transfer finishes.
   useEffect(() => {
     const un = sftp.onProgress((p) => {
       setTransfers((prev) => ({ ...prev, [p.transferId]: p }));
@@ -264,7 +265,77 @@ export function SftpPanel({
     }
   };
 
-  const [menu, setMenu] = useState<{ x: number; y: number; file: RemoteFile } | null>(null);
+  const showCtx = useContextMenu((s) => s.show);
+  const closeCtx = useContextMenu((s) => s.close);
+
+  const onFileContextMenu = (e: ReactMouseEvent, f: RemoteFile) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items: MenuItem[] = [
+      ...(f.isDir
+        ? []
+        : [
+            {
+              id: "download",
+              label: "下载",
+              icon: <Download size={14} />,
+              onClick: () => {
+                closeCtx();
+                void download(f);
+              },
+            },
+          ]),
+      {
+        id: "rename",
+        label: "重命名",
+        icon: <Pencil size={14} />,
+        onClick: () => {
+          closeCtx();
+          void doRename(f);
+        },
+      },
+      {
+        id: "delete",
+        label: "删除",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => {
+          closeCtx();
+          void doDelete(f);
+        },
+      },
+      { id: "sep", separator: true, label: "" },
+      {
+        id: "upload",
+        label: "上传到此处",
+        icon: <Upload size={14} />,
+        onClick: () => {
+          closeCtx();
+          void uploadHere();
+        },
+      },
+      {
+        id: "new-folder",
+        label: "新建文件夹",
+        icon: <FolderPlus size={14} />,
+        onClick: () => {
+          closeCtx();
+          void newFolder();
+        },
+      },
+      {
+        id: "refresh",
+        label: "刷新",
+        icon: <RefreshCw size={14} />,
+        onClick: () => {
+          closeCtx();
+          void load(path);
+        },
+      },
+    ];
+    showCtx(e.clientX, e.clientY, items);
+  };
+
   const [dragActive, setDragActive] = useState(false);
 
   // Drag-and-drop upload. Tauri dispatches a window-level drag-drop event while
@@ -398,7 +469,7 @@ export function SftpPanel({
       {/* File list */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading && files.length === 0 ? (
-          <p className="p-4 text-[12px] text-subtle">Loading�?</p>
+          <p className="p-4 text-[12px] text-subtle">Loading�?</p>
         ) : error ? (
           <p className="p-4 text-[12px] text-danger">{error}</p>
         ) : (
@@ -409,10 +480,7 @@ export function SftpPanel({
                   key={f.path}
                   onClick={() => setSelected(f.path === selected ? undefined : f.path)}
                   onDoubleClick={() => (f.isDir ? navigate(f.path) : void download(f))}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setMenu({ x: e.clientX, y: e.clientY, file: f });
-                  }}
+                  onContextMenu={(e) => onFileContextMenu(e, f)}
                   className={cn(
                     "group cursor-pointer border-b border-border/50 hover:bg-hover",
                     selected === f.path && "bg-accent/10",
@@ -504,62 +572,6 @@ export function SftpPanel({
             );
           })}
         </div>
-      )}
-
-      {menu && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu(null);
-            }}
-          />
-          <div
-            className="fixed z-50 min-w-[140px] overflow-hidden rounded-md border border-border bg-elevated py-1 shadow-lg"
-            style={{ left: menu.x, top: menu.y }}
-          >
-            {!menu.file.isDir && (
-              <button
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-fg hover:bg-hover"
-                onClick={() => {
-                  setMenu(null);
-                  void download(menu.file);
-                }}
-              >
-                <Download size={13} /> Download
-              </button>
-            )}
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-fg hover:bg-hover"
-              onClick={() => {
-                setMenu(null);
-                void doRename(menu.file);
-              }}
-            >
-              <Pencil size={13} /> Rename
-            </button>
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-danger hover:bg-hover"
-              onClick={() => {
-                setMenu(null);
-                void doDelete(menu.file);
-              }}
-            >
-              <Trash2 size={13} /> Delete
-            </button>
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-fg hover:bg-hover"
-              onClick={() => {
-                setMenu(null);
-                void uploadHere();
-              }}
-            >
-              <Upload size={13} /> Upload here
-            </button>
-          </div>
-        </>
       )}
     </div>
   );

@@ -1,25 +1,46 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ITheme } from "@xterm/xterm";
+import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "lucide-react";
 
-import { ssh, pty, serial } from "@/lib/api";
+import { ssh, pty } from "@/lib/api";
+import { dataLink } from "@/lib/dataLink";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { base64ToBytes, textToBase64 } from "@/lib/utils";
 import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
+import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { scanForError } from "@/ai/errorScan";
 import { useAiSuggestion } from "@/ai/useAiSuggestion";
+import { useAiComposer } from "@/ai/useAiComposer";
+import { EXPLAIN_SYSTEM, FIX_SYSTEM, GENERATE_SYSTEM, writeToTerminal } from "@/ai/terminalAi";
+import { SNIPPET_GROUPS } from "@/ai/TerminalInlineAsk";
 import { registerTerminal, unregisterTerminal, useTerminalSelection } from "@/ai/terminalBridge";
 import { SelectionMenu } from "@/ai/SelectionMenu";
 
+// Snippets submenu — mirrors the "Snippets" flyout in the terminal's AI bar. Each
+// group becomes its own nested submenu (e.g. "Snippets → Git → <command>") so the
+// top-level entry stays short. Every command is *inserted* into the active
+// terminal for review (not auto-run), via the same `writeToTerminal(cmd, false)`
+// path the flyout uses.
+const SNIPPET_MENU: MenuItem[] = SNIPPET_GROUPS.map((g) => ({
+  id: `snip-group-${g.group}`,
+  label: g.group,
+  submenu: g.items.map((it) => ({
+    id: `snip-${g.group}-${it.label}`,
+    label: it.label,
+    onClick: () => writeToTerminal(it.cmd, false),
+  })),
+}));
+
 export interface TerminalProps {
   sessionId: string;
-  transport: "ssh" | "pty" | "serial";
+  transport: "ssh" | "pty" | "serial" | "ble";
   theme: ITheme;
   fontFamily: string;
   fontSize: number;
@@ -119,6 +140,108 @@ export function Terminal(props: TerminalProps) {
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
 
+  // Right-click menu: copy / paste / select-all / clear, operating directly on the
+  // xterm instance. stopPropagation keeps the app-level default menu from also
+  // firing (and we still preventDefault to kill the native OS menu).
+  const showCtx = useContextMenu((s) => s.show);
+  const closeCtx = useContextMenu((s) => s.close);
+  const onTermContextMenu = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const term = termRef.current;
+    if (!term) return;
+    const sel = (term.getSelection() ?? "").trim();
+    const items: MenuItem[] = [
+      {
+        id: "copy",
+        label: "复制",
+        icon: <Copy size={14} />,
+        disabled: !term.hasSelection(),
+        onClick: () => {
+          const sel = term.getSelection();
+          if (sel) navigator.clipboard?.writeText(sel).catch(() => undefined);
+        },
+      },
+      {
+        id: "paste",
+        label: "粘贴",
+        icon: <ClipboardPaste size={14} />,
+        onClick: () => {
+          navigator.clipboard?.readText().then((t) => {
+            if (t) term.paste(t);
+          }).catch(() => undefined);
+        },
+      },
+      { id: "sep", separator: true, label: "" },
+      {
+        id: "select-all",
+        label: "全选",
+        icon: <TextSelect size={14} />,
+        onClick: () => term.selectAll(),
+      },
+      { id: "sep-snip", separator: true, label: "" },
+      {
+        id: "snippets",
+        label: "Snippets",
+        icon: <Command size={14} />,
+        submenu: SNIPPET_MENU,
+      },
+      {
+        id: "clear",
+        label: "清屏",
+        icon: <Eraser size={14} />,
+        onClick: () => {
+          term.clear();
+          term.focus();
+        },
+      },
+    ];
+
+    // When the user has box-selected text, surface the same AI actions the
+    // floating selection icon offers — directly inside the right-click menu so
+    // the icon becomes optional, not required.
+    if (sel) {
+      items.push(
+        { id: "sep-ai", separator: true, label: "" },
+        {
+          id: "ai-explain",
+          label: "AI 解释选中内容",
+          icon: <Sparkles size={14} />,
+          onClick: () =>
+            useAiComposer.getState().setPrefill(
+              `Explain the following terminal selection:\n\n${sel}`,
+              true,
+              EXPLAIN_SYSTEM,
+            ),
+        },
+        {
+          id: "ai-fix",
+          label: "AI 修复选中问题",
+          icon: <Sparkles size={14} />,
+          onClick: () =>
+            useAiComposer.getState().setPrefill(
+              `Here is the terminal excerpt:\n\n${sel}\n\nWhat went wrong and how do I fix it?`,
+              true,
+              FIX_SYSTEM,
+            ),
+        },
+        {
+          id: "ai-generate",
+          label: "AI 转为命令",
+          icon: <Sparkles size={14} />,
+          onClick: () =>
+            useAiComposer.getState().setPrefill(
+              `Turn the following into the shell command(s) I should run:\n\n${sel}`,
+              true,
+              GENERATE_SYSTEM,
+            ),
+        },
+      );
+    }
+
+    showCtx(e.clientX, e.clientY, items);
+  };
+
   // Drag-and-drop a local file onto the terminal to type its path at the prompt.
   const [dragActive, setDragActive] = useState(false);
 
@@ -128,7 +251,11 @@ export function Terminal(props: TerminalProps) {
     if (!host) return;
 
     const api: TransportApi =
-      transport === "ssh" ? ssh : transport === "pty" ? pty : (serial as unknown as TransportApi);
+      transport === "ssh"
+        ? ssh
+        : transport === "pty"
+          ? pty
+          : (dataLink(transport === "ble" ? "ble" : "serial") as unknown as TransportApi);
 
     const term = new XTerm({
       fontFamily,
@@ -289,7 +416,7 @@ export function Terminal(props: TerminalProps) {
     // handlers.
     let unDrag: UnlistenFn | undefined;
     let dragDisposed = false;
-    if (transport !== "serial") {
+    if (transport !== "serial" && transport !== "ble") {
       void import("@tauri-apps/api/webview")
         .then(({ getCurrentWebview }) => {
           if (dragDisposed) return;
@@ -362,13 +489,13 @@ export function Terminal(props: TerminalProps) {
   // onDragDropEvent only fires for OS-level drags, so we also accept the HTML5
   // drop here and type the (quoted) path at the prompt.
   const handleFileDrop = (e: DragEvent<HTMLDivElement>) => {
-    if (transport === "serial") return;
+    if (transport === "serial" || transport === "ble") return;
     const data = e.dataTransfer.getData("text/plain");
     if (!data) return;
     e.preventDefault();
     const typed = data.includes(" ") ? `"${data.replace(/"/g, '\\"')}"` : data;
     const writer =
-      transport === "ssh" ? ssh.write : transport === "pty" ? pty.write : serial.write;
+      transport === "ssh" ? ssh.write : transport === "pty" ? pty.write : dataLink("serial").write;
     void writer(sessionId, textToBase64(typed + " ")).catch(() => undefined);
   };
 
@@ -377,8 +504,9 @@ export function Terminal(props: TerminalProps) {
       <div
         ref={hostRef}
         className="h-full w-full bg-transparent"
+        onContextMenu={onTermContextMenu}
         onDragOver={(e) => {
-          if (transport !== "serial" && e.dataTransfer.types.includes("text/plain")) {
+          if (transport !== "serial" && transport !== "ble" && e.dataTransfer.types.includes("text/plain")) {
             e.preventDefault();
           }
         }}

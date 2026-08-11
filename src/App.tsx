@@ -1,9 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
+import {
+  Cable,
+  FolderOpen,
+  MonitorSmartphone,
+  Server,
+  Settings as SettingsIcon,
+} from "lucide-react";
 
 import { Sidebar } from "./components/Sidebar";
 import { TabBar } from "./components/TabBar";
 import { CommandPalette } from "./components/CommandPalette";
+import { ContextMenu } from "./components/ContextMenu";
 
 import { Dashboard } from "./pages/Dashboard";
 import { Hosts } from "./pages/Hosts";
@@ -24,6 +32,7 @@ import { useAiStore } from "./ai/useAiStore";
 import { useAppStore, type Page } from "./store/useAppStore";
 import { useTabsStore } from "./store/useTabsStore";
 import { usePermStore } from "./store/usePermStore";
+import { useContextMenu, type MenuItem } from "./store/useContextMenu";
 import { cn } from "./lib/utils";
 import type { Tab, PermRequest } from "./lib/types";
 
@@ -46,7 +55,7 @@ function PageContent({ page }: { page: Page }) {
 
 function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "ssh") return <SshWorkspace tab={tab} />;
-  if (tab.kind === "serial") return <SerialWorkspace tab={tab} />;
+  if (tab.kind === "serial" || tab.kind === "ble") return <SerialWorkspace tab={tab} />;
   if (tab.kind === "wsl") return <WslWorkspace tab={tab} />;
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
   if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
@@ -56,6 +65,74 @@ function TabContent({ tab }: { tab: Tab }) {
 export default function App() {
   const page = useAppStore((s) => s.page);
   const togglePalette = useAppStore((s) => s.togglePalette);
+
+  const openLocal = useTabsStore((s) => s.openLocal);
+  const setPageCtx = useAppStore((s) => s.setPage);
+  const showCtx = useContextMenu((s) => s.show);
+  const closeCtx = useContextMenu((s) => s.close);
+
+  // Fully take over the right mouse button: suppress the native menu everywhere
+  // (except text fields, which keep cut/copy/paste) and show our own menu.
+  const onRootContextMenu = (e: ReactMouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      target.closest('input, textarea, [contenteditable="true"], [contenteditable=""]')
+    ) {
+      return;
+    }
+    e.preventDefault();
+    const items: MenuItem[] = [
+      {
+        id: "local",
+        label: "新建本地终端",
+        icon: <MonitorSmartphone size={14} />,
+        onClick: () => {
+          closeCtx();
+          void openLocal();
+        },
+      },
+      { id: "sep1", separator: true, label: "" },
+      {
+        id: "hosts",
+        label: "打开主机列表",
+        icon: <Server size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("hosts");
+        },
+      },
+      {
+        id: "serial",
+        label: "打开 Serial",
+        icon: <Cable size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("serial");
+        },
+      },
+      {
+        id: "sftp",
+        label: "打开 SFTP",
+        icon: <FolderOpen size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("sftp");
+        },
+      },
+      { id: "sep2", separator: true, label: "" },
+      {
+        id: "settings",
+        label: "设置",
+        icon: <SettingsIcon size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("settings");
+        },
+      },
+    ];
+    showCtx(e.clientX, e.clientY, items);
+  };
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
@@ -153,7 +230,10 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-bg text-fg">
+    <div
+      className="flex h-full w-full overflow-hidden bg-bg text-fg"
+      onContextMenu={onRootContextMenu}
+    >
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         {showTabs && <TabBar />}
@@ -189,6 +269,7 @@ export default function App() {
       </div>
       <AiPanel />
       <CommandPalette />
+      <ContextMenu />
     </div>
   );
 }

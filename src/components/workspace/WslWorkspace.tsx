@@ -6,7 +6,6 @@ import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { WslPanel } from "@/components/sftp/WslPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
-import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -67,7 +66,6 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <TerminalAiButton tab={tab} />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart session">
             <RotateCw size={14} />
           </Button>

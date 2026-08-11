@@ -84,24 +84,35 @@ pub fn reveal_path(path: String) -> Result<(), String> {
     let mut cmd = {
         #[cfg(target_os = "windows")]
         {
+            // Normalize before launching Explorer:
+            //  - a trailing separator is parsed as escaping the closing quote
+            //    (e.g. `explorer "C:\dir\"`), which makes it open a new window at
+            //    the default location instead of the folder we asked for;
+            //  - forward slashes confuse the shell, so force backslashes.
+            let norm = path.trim_end_matches(['\\', '/']).replace('/', "\\");
             if p.is_dir() {
-                std::process::Command::new("explorer")
+                // Launch the file manager directly on the directory.
+                let mut c = std::process::Command::new("explorer.exe");
+                c.arg(norm);
+                c
             } else {
                 // `/select,` focuses the file inside an open Explorer window.
-                let mut c = std::process::Command::new("explorer");
-                c.arg(format!("/select,\"{}\"", path));
+                let mut c = std::process::Command::new("explorer.exe");
+                c.arg(format!("/select,\"{}\"", norm));
                 c
             }
         }
         #[cfg(target_os = "macos")]
         {
+            let norm = path.trim_end_matches('/');
             let mut c = std::process::Command::new("open");
-            c.arg(path)
+            c.arg(norm)
         }
         #[cfg(target_os = "linux")]
         {
+            let norm = path.trim_end_matches('/');
             let mut c = std::process::Command::new("xdg-open");
-            c.arg(path)
+            c.arg(norm)
         }
     };
 

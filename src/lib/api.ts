@@ -3,6 +3,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
   Attached,
+  BleDeviceInfo,
+  BleOpenConfig,
   Host,
   HostMetrics,
   LocalEntry,
@@ -148,6 +150,30 @@ export const serial = {
     listen<StreamChunk>(`serial-data-${sessionId}`, (e) => cb(e.payload)),
   onClosed: (sessionId: string, cb: (info: SessionClosed) => void): Promise<UnlistenFn> =>
     listen<SessionClosed>(`serial-closed-${sessionId}`, (e) => cb(e.payload)),
+};
+
+// --- Bluetooth Low Energy --------------------------------------------------
+// Structurally identical to `serial` on purpose: both emit StreamChunk /
+// SessionClosed, so the workspace can treat them as one transport interface.
+
+export const ble = {
+  /** False when there's no adapter, or Bluetooth is switched off. */
+  available: () => call<boolean>("ble_available"),
+  /**
+   * Run a discovery window. `service` filters advertisements the same way the
+   * reference project's `filters: [{ services }]` did; omit it to accept all.
+   */
+  scan: (durationMs?: number, service?: string) =>
+    call<BleDeviceInfo[]>("ble_scan", { durationMs, service }),
+  open: (config: BleOpenConfig) => call<string>("ble_open", { config }),
+  write: (sessionId: string, data: string) => call<void>("ble_write", { sessionId, data }),
+  close: (sessionId: string) => call<void>("ble_close", { sessionId }),
+  attach: (sessionId: string) => call<Attached>("ble_attach", { sessionId }),
+
+  onData: (sessionId: string, cb: (chunk: StreamChunk) => void): Promise<UnlistenFn> =>
+    listen<StreamChunk>(`ble-data-${sessionId}`, (e) => cb(e.payload)),
+  onClosed: (sessionId: string, cb: (info: SessionClosed) => void): Promise<UnlistenFn> =>
+    listen<SessionClosed>(`ble-closed-${sessionId}`, (e) => cb(e.payload)),
 };
 
 // --- Local PTY -------------------------------------------------------------

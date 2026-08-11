@@ -1,12 +1,27 @@
-import { Cable, FolderOpen, Globe, MonitorSmartphone, Terminal, TerminalSquare, X } from "lucide-react";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import {
+  Bluetooth,
+  Cable,
+  ChevronsRight,
+  Copy,
+  FolderOpen,
+  Globe,
+  MonitorSmartphone,
+  RefreshCw,
+  Terminal,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import type { Tab, TabKind } from "@/lib/types";
 
 const KIND_ICON: Record<TabKind, typeof Terminal> = {
   ssh: Terminal,
   serial: Cable,
+  ble: Bluetooth,
   wsl: TerminalSquare,
   frp: Globe,
   local: MonitorSmartphone,
@@ -31,6 +46,68 @@ export function TabBar() {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const closeTab = useTabsStore((s) => s.closeTab);
+  const duplicateTab = useTabsStore((s) => s.duplicateTab);
+  const reconnect = useTabsStore((s) => s.reconnect);
+
+  const showCtx = useContextMenu((s) => s.show);
+  const closeCtx = useContextMenu((s) => s.close);
+
+  const onTabContextMenu = (e: ReactMouseEvent, tab: Tab) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = tabs.findIndex((t) => t.id === tab.id);
+    const items: MenuItem[] = [
+      {
+        id: "duplicate",
+        label: "复制标签页",
+        icon: <Copy size={14} />,
+        onClick: () => {
+          closeCtx();
+          void duplicateTab(tab.id);
+        },
+      },
+      {
+        id: "close",
+        label: "关闭",
+        icon: <X size={14} />,
+        onClick: () => {
+          closeCtx();
+          void closeTab(tab.id);
+        },
+      },
+      {
+        id: "close-others",
+        label: "关闭其他",
+        icon: <X size={14} />,
+        onClick: () => {
+          closeCtx();
+          tabs.filter((t) => t.id !== tab.id).forEach((t) => void closeTab(t.id));
+        },
+      },
+      {
+        id: "close-right",
+        label: "关闭右侧",
+        icon: <ChevronsRight size={14} />,
+        onClick: () => {
+          closeCtx();
+          tabs.slice(idx + 1).forEach((t) => void closeTab(t.id));
+        },
+      },
+    ];
+    if (tab.status !== "connected") {
+      items.push({ id: "sep", separator: true, label: "" });
+      items.push({
+        id: "reconnect",
+        label: "重新连接",
+        icon: <RefreshCw size={14} />,
+        onClick: () => {
+          closeCtx();
+          void reconnect(tab.id);
+        },
+      });
+    }
+    showCtx(e.clientX, e.clientY, items);
+  };
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/70 bg-surface px-2 select-none">
@@ -41,6 +118,7 @@ export function TabBar() {
           <div
             key={tab.id}
             onClick={() => setActive(tab.id)}
+            onContextMenu={(e) => onTabContextMenu(e, tab)}
             className={cn(
               "group flex h-7 min-w-[140px] max-w-[220px] cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12px] transition-colors",
               active

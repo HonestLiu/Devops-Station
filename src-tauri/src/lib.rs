@@ -1,6 +1,7 @@
 #![allow(dependency_on_unit_never_type_fallback)]
 mod ai;
 pub use ai::ai_chat;
+mod ble;
 mod error;
 mod fonts;
 mod frp;
@@ -20,6 +21,7 @@ mod wsl;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use tauri::{AppHandle, Manager, State};
 
+use ble::BleManager;
 use error::{AppError, AppResult};
 use pty::PtyManager;
 use serial::SerialManager;
@@ -32,6 +34,7 @@ use types::*;
 pub struct AppState {
     ssh: SshManager,
     serial: SerialManager,
+    ble: BleManager,
     pty: PtyManager,
     store: Store,
     metrics: MetricsCache,
@@ -312,6 +315,57 @@ async fn serial_close(state: State<'_, AppState>, session_id: String) -> AppResu
 #[tauri::command]
 async fn serial_attach(state: State<'_, AppState>, session_id: String) -> AppResult<Attached> {
     Ok(state.serial.get(&session_id)?.attach())
+}
+
+// ===========================================================================
+// Bluetooth Low Energy
+//
+// Deliberately mirrors the serial command surface: a BLE session emits the same
+// `StreamChunk` / `SessionClosed` payloads, so the UI reuses one data pipeline.
+// ===========================================================================
+
+#[tauri::command]
+async fn ble_available(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.ble.available().await)
+}
+
+#[tauri::command]
+async fn ble_scan(
+    state: State<'_, AppState>,
+    duration_ms: Option<u64>,
+    service: Option<String>,
+) -> AppResult<Vec<BleDeviceInfo>> {
+    state.ble.scan(duration_ms.unwrap_or(4000), service).await
+}
+
+#[tauri::command]
+async fn ble_open(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: BleOpenConfig,
+) -> AppResult<String> {
+    if let Some(host_id) = config.host_id.clone() {
+        let _ = state.store.touch_host(&host_id);
+    }
+    state.ble.open(app, config).await
+}
+
+#[tauri::command]
+async fn ble_write(state: State<'_, AppState>, session_id: String, data: String) -> AppResult<()> {
+    let session = state.ble.get(&session_id)?;
+    session.write(&decode(&data)?).await
+}
+
+#[tauri::command]
+async fn ble_close(state: State<'_, AppState>, session_id: String) -> AppResult<()> {
+    state.ble.close(&session_id).await
+}
+
+/// See [`serial_attach`] — a bridge module often notifies the instant we
+/// subscribe, before React has mounted its listener.
+#[tauri::command]
+async fn ble_attach(state: State<'_, AppState>, session_id: String) -> AppResult<Attached> {
+    Ok(state.ble.get(&session_id)?.attach())
 }
 
 // ===========================================================================
@@ -601,6 +655,7 @@ pub fn run() {
             app.manage(AppState {
                 ssh: SshManager::default(),
                 serial: SerialManager::default(),
+                ble: BleManager::default(),
                 pty: PtyManager::default(),
                 store,
                 metrics: MetricsCache::default(),
@@ -613,6 +668,7 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = window.try_state::<AppState>() {
                     state.serial.close_all();
+                    state.ble.close_all();
                     state.pty.close_all();
                     // SSH teardown is async. Block briefly on the event-loop
                     // thread so remote shells receive a real disconnect instead
@@ -649,6 +705,12 @@ pub fn run() {
             serial_signals,
             serial_close,
             serial_attach,
+            ble_available,
+            ble_scan,
+            ble_open,
+            ble_write,
+            ble_close,
+            ble_attach,
             pty_spawn,
             pty_write,
             pty_resize,

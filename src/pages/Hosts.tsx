@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Cable,
   Globe,
+  LogIn,
   MonitorSmartphone,
   Pencil,
   Plus,
@@ -18,6 +19,7 @@ import { QuickCommandsEditor } from "@/components/QuickCommandsEditor";
 import { parseSshCommand, hashColor } from "@/lib/utils";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import type { Host, HostKind } from "@/lib/types";
 
 const KIND_ICON = {
@@ -65,6 +67,46 @@ export function Hosts() {
   const connect = (h: Host) => {
     if (h.kind === "local") void openLocal();
     else void openFromHost(h);
+  };
+
+  const showCtx = useContextMenu((s) => s.show);
+  const closeCtx = useContextMenu((s) => s.close);
+
+  const onHostContextMenu = (e: ReactMouseEvent, h: Host) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items: MenuItem[] = [
+      {
+        id: "connect",
+        label: "连接",
+        icon: <LogIn size={14} />,
+        onClick: () => {
+          closeCtx();
+          connect(h);
+        },
+      },
+      {
+        id: "edit",
+        label: "编辑",
+        icon: <Pencil size={14} />,
+        onClick: () => {
+          closeCtx();
+          setEditing(h);
+        },
+      },
+      { id: "sep", separator: true, label: "" },
+      {
+        id: "delete",
+        label: "删除",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => {
+          closeCtx();
+          if (window.confirm(`Delete host "${h.name}"?`)) void deleteHost(h.id);
+        },
+      },
+    ];
+    showCtx(e.clientX, e.clientY, items);
   };
 
   const quickConnect = () => {
@@ -162,6 +204,7 @@ export function Hosts() {
               <div
                 key={h.id}
                 className="card card-interactive group flex flex-col"
+                onContextMenu={(e) => onHostContextMenu(e, h)}
               >
                 <div className="mb-3 flex items-center gap-2.5">
                   <span

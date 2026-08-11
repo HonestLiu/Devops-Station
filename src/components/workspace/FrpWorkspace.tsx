@@ -4,7 +4,6 @@ import { Button } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
-import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -25,7 +24,6 @@ export function FrpWorkspace({ tab }: { tab: Tab }) {
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <span className="truncate text-[12px] font-medium text-fg">{tab.title}</span>
         <div className="no-drag">
-          <TerminalAiButton tab={tab} />
           <Button
             variant="ghost"
             size="sm"

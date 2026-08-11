@@ -45,6 +45,9 @@ russh-sftp = "2.4"
 
 portable-pty = "0.9"
 serialport = "4.9"
+# Cross-platform BLE central (WinRT / CoreBluetooth / BlueZ). Backs the
+# Bluetooth transparent-transmission transport that sits next to wired serial.
+btleplug = "0.12"
 sysinfo = "0.39"
 rusqlite = { version = "0.40", features = ["bundled"] }
 

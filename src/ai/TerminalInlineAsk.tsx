@@ -43,7 +43,7 @@ import { useTabsStore } from "@/store/useTabsStore";
  * can review before pressing Enter — consistent with how AI-generated commands
  * behave elsewhere.
  */
-const SNIPPET_GROUPS: { group: string; items: { label: string; cmd: string }[] }[] = [
+export const SNIPPET_GROUPS: { group: string; items: { label: string; cmd: string }[] }[] = [
   {
     group: "Git",
     items: [

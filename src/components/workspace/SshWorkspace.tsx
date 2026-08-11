@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Fingerprint, FolderClosed, FolderOpen, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { SftpPanel } from "@/components/sftp/SftpPanel";
@@ -65,7 +64,6 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <TerminalAiButton tab={tab} />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Reconnect">
             <RotateCw size={14} />
           </Button>

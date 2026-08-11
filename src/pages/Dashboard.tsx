@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, MonitorSmartphone, Plug, Server, TerminalSquare } from "lucide-react";
+import { ArrowRight, FolderOpen, MonitorSmartphone, Plug, Server, TerminalSquare } from "lucide-react";
 
 import { MetricsView } from "@/components/MetricsView";
 import { Button, EmptyState } from "@/components/ui";
@@ -104,7 +104,7 @@ export function Dashboard() {
       )}
 
       {/* Quick actions */}
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <button
           onClick={() => void openLocal()}
           className="card card-interactive flex items-center gap-3 text-left"
@@ -134,7 +134,7 @@ export function Dashboard() {
         </button>
         <button
           onClick={() => {
-            setPage("hosts");
+            setPage("serial");
             focusPage();
           }}
           className="card card-interactive flex items-center gap-3 text-left"
@@ -145,6 +145,21 @@ export function Dashboard() {
           <div>
             <p className="text-[13px] font-medium text-fg">Serial Devices</p>
             <p className="text-[11px] text-subtle">Connect to COM / tty ports</p>
+          </div>
+        </button>
+        <button
+          onClick={() => {
+            setPage("sftp");
+            focusPage();
+          }}
+          className="card card-interactive flex items-center gap-3 text-left"
+        >
+          <span className="icon-chip">
+            <FolderOpen size={16} />
+          </span>
+          <div>
+            <p className="text-[13px] font-medium text-fg">SFTP Browser</p>
+            <p className="text-[11px] text-subtle">Transfer files over SSH</p>
           </div>
         </button>
       </div>

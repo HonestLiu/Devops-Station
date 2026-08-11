@@ -4,7 +4,6 @@ import { FolderClosed, FolderOpen, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
-import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { FilesSidebar } from "@/components/FilesSidebar";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -49,7 +48,6 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <TerminalAiButton tab={tab} />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart shell">
             <RotateCw size={14} />
           </Button>

@@ -22,7 +22,6 @@ import { Badge, Button, Select } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
-import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { parseSerialProtocol } from "@/ai/tasks";
 import { SerialPlot } from "@/components/serial/SerialPlot";
 import { SendBar, type SendBarHandle } from "@/components/serial/SendBar";
@@ -38,6 +37,8 @@ import {
   LINE_ENDINGS,
 } from "@/lib/utils";
 import { serial } from "@/lib/api";
+import { dataLink, type DataLink, type LinkKind } from "@/lib/dataLink";
+import { shortUuid } from "@/lib/bleGatt";
 import { useSerialLog } from "@/ai/serialLog";
 import { encodeSendData, type SendMeta } from "@/lib/serialCodec";
 import type {
@@ -80,6 +81,9 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   const reconnect = useTabsStore((s) => s.reconnect);
   const closeTab = useTabsStore((s) => s.closeTab);
   const patch = useTabsStore((s) => s.patch);
+
+  const isBle = tab.kind === "ble";
+  const link: DataLink = dataLink((isBle ? "ble" : "serial") as LinkKind);
 
   const sessionId = tab.sessionId;
   const connected = tab.status === "connected" && !!sessionId;
@@ -160,7 +164,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
 
     void (async () => {
       try {
-        const un = await serial.onData(sessionId, (chunk) => {
+        const un = await link.onData(sessionId, (chunk) => {
           if (disposed) return;
           const bytes = base64ToBytes(chunk.data);
           if (!flushed) {
@@ -172,7 +176,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
         if (disposed) return void un();
         stop = un;
 
-        const pending = await serial.attach(sessionId);
+        const pending = await link.attach(sessionId);
         if (disposed) return;
         if (pending.backlog) receive(base64ToBytes(pending.backlog));
         flushed = true;
@@ -200,7 +204,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     if (!sessionId) return;
     let disposed = false;
     let stop: (() => void) | undefined;
-    void serial.onClosed(sessionId, (info) => {
+    void link.onClosed(sessionId, (info) => {
       if (disposed) return;
       // Don't surface a clean user disconnect as an error message.
       const isUserClose = info.reason === "closed by user";
@@ -223,7 +227,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   // `meta` tells the log how to render the line (text -> raw string, hex/dec -> hex).
   const writeOut = (bytes: Uint8Array, meta: SendMeta) => {
     if (!sessionId || bytes.length === 0) return;
-    void serial.write(sessionId, bytesToBase64(bytes));
+    void link.write(sessionId, bytesToBase64(bytes));
     if (mode === "normal") {
       const hex = bytesToHex(bytes);
       const displayText = meta.format === "text" ? meta.raw : hex;
@@ -260,16 +264,21 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   };
 
   const cfg = tab.serial;
-  const configLabel = cfg
-    ? `${cfg.port} · ${cfg.baudRate} · ${cfg.parity}/${cfg.dataBits}/${cfg.stopBits}`
-    : tab.subtitle;
+  const bleCfg = tab.ble;
+  const configLabel = isBle
+    ? bleCfg
+      ? `${bleCfg.deviceName ?? bleCfg.deviceId} · ${shortUuid(bleCfg.service)}`
+      : tab.subtitle
+    : cfg
+      ? `${cfg.port} · ${cfg.baudRate} · ${cfg.parity}/${cfg.dataBits}/${cfg.stopBits}`
+      : tab.subtitle;
 
   const toggleConnect = () => {
     if (connected) {
       if (sessionId) {
-        void serial.close(sessionId);
+        void link.close(sessionId);
         // Optimistic update — flip the UI immediately so the button responds even
-        // before the backend's `serial-closed` event arrives.
+        // before the backend's `*-closed` event arrives.
         patch(tab.id, { status: "closed", sessionId: undefined, error: undefined });
       }
     } else {
@@ -278,7 +287,9 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   };
 
   const dtrRts = (dtr?: boolean, rts?: boolean) => {
-    if (sessionId) void serial.signals(sessionId, dtr, rts);
+    // DTR/RTS are serial-line control signals — BLE has no equivalent, so the
+    // buttons are hidden and this is guarded as a belt-and-braces measure.
+    if (sessionId && !isBle) void serial.signals(sessionId, dtr, rts);
   };
 
   return (
@@ -332,44 +343,68 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
           >
             协议解析
           </Button>
-          <TerminalAiButton tab={tab} />
         </div>
       </div>
 
       {/* Main body: left settings + center display + right quick send */}
       <div className="relative flex min-h-0 flex-1">
-        {/* Left: serial settings panel */}
+        {/* Left: transport settings panel (serial or BLE) */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
           <div className="flex h-9 items-center border-b border-border px-3 text-[12px] font-semibold text-fg">
-            串口设置
+            {isBle ? "蓝牙设置" : "串口设置"}
           </div>
           <div className="flex flex-col gap-3 p-3 text-[12px]">
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-subtle">端口</span>
-              <span className="font-mono text-fg">{cfg?.port ?? "—"}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-subtle">波特率</span>
-                <span className="text-fg">{cfg?.baudRate ?? "—"}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-subtle">数据位</span>
-                <span className="text-fg">{cfg?.dataBits ?? "—"}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-subtle">校验位</span>
-                <span className="text-fg">{cfg?.parity ?? "—"}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-subtle">停止位</span>
-                <span className="text-fg">{cfg?.stopBits ?? "—"}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-subtle">流控</span>
-              <span className="text-fg">{cfg?.flowControl ?? "—"}</span>
-            </div>
+            {isBle ? (
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">设备</span>
+                  <span className="font-mono text-fg">{bleCfg?.deviceName ?? bleCfg?.deviceId ?? "—"}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">服务 UUID</span>
+                  <span className="font-mono text-fg break-all">{bleCfg ? shortUuid(bleCfg.service) : "—"}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">写入特征</span>
+                  <span className="font-mono text-fg break-all">{bleCfg ? shortUuid(bleCfg.writeCharacteristic) : "—"}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">通知特征</span>
+                  <span className="font-mono text-fg break-all">
+                    {bleCfg?.notifyCharacteristic ? shortUuid(bleCfg.notifyCharacteristic) : "无（仅发送）"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">端口</span>
+                  <span className="font-mono text-fg">{cfg?.port ?? "—"}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] uppercase tracking-wide text-subtle">波特率</span>
+                    <span className="text-fg">{cfg?.baudRate ?? "—"}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] uppercase tracking-wide text-subtle">数据位</span>
+                    <span className="text-fg">{cfg?.dataBits ?? "—"}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] uppercase tracking-wide text-subtle">校验位</span>
+                    <span className="text-fg">{cfg?.parity ?? "—"}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] uppercase tracking-wide text-subtle">停止位</span>
+                    <span className="text-fg">{cfg?.stopBits ?? "—"}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] uppercase tracking-wide text-subtle">流控</span>
+                  <span className="text-fg">{cfg?.flowControl ?? "—"}</span>
+                </div>
+              </>
+            )}
 
             <div className="my-1 h-px bg-border" />
 
@@ -381,17 +416,25 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
               className="w-full"
             >
               {connected ? <PowerOff size={14} /> : <Power size={14} />}
-              {connected ? "断开连接" : tab.status === "connecting" ? "连接中…" : "打开串口"}
+              {connected
+                ? "断开连接"
+                : tab.status === "connecting"
+                  ? "连接中…"
+                  : isBle
+                    ? "连接"
+                    : "打开串口"}
             </Button>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" size="sm" onClick={() => dtrRts(true)} disabled={!connected}>
-                DTR
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => dtrRts(undefined, true)} disabled={!connected}>
-                RTS
-              </Button>
-            </div>
+            {!isBle && (
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="secondary" size="sm" onClick={() => dtrRts(true)} disabled={!connected}>
+                  DTR
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => dtrRts(undefined, true)} disabled={!connected}>
+                  RTS
+                </Button>
+              </div>
+            )}
 
             <Button variant="ghost" size="sm" onClick={() => void closeTab(tab.id)} className="mt-auto w-full">
               <Trash2 size={14} /> 关闭标签
@@ -465,7 +508,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                   <Terminal
                     key={sessionId}
                     sessionId={sessionId}
-                    transport="serial"
+                    transport={isBle ? "ble" : "serial"}
                     theme={t.theme}
                     fontFamily={t.fontFamily}
                     fontSize={t.fontSize}
@@ -478,7 +521,9 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                 <TerminalInlineAsk tab={tab} />
               </div>
             )}
-            {mode === "plot" && connected && sessionId && <SerialPlot sessionId={sessionId} />}
+            {mode === "plot" && connected && sessionId && (
+              <SerialPlot sessionId={sessionId} kind={isBle ? "ble" : "serial"} />
+            )}
             {mode === "normal" && (
               <SerialRecordView logs={logs} rxHex={rxHex} autoScroll={autoScroll} />
             )}
@@ -498,8 +543,12 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
             connected={connected}
             disabledReason={
               tab.status === "connecting"
-                ? "正在打开串口…"
-                : "串口已关闭 — 点击左侧“打开串口”重连。"
+                ? isBle
+                  ? "正在连接蓝牙…"
+                  : "正在打开串口…"
+                : isBle
+                  ? "蓝牙已断开 — 点击左侧“连接”重连。"
+                  : "串口已关闭 — 点击左侧“打开串口”重连。"
             }
             lineEnding={lineEnding}
             onLineEndingChange={setLineEnding}

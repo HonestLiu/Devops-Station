@@ -10,7 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { serial } from "@/lib/api";
+import { dataLink, type LinkKind } from "@/lib/dataLink";
 import { base64ToBytes } from "@/lib/utils";
 import { cssColor } from "@/lib/themes";
 
@@ -78,7 +78,13 @@ function formatClock(sec: number): string {
  * appears. X values are always stored as absolute epoch seconds so switching the
  * time mode never corrupts already-captured history.
  */
-export function SerialPlot({ sessionId }: { sessionId: string }) {
+export function SerialPlot({
+  sessionId,
+  kind = "serial",
+}: {
+  sessionId: string;
+  kind?: LinkKind;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
   const channelsRef = useRef<string[]>([]);
@@ -241,7 +247,7 @@ export function SerialPlot({ sessionId }: { sessionId: string }) {
     };
 
     let unSub: (() => void) | undefined;
-    const un = serial.onData(sessionId, (chunk) => ingest(base64ToBytes(chunk.data)));
+    const un = dataLink(kind).onData(sessionId, (chunk) => ingest(base64ToBytes(chunk.data)));
     un.then((fn) => {
       unSub = fn;
     });
@@ -262,7 +268,7 @@ export function SerialPlot({ sessionId }: { sessionId: string }) {
     // Only re-subscribe when the session changes; control changes are handled via
     // refs (live values) and the rebuild/tooltip effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, kind]);
 
   // Rebuild the chart when a control that changes uPlot options changes.
   useEffect(() => {

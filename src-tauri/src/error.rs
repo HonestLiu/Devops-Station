@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("Serial port error: {0}")]
     Serial(String),
 
+    #[error("Bluetooth error: {0}")]
+    Ble(String),
+
     #[error("Storage error: {0}")]
     Storage(String),
 
@@ -53,6 +56,12 @@ impl From<russh_sftp::client::error::Error> for AppError {
 impl From<serialport::Error> for AppError {
     fn from(e: serialport::Error) -> Self {
         AppError::Serial(e.to_string())
+    }
+}
+
+impl From<btleplug::Error> for AppError {
+    fn from(e: btleplug::Error) -> Self {
+        AppError::Ble(e.to_string())
     }
 }
 
