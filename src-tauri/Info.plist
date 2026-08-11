@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Merged into the macOS bundle by tauri-build. Without
+		NSBluetoothAlwaysUsageDescription, CoreBluetooth (btleplug) is denied —
+		and on some macOS versions the app is terminated — the first time the
+		BLE serial feature is used.
+	-->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>DevOps Station uses Bluetooth to connect to BLE serial devices (e.g. ESP32 / nRF boards).</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>DevOps Station uses Bluetooth to connect to BLE serial devices (e.g. ESP32 / nRF boards).</string>
+</dict>
+</plist>

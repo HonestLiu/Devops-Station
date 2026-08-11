@@ -63,6 +63,27 @@
 
 ---
 
+## 平台支持
+
+系统相关的功能按平台裁剪：不存在的功能（如 WSL）在 macOS / Linux 上不显示，也不会调用后端。
+
+| 功能 | Windows | macOS | Linux |
+| --- | :---: | :---: | :---: |
+| SSH / SFTP 终端 | ✅ | ✅ | ✅ |
+| 串口调试 | ✅ | ✅ | ✅ |
+| BLE 蓝牙串口 | ✅ | ✅（需在 系统设置 → 隐私与安全性 → 蓝牙 授权） | ✅（需运行 bluez） |
+| 本地终端 | PowerShell / cmd / Git Bash | `$SHELL`（bash / zsh / fish） | `$SHELL` |
+| J-Link 烧录/调试 | ✅ | ✅ | ✅ |
+| FRP 内网穿透 | ✅ | ✅ | ✅ |
+| 设备监控 | ✅ | ✅ | ✅ |
+| WSL 发行版 / 文件系统 | ✅ | — | — |
+| WSL USB 设备管理器（usbipd-win） | ✅ | — | — |
+| 桌面通知 | AUMID + Start Menu（自归属） | 系统通知 | D-Bus 通知 |
+
+> macOS 打包时 `src-tauri/Info.plist` 声明了蓝牙使用说明（`NSBluetoothAlwaysUsageDescription`），首次使用 BLE 会弹出系统授权。
+
+---
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -125,7 +146,7 @@ devops-station/
 - Node.js ≥ 18（本项目验证于 22.22.2）
 - Rust stable（验证于 1.97.1 msvc）
 - Windows：MSVC Build Tools + WebView2 Runtime
-- Linux：`libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`
+- Linux（Debian/Ubuntu）：`libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev libdbus-1-dev` —— 串口需要 `libudev`，BLE 蓝牙走 D-Bus + BlueZ
 - macOS：Xcode Command Line Tools
 
 ### 命令

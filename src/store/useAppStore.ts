@@ -30,8 +30,13 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "tokyo-night",
+  // Monospace-only stack: on macOS/Linux the old stack (JetBrains Mono …
+  // Consolas …) fell through to the proportional CJK fonts (PingFang SC /
+  // Microsoft YaHei / Noto Sans CJK SC), rendering the whole terminal in a
+  // wide proportional font whenever the leading monospace fonts weren't
+  // installed. CJK glyphs still render via the browser's per-glyph fallback.
   fontFamily:
-    '"JetBrainsMono Nerd Font", "JetBrains Mono", "MesloLGS NF", "Cascadia Code", Consolas, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace',
+    '"JetBrains Mono", "JetBrainsMono Nerd Font", "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Ubuntu Mono", monospace',
   fontSize: 13,
   lineHeight: 1.25,
   cursorBlink: true,
@@ -93,6 +98,20 @@ function applySettings(settings: AppSettings) {
   applyWindowTheme(settings);
 }
 
+/**
+ * The pre-2026-08 terminal font stack ended in proportional CJK fonts
+ * (PingFang SC / Microsoft YaHei / Noto Sans CJK SC). On systems without the
+ * leading monospace fonts (e.g. macOS) that made the whole terminal render in
+ * a wide proportional font. We detect and replace the exact legacy value so
+ * installs that already persisted it heal automatically.
+ */
+const LEGACY_TERMINAL_FONT_STACK =
+  '"JetBrainsMono Nerd Font", "JetBrains Mono", "MesloLGS NF", "Cascadia Code", Consolas, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace';
+
+function repairFontFamily(family: string): string {
+  return family === LEGACY_TERMINAL_FONT_STACK ? DEFAULT_SETTINGS.fontFamily : family;
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   page: "dashboard",
   paletteOpen: false,
@@ -106,7 +125,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadSettings: async () => {
     try {
       const stored = await db.getSettings();
-      const merged = { ...DEFAULT_SETTINGS, ...(stored as Partial<AppSettings>) };
+      const merged = {
+        ...DEFAULT_SETTINGS,
+        ...(stored as Partial<AppSettings>),
+      };
+      merged.fontFamily = repairFontFamily(merged.fontFamily);
+      // Persist the repair so it isn't re-detected on every startup.
+      if (merged.fontFamily !== (stored as Partial<AppSettings>).fontFamily) {
+        void db.setSetting("fontFamily", merged.fontFamily).catch(() => undefined);
+      }
       applySettings(merged);
       set({ settings: merged, settingsLoaded: true });
       // Re-register any fonts the user previously imported.

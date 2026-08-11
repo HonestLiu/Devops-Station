@@ -5,6 +5,7 @@ import { PortPicker } from "@/components/serial/PortPicker";
 import { DistroPicker } from "@/components/wsl/DistroPicker";
 import { Button, Checkbox, Dialog, Field, Input, Select } from "@/components/ui";
 import { serial } from "@/lib/api";
+import { isWindows } from "@/lib/platform";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import type { FrpConfig, FrpProxy, FrpProxyType, FrpServer, Host, HostKind } from "@/lib/types";
 
@@ -154,9 +155,9 @@ export function HostDialog({
       }
     >
       <div className="space-y-4">
-        {/* Kind selector */}
+        {/* Kind selector. WSL is a Windows-only feature, so skip it on macOS/Linux. */}
         <div className="flex gap-1 rounded-md border border-border bg-bg p-1">
-          {KIND_TABS.map((k) => {
+          {KIND_TABS.filter((k) => isWindows || k.id !== "wsl").map((k) => {
             const Icon = k.icon;
             const active = host.kind === k.id;
             return (

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { isMac } from "@/lib/platform";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { NotificationBell } from "./NotificationBell";
@@ -39,9 +40,6 @@ export function Sidebar() {
   const setPage = useAppStore((s) => s.setPage);
   const togglePalette = useAppStore((s) => s.togglePalette);
 
-  const isMac =
-    typeof navigator !== "undefined" &&
-    /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
   const tabs = useTabsStore((s) => s.tabs);

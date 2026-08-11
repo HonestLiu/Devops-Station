@@ -36,6 +36,19 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use crate::wsl::device_filter;
 use crate::wsl::parser::{self, Section};
 
+/// Non-Windows guard: usbipd-win is a Windows-only tool. Every public command
+/// below returns this error up front on macOS/Linux (the implementations still
+/// compile — they just never run) so the UI degrades cleanly.
+#[cfg(windows)]
+fn require_windows() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn require_windows() -> Result<(), String> {
+    Err("WSL USB Device Manager is only available on Windows.".to_string())
+}
+
 /// A USB device as presented to the frontend.
 #[derive(Debug, Clone, Serialize)]
 pub struct UsbDevice {
@@ -172,6 +185,12 @@ fn usbipd_exe() -> String {
 /// Whether `usbipd-win` is installed and usable.
 ///
 /// Uses a short timeout so a hung `usbipd --version` cannot stall the UI.
+#[cfg(not(windows))]
+pub fn is_installed() -> bool {
+    false
+}
+
+#[cfg(windows)]
 pub fn is_installed() -> bool {
     let exe = usbipd_exe();
     // Resolved a concrete path (known install dir, or a PATH copy via `where`)
@@ -193,6 +212,7 @@ pub fn is_installed() -> bool {
 
 /// Enumerate embedded-dev USB devices currently visible to Windows.
 pub fn list_devices() -> Result<Vec<UsbDevice>, String> {
+    require_windows()?;
     let exe = usbipd_exe();
     let c = run_captured(exe.as_str(), &["list"], Duration::from_secs(12))?;
     if !c.success {
@@ -310,6 +330,7 @@ fn try_bind(busid: &str, elevated: bool) -> Result<(), BindError> {
 
 /// Bind (if needed) and attach a device into the given WSL distro, then verify.
 pub fn attach(busid: &str, distro: &str) -> Result<UsbVerify, String> {
+    require_windows()?;
     // `bind` is idempotent; binding an already-bound device is a no-op.
     bind(busid)?;
 
@@ -378,6 +399,7 @@ fn looks_like_unknown_arg(stderr: &str, arg: &str) -> bool {
 
 /// Detach a device, returning it to Windows.
 pub fn detach(busid: &str) -> Result<(), String> {
+    require_windows()?;
     let exe = usbipd_exe();
     let c = run_captured(
         exe.as_str(),
@@ -392,6 +414,7 @@ pub fn detach(busid: &str) -> Result<(), String> {
 
 /// Verify a device reached WSL: capture `lsusb` and probe serial port nodes.
 pub fn verify(distro: &str) -> Result<UsbVerify, String> {
+    require_windows()?;
     let mut verify = UsbVerify::default();
 
     if let Ok(c) = run_captured(
@@ -424,6 +447,7 @@ pub fn verify(distro: &str) -> Result<UsbVerify, String> {
 
 /// Launch the interactive `winget` installer for usbipd-win (opens a new window).
 pub fn install() -> Result<(), String> {
+    require_windows()?;
     let c = run_captured(
         "cmd",
         &[

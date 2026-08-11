@@ -162,6 +162,23 @@ pub fn list_distros() -> AppResult<Vec<WslDistro>> {
     ))
 }
 
+/// Non-Windows guard used by every WSL command below.
+///
+/// WSL is a Windows-only feature; on macOS/Linux we return a friendly error
+/// before doing any work (the Windows implementations still compile, they just
+/// never run) so the UI degrades cleanly instead of trying to spawn `wsl.exe`.
+#[cfg(windows)]
+pub fn require_windows() -> AppResult<()> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn require_windows() -> AppResult<()> {
+    Err(AppError::Other(
+        "WSL is only available on Windows.".to_string(),
+    ))
+}
+
 // ===========================================================================
 // Filesystem access (mirrors `ssh::sftp` so the UI can reuse the same panel)
 // ===========================================================================
@@ -262,6 +279,7 @@ async fn run(distro: &str, args: &[&str]) -> AppResult<()> {
 }
 
 pub async fn list(distro: &Option<String>, path: &str) -> AppResult<Vec<RemoteFile>> {
+    require_windows()?;
     let distro_arg = distro.clone().unwrap_or_default();
     // List from inside the distro via an explicit `sh -c` so the result is
     // deterministic and independent of the interactive login shell. `find .`
@@ -345,6 +363,7 @@ pub async fn list(distro: &Option<String>, path: &str) -> AppResult<Vec<RemoteFi
 }
 
 pub async fn home(distro: &Option<String>) -> AppResult<String> {
+    require_windows()?;
     let distro_arg = distro.clone().unwrap_or_default();
     let output = spawn_wsl(&distro_arg)
         .args(["-e", "sh", "-c", "echo $HOME"])
@@ -360,11 +379,13 @@ pub async fn home(distro: &Option<String>) -> AppResult<String> {
 }
 
 pub async fn mkdir(distro: &Option<String>, path: &str) -> AppResult<()> {
+    require_windows()?;
     let distro_arg = distro.clone().unwrap_or_default();
     run(&distro_arg, &["mkdir", "-p", path]).await
 }
 
 pub async fn remove(distro: &Option<String>, path: &str, is_dir: bool) -> AppResult<()> {
+    require_windows()?;
     let distro_arg = distro.clone().unwrap_or_default();
     let args: Vec<&str> = if is_dir {
         vec!["rm", "-rf", path]
@@ -375,6 +396,7 @@ pub async fn remove(distro: &Option<String>, path: &str, is_dir: bool) -> AppRes
 }
 
 pub async fn rename(distro: &Option<String>, from: &str, to: &str) -> AppResult<()> {
+    require_windows()?;
     let distro_arg = distro.clone().unwrap_or_default();
     run(&distro_arg, &["mv", "--", from, to]).await
 }
@@ -408,6 +430,7 @@ pub async fn download(
     local_path: &str,
     transfer_id: &str,
 ) -> AppResult<()> {
+    require_windows()?;
     let file_name = remote_path
         .rsplit('/')
         .next()
@@ -439,6 +462,7 @@ pub async fn upload(
     remote_dir: &str,
     transfer_id: &str,
 ) -> AppResult<String> {
+    require_windows()?;
     let file_name = Path::new(local_path)
         .file_name()
         .and_then(|s| s.to_str())

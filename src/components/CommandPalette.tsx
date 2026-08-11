@@ -15,6 +15,7 @@ import {
 
 import { THEME_LIST } from "@/lib/themes";
 import { cn, parseSshCommand } from "@/lib/utils";
+import { isWindows } from "@/lib/platform";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -226,6 +227,8 @@ export function CommandPalette() {
     ];
 
     for (const h of hosts) {
+      // WSL hosts are Windows-only; skip them on macOS/Linux.
+      if (h.kind === "wsl" && !isWindows) continue;
       list.push({
         id: `host-${h.id}`,
         label: `Connect: ${h.name}`,

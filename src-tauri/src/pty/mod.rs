@@ -122,6 +122,9 @@ impl PtyManager {
         cols: u16,
         rows: u16,
     ) -> AppResult<String> {
+        // WSL is a Windows-only feature; fail fast with a friendly message
+        // instead of trying to spawn a nonexistent `wsl.exe`.
+        crate::wsl::require_windows()?;
         let mut cmd = CommandBuilder::new("wsl.exe");
 
         // No --distribution means "use whatever WSL considers the default".

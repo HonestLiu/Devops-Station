@@ -5,6 +5,7 @@ import { Check, Download, RotateCcw, Type, Upload } from "lucide-react";
 import { Button, Checkbox, Field, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { profile } from "@/lib/api";
+import { isWindows } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
 import { useAppStore } from "@/store/useAppStore";
@@ -29,8 +30,6 @@ export function Settings() {
   const updateSetting = useAppStore((s) => s.updateSetting);
   const resetSettings = useAppStore((s) => s.resetSettings);
   const [fontOpen, setFontOpen] = useState(false);
-  const isWindows =
-    typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || "");
 
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) =>
     void updateSetting(k, v);

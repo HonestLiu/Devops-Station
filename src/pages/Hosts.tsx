@@ -17,6 +17,7 @@ import { Badge, Button, EmptyState } from "@/components/ui";
 import { HostDialog } from "@/components/HostDialog";
 import { QuickCommandsEditor } from "@/components/QuickCommandsEditor";
 import { parseSshCommand, hashColor } from "@/lib/utils";
+import { isWindows } from "@/lib/platform";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
@@ -52,8 +53,11 @@ export function Hosts() {
 
   const filtered = useMemo(() => {
     // Serial devices now live on their own sidebar page, so keep them out of
-    // the combined Hosts grid.
-    const nonSerial = hosts.filter((h) => h.kind !== "serial");
+    // the combined Hosts grid. WSL hosts are Windows-only, so also drop them
+    // on macOS/Linux (a profile imported from Windows may contain them).
+    const nonSerial = hosts.filter(
+      (h) => h.kind !== "serial" && (isWindows || h.kind !== "wsl"),
+    );
     const q = query.trim().toLowerCase();
     if (!q) return nonSerial;
     return nonSerial.filter(
