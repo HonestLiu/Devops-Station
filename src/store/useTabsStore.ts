@@ -256,7 +256,13 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   openLocal: async (cwd?: string) => {
     const id = nextId();
     const shellPref = useAppStore.getState().settings.localShell;
-    const shell = shellPref && shellPref !== "default" ? shellPref : undefined;
+    // "default" means "the OS login shell" — resolve it on the backend (which
+    // knows the platform) rather than guessing on the JS side, so the shell we
+    // spawn and the OSC 7 emitter we inject are always in sync.
+    const shell =
+      shellPref && shellPref !== "default"
+        ? shellPref
+        : await pty.defaultShell().catch(() => undefined);
     set((s) => ({
       tabs: [
         ...s.tabs,
@@ -267,6 +273,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           subtitle: "local",
           status: "connecting",
           cwd,
+          shell,
         },
       ],
       activeId: id,
@@ -546,7 +553,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         const sessionId = await ble.open(tab.ble);
         get().patch(id, { status: "connected", sessionId });
       } else if (tab.kind === "local") {
-        get().patch(id, { status: "connected", sessionId: syncPane(await pty.spawn(120, 32)) });
+        // Reuse the previously resolved shell so a user-picked shell (e.g. fish,
+        // zsh) survives a reconnect instead of falling back to the OS default.
+        get().patch(id, {
+          status: "connected",
+          sessionId: syncPane(await pty.spawn(120, 32, tab.shell)),
+        });
       } else if (tab.kind === "wsl" && tab.wsl) {
         get().patch(id, { status: "connected", sessionId: syncPane(await wsl.spawn(tab.wsl, 120, 32)) });
       } else if (tab.kind === "frp" && tab.frp) {

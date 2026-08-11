@@ -26,6 +26,8 @@ export function Settings() {
   const updateSetting = useAppStore((s) => s.updateSetting);
   const resetSettings = useAppStore((s) => s.resetSettings);
   const [fontOpen, setFontOpen] = useState(false);
+  const isWindows =
+    typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || "");
 
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) =>
     void updateSetting(k, v);
@@ -267,10 +269,22 @@ export function Settings() {
               onChange={(e) => set("localShell", e.target.value)}
             >
               <option value="default">Default (OS login shell)</option>
-              <option value="powershell">PowerShell</option>
-              <option value="cmd">Command Prompt (cmd)</option>
-              <option value="bash">Git Bash / bash</option>
-              <option value="git-bash">Git Bash (MinTTY)</option>
+              {isWindows ? (
+                <>
+                  <option value="powershell">PowerShell</option>
+                  <option value="pwsh">PowerShell (pwsh)</option>
+                  <option value="cmd">Command Prompt (cmd)</option>
+                  <option value="git-bash">Git Bash</option>
+                  <option value="bash">bash (Git Bash / WSL)</option>
+                </>
+              ) : (
+                <>
+                  <option value="bash">bash</option>
+                  <option value="zsh">zsh</option>
+                  <option value="fish">fish</option>
+                  <option value="sh">sh</option>
+                </>
+              )}
             </Select>
           </Field>
         </Section>

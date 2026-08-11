@@ -63,11 +63,15 @@ export interface TerminalProps {
 /**
  * Build the per-prompt OSC 7 setup command for the given shell. Returns null
  * when the shell is unknown / unsupported so we inject nothing instead of
- * feeding bash syntax into powershell/cmd (which would error at startup).
+ * feeding bash syntax into powershell/cmd/fish (which would error at startup).
+ *
+ * `shell` is the *resolved* shell (e.g. "pwsh.exe", "/bin/zsh", "fish") — we
+ * normalize it (basename, lowercase, strip ".exe") so both the raw `$SHELL`
+ * path the backend returns and a user-picked "powershell" match correctly.
  */
 function buildCwdSetup(shell: string | undefined): string | null {
-  const s = (shell ?? "").toLowerCase();
-  if (s === "powershell") {
+  const s = normalizeShell(shell);
+  if (s === "powershell" || s === "pwsh") {
     // Hook PowerShell's prompt to emit `OSC 7` on every prompt, preserving the
     // user's existing prompt via $function:prompt. [Console]::Write keeps the
     // escape sequence on the raw PTY stream (Write-Host can be swallowed).
@@ -83,17 +87,46 @@ function buildCwdSetup(shell: string | undefined): string | null {
       "\r\n"
     );
   }
-  if (s === "bash" || s === "git-bash") {
-    // POSIX shell: self-detects bash (PROMPT_COMMAND) vs zsh (precmd).
+  if (s === "fish") {
+    // fish has no PROMPT_COMMAND; hook the `fish_prompt` event which fires before
+    // every prompt. Emitted as a single line so the interactive parser doesn't
+    // get stuck in a continuation state.
+    return (
+      "function __ds_cwd --on-event fish_prompt; printf '\\033]7;file://%s%s\\033\\\\' (hostname) (pwd | string replace -a ' ' '%20'); end; __ds_cwd\n"
+    );
+  }
+  if (
+    s === "bash" ||
+    s === "git-bash" ||
+    s === "zsh" ||
+    s === "sh" ||
+    s === "dash" ||
+    s === "ash"
+  ) {
+    // POSIX shell: self-detects bash (PROMPT_COMMAND) vs zsh (precmd). Covers
+    // bash, zsh, and the various Bourne derivatives (sh/dash/ash) — for the
+    // latter PROMPT_COMMAND may be absent, in which case OSC 7 simply won't
+    // fire (inert), but the shell stays usable.
     return (
       "__ds_cwd(){ printf '\\033]7;file://%s%s\\033\\\\' \"$HOSTNAME\" \"$PWD\"; }; " +
       "if [ -n \"$BASH_VERSION\" ]; then PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND}; }__ds_cwd\"; " +
       "elif [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __ds_cwd; fi\n"
     );
   }
-  // default / cmd / unknown → stay inert (no injection) so we never crash the
+  // cmd / empty / unknown → stay inert (no injection) so we never crash the
   // shell on startup. The cwd bar simply falls back to the spawn-time dir.
   return null;
+}
+
+/** Normalize a shell identifier to a comparable key: take the basename,
+ * lowercase it, and strip a trailing ".exe" (handles `/bin/zsh`,
+ * `C:\…\powershell.exe`, `pwsh.exe`, …). */
+function normalizeShell(shell: string | undefined): string {
+  if (!shell) return "";
+  const base = shell.includes("/") || shell.includes("\\")
+    ? shell.split(/[\\/]/).pop()!
+    : shell;
+  return base.toLowerCase().replace(/\.exe$/i, "");
 }
 
 type TransportApi = {

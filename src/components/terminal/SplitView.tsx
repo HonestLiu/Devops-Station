@@ -67,23 +67,17 @@ export function SplitView({ tab }: { tab: Tab }) {
   // SSH talks over ssh-* events; local/WSL/Frp sessions are PTY sessions.
   const transport = tab.kind === "ssh" ? "ssh" : "pty";
   const trackCwd = tab.kind === "ssh" || tab.kind === "wsl" || tab.kind === "local";
-  // The OSC 7 emitter depends on the shell. POSIX remotes (ssh/wsl) use the
-  // bash/zsh snippet; for a local tab we must tell Terminal the *actual* kind,
-  // because the backend's default_shell() launches PowerShell on Windows (and the
-  // login shell elsewhere). Passing "default" through would make buildCwdSetup
-  // bail out and cwd tracking would never start — so resolve it here. "cmd"
-  // stays inert (cmd can't emit OSC 7 reliably), which is fine.
-  const isWindows =
-    typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || "");
+  // The OSC 7 emitter depends on the shell. For a local tab we use the *resolved*
+  // shell stored on the tab (`tab.shell`) — openLocal() asked the backend for the
+  // real OS login shell (and a user-picked shell is stored verbatim), so this
+  // always matches what was actually spawned. SSH/WSL are POSIX remotes, which
+  // the bash/zsh snippet covers via self-detection. "cmd" and unknown shells
+  // stay inert (buildCwdSetup returns null), which is fine.
   const shell =
     tab.kind === "ssh" || tab.kind === "wsl"
       ? "bash"
       : tab.kind === "local"
-        ? localShell === "default"
-          ? isWindows
-            ? "powershell"
-            : "bash"
-          : localShell
+        ? tab.shell ?? (localShell !== "default" ? localShell : undefined)
         : undefined;
 
   const panes: TermPane[] = tab.panes ?? [

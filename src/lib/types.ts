@@ -236,6 +236,10 @@ export interface Tab {
   error?: string;
   /** SSH / Local — current working directory (local is kept fresh via OSC 7). */
   cwd?: string;
+  /** Local only — the resolved shell that was launched (e.g. "pwsh.exe",
+   *  "/bin/zsh", "fish"). Stored so the OSC 7 emitter and Reconnect both use
+   *  the exact same shell the backend spawned. */
+  shell?: string;
   fingerprint?: string;
   /** Serial only */
   serial?: SerialOpenConfig;

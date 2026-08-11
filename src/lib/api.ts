@@ -181,6 +181,8 @@ export const ble = {
 export const pty = {
   spawn: (cols: number, rows: number, shell?: string, cwd?: string) =>
     call<string>("pty_spawn", { cols, rows, shell, cwd }),
+  /** The shell a "Default" local PTY would launch on this machine (per OS). */
+  defaultShell: () => call<string>("default_shell", {}),
   write: (sessionId: string, data: string) =>
     call<void>("pty_write", { sessionId, data }),
   resize: (sessionId: string, cols: number, rows: number) =>

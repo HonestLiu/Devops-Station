@@ -384,6 +384,15 @@ async fn pty_spawn(
     state.pty.spawn(app, shell, cwd, cols, rows)
 }
 
+/// The shell a *default* local PTY would launch on this machine, resolved by
+/// platform (see `pty::default_shell`). The frontend calls this when the user
+/// picks "Default (OS login shell)" so it can spawn that exact shell and inject
+/// the matching OSC 7 cwd emitter — instead of guessing per-OS on the JS side.
+#[tauri::command]
+fn default_shell() -> String {
+    pty::default_shell()
+}
+
 #[tauri::command]
 async fn pty_write(state: State<'_, AppState>, session_id: String, data: String) -> AppResult<()> {
     state.pty.get(&session_id)?.write(&decode(&data)?)
@@ -711,11 +720,12 @@ pub fn run() {
             ble_write,
             ble_close,
             ble_attach,
-            pty_spawn,
-            pty_write,
-            pty_resize,
-            pty_close,
-            pty_attach,
+    pty_spawn,
+    pty_write,
+    pty_resize,
+    pty_close,
+    pty_attach,
+    default_shell,
             wsl_list_distros,
             wsl_spawn,
             wsl_list,

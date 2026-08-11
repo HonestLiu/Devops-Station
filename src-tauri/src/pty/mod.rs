@@ -256,7 +256,14 @@ impl PtyManager {
     }
 }
 
-fn default_shell() -> String {
+/// Resolve the shell a local PTY should launch, by platform:
+/// - Windows: prefer `pwsh.exe`, then `powershell.exe`, then `cmd.exe` (via COMSPEC).
+/// - Elsewhere: the user's `$SHELL`, falling back to `/bin/bash`.
+///
+/// Exposed to the frontend as the `default_shell` command so the UI can both
+/// spawn *exactly* this shell and pick the matching OSC 7 cwd emitter without
+/// re-implementing the platform logic on the JS side.
+pub fn default_shell() -> String {
     #[cfg(windows)]
     {
         // Prefer PowerShell, fall back to cmd.exe.
