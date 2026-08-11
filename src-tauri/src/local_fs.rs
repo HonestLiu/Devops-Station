@@ -174,3 +174,43 @@ pub fn open_path(path: String) -> Result<(), String> {
         Err(format!("failed to open (exit status {status})"))
     }
 }
+
+/// Open a URL in the user's default browser.
+///
+/// Used by terminal link clicks (Ctrl/Cmd+click) and AI-rendered markdown
+/// links. Only `http://` / `https://` is accepted — the OS "open" verbs would
+/// otherwise hand arbitrary URIs (and their embedded arguments) straight to
+/// the shell.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("only http/https URLs can be opened externally".to_string());
+    }
+
+    let status = {
+        #[cfg(target_os = "windows")]
+        {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/c", "start", "", &format!("\"{}\"", url)]);
+            #[cfg(windows)]
+            c.creation_flags(CREATE_NO_WINDOW);
+            c.status()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open").arg(url).status()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            std::process::Command::new("xdg-open").arg(url).status()
+        }
+    }
+    .map_err(|e| format!("failed to open URL: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to open URL (exit status {status})"))
+    }
+}

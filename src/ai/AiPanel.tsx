@@ -4,6 +4,8 @@ import {
   BookOpen,
   Bot,
   Cable,
+  Check,
+  Copy,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -99,92 +101,125 @@ function MessageView({
   onRun?: (code: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
 
+  // Copy the whole conversation as plain text (role-labelled) for pasting into
+  // a terminal / issue tracker.
+  const copyChat = async () => {
+    const text = session.messages
+      .map((m) => `${m.role === "user" ? "You" : "AI Assistant"}:\n${m.content}`)
+      .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  };
+
   return (
-    <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3">
-      {session.messages.length === 0 ? (
-        <div className="m-auto flex flex-col items-center gap-4 px-6 py-8 text-center">
-          <span className="icon-chip h-12 w-12">
-            <Sparkles size={20} />
-          </span>
-          <div>
-            <p className="text-[13px] font-semibold text-fg">AI Assistant</p>
-            <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-subtle">
-              Ask about Linux ops, SSH, serial or logs — or jump straight in with a quick
-              action below.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1.5 self-stretch">
-            <button
-              onClick={() => analyzeTerminal()}
-              className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
-            >
-              <ScrollText size={14} className="text-accent" />
-              <span className="flex-1">Analyze terminal output</span>
-              <span className="text-[10px] text-subtle">log</span>
-            </button>
-            <button
-              onClick={() => parseSerialProtocol()}
-              className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
-            >
-              <Cable size={14} className="text-accent" />
-              <span className="flex-1">Parse serial protocol</span>
-              <span className="text-[10px] text-subtle">serial</span>
-            </button>
-            <button
-              onClick={() => void monitoringInsight()}
-              className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
-            >
-              <Activity size={14} className="text-accent" />
-              <span className="flex-1">Monitoring insight</span>
-              <span className="text-[10px] text-subtle">metrics</span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-auto space-y-3">
-          {session.messages.map((m) => (
-            <div
-              key={m.id}
-              className={cn("flex items-end gap-2", m.role === "user" ? "justify-end" : "justify-start")}
-            >
-              {m.role === "assistant" && (
-                <span className="icon-chip h-6 w-6 shrink-0">
-                  <Sparkles size={12} />
-                </span>
-              )}
-              <div
-                className={cn(
-                  "max-w-[85%] px-3 py-2 text-[13px] leading-relaxed",
-                  m.role === "user"
-                    ? "rounded-2xl rounded-br-sm bg-accent/15 text-fg"
-                    : m.error
-                      ? "rounded-2xl rounded-bl-sm border border-danger/40 bg-danger/10 text-danger"
-                      : "rounded-2xl rounded-bl-sm border border-border/60 bg-elevated text-fg",
-                )}
-              >
-                {m.role === "assistant" ? (
-                  m.content ? (
-                    <Markdown content={m.content} onInsert={onInsert} onRun={onRun} />
-                  ) : (
-                    <span className="inline-flex gap-1 text-subtle">
-                      <Dot /> <Dot /> <Dot />
-                    </span>
-                  )
-                ) : (
-                  <span className="whitespace-pre-wrap">{m.content}</span>
-                )}
-                {m.streaming && m.content && (
-                  <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
-                )}
-              </div>
+    <div className="relative flex flex-1 min-h-0 flex-col">
+      {/* `select-text` overrides the app-wide user-select:none so chat history
+          can be drag-selected and copied. */}
+      <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 select-text">
+        {session.messages.length === 0 ? (
+          <div className="m-auto flex flex-col items-center gap-4 px-6 py-8 text-center">
+            <span className="icon-chip h-12 w-12">
+              <Sparkles size={20} />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-fg">AI Assistant</p>
+              <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-subtle">
+                Ask about Linux ops, SSH, serial or logs — or jump straight in with a quick
+                action below.
+              </p>
             </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
+            <div className="flex flex-col gap-1.5 self-stretch">
+              <button
+                onClick={() => analyzeTerminal()}
+                className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
+              >
+                <ScrollText size={14} className="text-accent" />
+                <span className="flex-1">Analyze terminal output</span>
+                <span className="text-[10px] text-subtle">log</span>
+              </button>
+              <button
+                onClick={() => parseSerialProtocol()}
+                className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
+              >
+                <Cable size={14} className="text-accent" />
+                <span className="flex-1">Parse serial protocol</span>
+                <span className="text-[10px] text-subtle">serial</span>
+              </button>
+              <button
+                onClick={() => void monitoringInsight()}
+                className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
+              >
+                <Activity size={14} className="text-accent" />
+                <span className="flex-1">Monitoring insight</span>
+                <span className="text-[10px] text-subtle">metrics</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-auto space-y-3">
+            {session.messages.map((m) => (
+              <div
+                key={m.id}
+                className={cn("flex items-end gap-2", m.role === "user" ? "justify-end" : "justify-start")}
+              >
+                {m.role === "assistant" && (
+                  <span className="icon-chip h-6 w-6 shrink-0">
+                    <Sparkles size={12} />
+                  </span>
+                )}
+                <div
+                  className={cn(
+                    "max-w-[85%] px-3 py-2 text-[13px] leading-relaxed",
+                    m.role === "user"
+                      ? "rounded-2xl rounded-br-sm bg-accent/15 text-fg"
+                      : m.error
+                        ? "rounded-2xl rounded-bl-sm border border-danger/40 bg-danger/10 text-danger"
+                        : "rounded-2xl rounded-bl-sm border border-border/60 bg-elevated text-fg",
+                  )}
+                >
+                  {m.role === "assistant" ? (
+                    m.content ? (
+                      <Markdown content={m.content} onInsert={onInsert} onRun={onRun} />
+                    ) : (
+                      <span className="inline-flex gap-1 text-subtle">
+                        <Dot /> <Dot /> <Dot />
+                      </span>
+                    )
+                  ) : (
+                    <span className="whitespace-pre-wrap">{m.content}</span>
+                  )}
+                  {m.streaming && m.content && (
+                    <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
+                  )}
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Copy conversation — pinned to the bottom-right of the message area
+          (outside the scroll container so it never scrolls away). */}
+      {session.messages.length > 0 && (
+        <button
+          onClick={() => void copyChat()}
+          title="Copy conversation"
+          className="absolute bottom-2 right-2 z-10 flex h-7 items-center gap-1.5 rounded-lg border border-border/70 bg-elevated px-2 text-[11px] text-muted shadow-md transition-colors hover:bg-hover hover:text-fg"
+        >
+          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
       )}
     </div>
   );
@@ -356,6 +391,7 @@ export function AiPanel() {
 
   return (
     <div
+      data-context="ai"
       className="relative flex h-full shrink-0 flex-col border-l border-border bg-surface"
       style={{ width }}
     >

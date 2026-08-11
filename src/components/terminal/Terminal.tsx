@@ -7,7 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ITheme } from "@xterm/xterm";
 import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "lucide-react";
 
-import { ssh, pty } from "@/lib/api";
+import { ssh, pty, localFs } from "@/lib/api";
 import { dataLink } from "@/lib/dataLink";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { base64ToBytes, textToBase64 } from "@/lib/utils";
@@ -305,7 +305,16 @@ export function Terminal(props: TerminalProps) {
     term.loadAddon(fit);
     term.loadAddon(search);
     term.loadAddon(new Unicode11Addon());
-    term.loadAddon(new WebLinksAddon());
+    // Terminal links open in the OS browser on **Ctrl/Cmd+click**. A plain
+    // click is left alone so it can't hijack terminal selection/interaction.
+    // (macOS reserves Ctrl+click as right-click, so use Cmd+click there.)
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (event.ctrlKey || event.metaKey) {
+          void localFs.openUrl(uri).catch(() => undefined);
+        }
+      }),
+    );
     term.open(host);
     fit.fit();
 

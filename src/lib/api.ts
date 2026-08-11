@@ -355,6 +355,8 @@ export const localFs = {
   list: (path: string) => call<LocalEntry[]>("local_list", { path }),
   reveal: (path: string) => call<void>("reveal_path", { path }),
   open: (path: string) => call<void>("open_path", { path }),
+  /** Open a URL in the OS default browser (http/https only). */
+  openUrl: (url: string) => call<void>("open_url", { url }),
 };
 
 // --- J-Link (SEGGER debug probe) -------------------------------------------

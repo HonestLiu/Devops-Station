@@ -797,6 +797,7 @@ pub fn run() {
             local_fs::local_list,
             local_fs::reveal_path,
             local_fs::open_path,
+            local_fs::open_url,
             jlink::jlink_available,
             jlink::jlink_connect,
             jlink::jlink_reset,

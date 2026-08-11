@@ -1,6 +1,7 @@
 import { useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Cable,
+  Copy,
   FolderOpen,
   Microchip,
   MonitorSmartphone,
@@ -84,7 +85,46 @@ export default function App() {
       return;
     }
     e.preventDefault();
-    const items: MenuItem[] = [
+    // Right-click over a text selection gets a Copy item first — the native
+    // menu is suppressed app-wide, so without this there'd be no way to copy
+    // selected text outside of inputs (e.g. the AI chat history).
+    const sel = window.getSelection()?.toString().trim() ?? "";
+
+    // The AI chat panel is a read-only content surface: right-click there only
+    // offers Copy (when text is selected) — the app-navigation items that make
+    // sense on page chrome don't apply inside a conversation.
+    if (target?.closest('[data-context="ai"]')) {
+      if (!sel) return;
+      showCtx(e.clientX, e.clientY, [
+        {
+          id: "copy",
+          label: "Copy",
+          icon: <Copy size={14} />,
+          onClick: () => {
+            closeCtx();
+            void navigator.clipboard.writeText(sel);
+          },
+        },
+      ]);
+      return;
+    }
+
+    const items: MenuItem[] = [];
+    if (sel) {
+      items.push(
+        {
+          id: "copy",
+          label: "Copy",
+          icon: <Copy size={14} />,
+          onClick: () => {
+            closeCtx();
+            void navigator.clipboard.writeText(sel);
+          },
+        },
+        { id: "sep-copy", separator: true, label: "" },
+      );
+    }
+    items.push(
       {
         id: "local",
         label: "新建本地终端",
@@ -141,7 +181,7 @@ export default function App() {
           setPageCtx("settings");
         },
       },
-    ];
+    );
     showCtx(e.clientX, e.clientY, items);
   };
 

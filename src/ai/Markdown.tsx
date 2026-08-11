@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Copy, Check } from "lucide-react";
 
+import { localFs } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ *
@@ -46,6 +47,11 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
           target="_blank"
           rel="noreferrer"
           className="text-accent underline underline-offset-2"
+          // Open in the OS browser instead of navigating the webview.
+          onClick={(e) => {
+            e.preventDefault();
+            void localFs.openUrl(mm[2]).catch(() => undefined);
+          }}
         >
           {mm[1]}
         </a>,
