@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Cable, Globe, MonitorSmartphone, Plus, Server, TerminalSquare, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Globe, MonitorSmartphone, Plus, Server, TerminalSquare, Trash2 } from "lucide-react";
 
-import { PortPicker } from "@/components/serial/PortPicker";
 import { DistroPicker } from "@/components/wsl/DistroPicker";
 import { Button, Checkbox, Dialog, Field, Input, Select } from "@/components/ui";
-import { serial } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import type { FrpConfig, FrpProxy, FrpProxyType, FrpServer, Host, HostKind } from "@/lib/types";
@@ -14,11 +12,9 @@ const COLORS = [
   "#bb9af7", "#7dcfff", "#ff9e64", "#41a6b5",
 ];
 
-/** Used until the backend's canonical list arrives (and if that call ever fails). */
-const FALLBACK_BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+// Serial has its own dedicated page, so it's not a "host" you save here.
 const KIND_TABS: { id: HostKind; label: string; icon: typeof Server }[] = [
   { id: "ssh", label: "SSH", icon: Server },
-  { id: "serial", label: "Serial", icon: Cable },
   { id: "wsl", label: "WSL", icon: TerminalSquare },
   { id: "frp", label: "Frp", icon: Globe },
   { id: "local", label: "Local", icon: MonitorSmartphone },
@@ -47,7 +43,6 @@ export function HostDialog({
   const [tagsText, setTagsText] = useState((initial.tags ?? []).join(", "));
   const [error, setError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
-  const [baudRates, setBaudRates] = useState<number[]>(FALLBACK_BAUD_RATES);
 
   // Frp config lives in host.frpConfig as JSON; keep it structured while editing
   // so the form can mutate proxies without string-churn on every keystroke.
@@ -67,34 +62,9 @@ export function HostDialog({
 
   const patch = (p: Partial<Host>) => setHost((h) => ({ ...h, ...p }));
 
-  // Pull the canonical baud list from the backend so UI and driver stay in sync.
-  useEffect(() => {
-    let alive = true;
-    serial
-      .baudRates()
-      .then((rates) => {
-        if (alive && rates.length > 0) setBaudRates(rates);
-      })
-      .catch(() => {
-        /* keep the fallback list */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Never drop a saved custom rate just because it isn't one of the presets.
-  const baudOptions = useMemo(() => {
-    const current = host.baudRate ?? 115200;
-    return baudRates.includes(current)
-      ? baudRates
-      : [...baudRates, current].sort((a, b) => a - b);
-  }, [baudRates, host.baudRate]);
-
   const validate = (): string | undefined => {
     if (!host.name.trim()) return "Name is required.";
     if (host.kind === "ssh" && !host.hostname?.trim()) return "Hostname is required.";
-    if (host.kind === "serial" && !host.serialPort?.trim()) return "Serial port is required.";
     if (host.kind === "frp") {
       if (!frpConfig.server?.serverAddr?.trim()) return "Server address is required.";
       if (!frpConfig.proxies.length) return "Add at least one proxy.";
@@ -236,79 +206,6 @@ export function HostDialog({
                   placeholder={host.passphrase === SAVED ? "•••••••• (unchanged)" : "optional"}
                   className="select-text"
                 />
-              </Field>
-            </>
-          )}
-
-          {host.kind === "serial" && (
-            <>
-              <Field label="Port" className="col-span-2">
-                <PortPicker
-                  value={host.serialPort ?? ""}
-                  onChange={(port) => patch({ serialPort: port })}
-                  // Only prefill on brand-new hosts; never overwrite a saved port.
-                  autoSelectFirst={!host.id}
-                />
-              </Field>
-              <Field label="Baud rate">
-                <Select
-                  value={host.baudRate ?? 115200}
-                  onChange={(e) => patch({ baudRate: Number(e.target.value) })}
-                >
-                  {baudOptions.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Data bits">
-                <Select
-                  value={host.dataBits ?? 8}
-                  onChange={(e) => patch({ dataBits: Number(e.target.value) })}
-                >
-                  {[5, 6, 7, 8].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Stop bits">
-                <Select
-                  value={host.stopBits ?? 1}
-                  onChange={(e) => patch({ stopBits: Number(e.target.value) })}
-                >
-                  {[1, 2].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Parity">
-                <Select
-                  value={host.parity ?? "none"}
-                  onChange={(e) => patch({ parity: e.target.value })}
-                >
-                  {["none", "odd", "even"].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Flow control">
-                <Select
-                  value={host.flowControl ?? "none"}
-                  onChange={(e) => patch({ flowControl: e.target.value })}
-                >
-                  {["none", "software", "hardware"].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </Select>
               </Field>
             </>
           )}

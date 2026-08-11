@@ -16,17 +16,20 @@
 //!      dropped* — `show()` still returns Ok, so it can't be detected).
 //! We do both in `register_aumid()`, called once at startup.
 
+#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::AppHandle;
 
 /// Must match `identifier` in `tauri.conf.json` and the AUMID the installer
 /// writes onto the Start Menu shortcut.
+#[cfg(windows)]
 pub const APP_AUMID: &str = "dev.hones.devops-station";
 
 /// Set once the process AUMID + Start Menu shortcut are in place. Until then we
 /// deliberately send the toast WITHOUT a custom app_id so it still shows (under
 /// "Windows PowerShell") instead of being silently dropped.
+#[cfg(windows)]
 static AUMID_READY: AtomicBool = AtomicBool::new(false);
 
 /// Register our AUMID so toasts attribute to this app. Call once at startup
@@ -84,7 +87,8 @@ pub fn show(app: &AppHandle, title: &str, body: &str) {
     }
     #[cfg(not(windows))]
     {
-        use tauri::Manager;
+        // `app.notification()` comes from NotificationExt; `tauri::Manager` is
+        // not needed on this path.
         use tauri_plugin_notification::NotificationExt;
         let _ = app.notification().builder().title(title).body(body).show();
     }
