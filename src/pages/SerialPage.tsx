@@ -1,43 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Cable,
-  Pencil,
-  Plus,
-  TerminalSquare,
-  Trash2,
-  Zap,
-} from "lucide-react";
+import { Cable, Usb, Bluetooth } from "lucide-react";
 
-import { Badge, Button, EmptyState, Field, Select } from "@/components/ui";
+import { Button, Field, Select } from "@/components/ui";
 import { PortPicker } from "@/components/serial/PortPicker";
-import { HostDialog } from "@/components/HostDialog";
-import { hashColor } from "@/lib/utils";
 import { serial } from "@/lib/api";
-import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
-import type { Host } from "@/lib/types";
+import type { SerialOpenConfig } from "@/lib/types";
 
-/** Used until the backend's canonical list arrives (and if that call ever fails). */
-const FALLBACK_BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+const FALLBACK_BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+
+const DATA_BITS = [5, 6, 7, 8];
+const PARITY: SerialOpenConfig["parity"][] = ["none", "odd", "even"];
+const STOP_BITS = [1, 2];
+const FLOW_CONTROL: SerialOpenConfig["flowControl"][] = ["none", "software", "hardware"];
 
 export function SerialPage() {
-  const hosts = useHostsStore((s) => s.hosts);
-  const deleteHost = useHostsStore((s) => s.deleteHost);
-  const openFromHost = useTabsStore((s) => s.openFromHost);
   const openSerial = useTabsStore((s) => s.openSerial);
 
-  const serialHosts = useMemo(
-    () => hosts.filter((h) => h.kind === "serial"),
-    [hosts],
-  );
+  const [activeTab, setActiveTab] = useState<"serial" | "bluetooth">("serial");
 
-  const [editing, setEditing] = useState<Host | null>(null);
-  const [creating, setCreating] = useState(false);
-
-  // ---- Quick connect (ad-hoc: open a port without saving a host) ----------
   const [port, setPort] = useState("");
   const [baudRate, setBaudRate] = useState(115200);
   const [baudRates, setBaudRates] = useState<number[]>(FALLBACK_BAUD_RATES);
+  const [dataBits, setDataBits] = useState<SerialOpenConfig["dataBits"]>(8);
+  const [parity, setParity] = useState<SerialOpenConfig["parity"]>("none");
+  const [stopBits, setStopBits] = useState<SerialOpenConfig["stopBits"]>(1);
+  const [flowControl, setFlowControl] = useState<SerialOpenConfig["flowControl"]>("none");
+  const [opening, setOpening] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -46,197 +35,154 @@ export function SerialPage() {
       .then((rates) => {
         if (alive && rates.length > 0) setBaudRates(rates);
       })
-      .catch(() => {
-        /* keep the fallback list */
-      });
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, []);
 
   const baudOptions = useMemo(() => {
-    return baudRates.includes(baudRate)
-      ? baudRates
-      : [...baudRates, baudRate].sort((a, b) => a - b);
+    return baudRates.includes(baudRate) ? baudRates : [...baudRates, baudRate].sort((a, b) => a - b);
   }, [baudRates, baudRate]);
 
-  const openQuick = () => {
+  const open = async () => {
     if (!port.trim()) return;
-    void openSerial(
-      {
-        port: port.trim(),
-        baudRate,
-        dataBits: 8,
-        stopBits: 1,
-        parity: "none",
-        flowControl: "none",
-      },
-      port.trim(),
-    );
+    setOpening(true);
+    try {
+      await openSerial(
+        {
+          port: port.trim(),
+          baudRate,
+          dataBits,
+          stopBits,
+          parity,
+          flowControl,
+        },
+        port.trim(),
+      );
+    } finally {
+      setOpening(false);
+    }
   };
-
-  const connect = (h: Host) => void openFromHost(h);
 
   return (
     <div className="page">
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Serial</h1>
-          <p className="page-subtitle">
-            Serial consoles — open a port directly or a saved device
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={14} /> New serial host
-          </Button>
+          <h1 className="page-title">串口终端</h1>
+          <p className="page-subtitle">选择串口并配置参数，打开一个临时调试会话</p>
         </div>
       </div>
 
-      {/* Quick connect */}
-      <div className="card mb-5 p-4">
-        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-fg">
-          <TerminalSquare size={15} className="text-accent" />
-          Quick connect
-          <span className="text-[11px] font-normal text-subtle">
-            opens a console without saving a host
-          </span>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Port" className="min-w-[240px] flex-1">
-            <PortPicker value={port} onChange={setPort} autoSelectFirst />
-          </Field>
-          <Field label="Baud rate" className="w-36" hint={" "}>
-            <Select
-              value={baudRate}
-              onChange={(e) => setBaudRate(Number(e.target.value))}
+      <div className="mx-auto flex max-w-4xl flex-col gap-5">
+        {/* Transport tabs */}
+        <div className="card p-1">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setActiveTab("serial")}
+              className={
+                "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors " +
+                (activeTab === "serial" ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+              }
             >
-              {baudOptions.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Button
-            variant="primary"
-            onClick={openQuick}
-            disabled={!port.trim()}
-            className="mb-[1px]"
-          >
-            <Cable size={14} /> Open console
-          </Button>
+              <Usb size={14} /> 串口
+            </button>
+            <button
+              onClick={() => setActiveTab("bluetooth")}
+              className={
+                "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors " +
+                (activeTab === "bluetooth" ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+              }
+            >
+              <Bluetooth size={14} /> 蓝牙
+            </button>
+          </div>
         </div>
+
+        {activeTab === "serial" ? (
+          <div className="card p-5">
+            <div className="mb-4 flex items-center gap-2 text-[14px] font-semibold text-fg">
+              <Cable size={15} className="text-accent" />
+              串口设置
+              <span className="text-[12px] font-normal text-subtle">请选择串口并连接相关参数</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="串口" className="sm:col-span-2 lg:col-span-3">
+                <PortPicker value={port} onChange={setPort} autoSelectFirst />
+              </Field>
+
+              <Field label="波特率">
+                <Select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))}>
+                  {baudOptions.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="数据位">
+                <Select value={dataBits} onChange={(e) => setDataBits(Number(e.target.value) as SerialOpenConfig["dataBits"])}>
+                  {DATA_BITS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="校验位">
+                <Select value={parity} onChange={(e) => setParity(e.target.value as SerialOpenConfig["parity"])}>
+                  {PARITY.map((p) => (
+                    <option key={p} value={p}>
+                      {p === "none" ? "None" : p === "odd" ? "Odd" : "Even"}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="停止位">
+                <Select value={stopBits} onChange={(e) => setStopBits(Number(e.target.value) as SerialOpenConfig["stopBits"])}>
+                  {STOP_BITS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="流控" className="sm:col-span-2 lg:col-span-1">
+                <Select value={flowControl} onChange={(e) => setFlowControl(e.target.value as SerialOpenConfig["flowControl"])}>
+                  {FLOW_CONTROL.map((f) => (
+                    <option key={f} value={f}>
+                      {f === "none" ? "None" : f === "software" ? "XON/XOFF" : "RTS/CTS"}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end">
+              <Button
+                variant="primary"
+                onClick={open}
+                disabled={!port.trim() || opening}
+                className="min-w-[140px]"
+              >
+                <Cable size={14} /> {opening ? "打开中…" : "选择串口设备"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="card flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <Bluetooth size={36} className="text-subtle" />
+            <p className="text-[14px] font-medium text-muted">蓝牙串口功能即将到来</p>
+            <p className="max-w-sm text-[12px] text-subtle">当前版本仅支持物理串口，蓝牙串口支持正在开发中。</p>
+          </div>
+        )}
       </div>
-
-      {/* Saved serial hosts */}
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-fg">Saved serial hosts</h2>
-        <Badge tone="warning">{serialHosts.length}</Badge>
-      </div>
-
-      {serialHosts.length === 0 ? (
-        <EmptyState
-          icon={<Cable size={28} />}
-          title="No serial hosts yet"
-          description="Add a serial host to keep its port, baud and settings, or use Quick connect above."
-          action={
-            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              <Plus size={14} /> New serial host
-            </Button>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {serialHosts.map((h) => {
-            const color = h.color || hashColor(h.name);
-            const subtitle = `${h.serialPort ?? "?"} · ${h.baudRate ?? 115200} baud`;
-            return (
-              <div key={h.id} className="card card-interactive group flex flex-col">
-                <div className="mb-3 flex items-center gap-2.5">
-                  <span
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold text-accent-fg"
-                    style={{ backgroundColor: color }}
-                  >
-                    {h.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
-                    {h.name}
-                  </span>
-                  <Badge tone="warning">Serial</Badge>
-                </div>
-                <div className="mb-3 flex items-center gap-1.5 text-[12px] text-muted">
-                  <Cable size={13} className="shrink-0 text-subtle" />
-                  <span className="truncate">{subtitle}</span>
-                </div>
-
-                {h.tags && h.tags.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-1">
-                    {h.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full bg-hover px-2 py-0.5 text-[10px] text-subtle"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-auto flex items-center gap-1.5">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => connect(h)}
-                  >
-                    Connect
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditing(h)}
-                    title="Edit"
-                  >
-                    <Pencil size={13} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (window.confirm(`Delete serial host "${h.name}"?`))
-                        void deleteHost(h.id);
-                    }}
-                    title="Delete"
-                  >
-                    <Trash2 size={13} className="text-danger" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {creating && (
-        <HostDialog
-          initial={emptyHost("serial")}
-          onClose={() => setCreating(false)}
-          onSaved={() => setCreating(false)}
-        />
-      )}
-      {editing && (
-        <HostDialog
-          initial={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => setEditing(null)}
-        />
-      )}
     </div>
   );
 }

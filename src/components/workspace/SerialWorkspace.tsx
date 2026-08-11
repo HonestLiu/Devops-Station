@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Calculator,
+  Activity,
+  ArrowUpDown,
+  Cable,
+  Download,
+  Eraser,
+  FileUp,
   LineChart,
+  Pause,
+  Play,
+  Power,
+  PowerOff,
+  RefreshCw,
   RotateCw,
   ScrollText,
-  Sparkles,
   TerminalSquare,
   Trash2,
-  Zap,
 } from "lucide-react";
 
 import { Badge, Button, Select } from "@/components/ui";
@@ -18,24 +26,22 @@ import { TerminalAiButton } from "@/ai/TerminalAiButton";
 import { parseSerialProtocol } from "@/ai/tasks";
 import { SerialPlot } from "@/components/serial/SerialPlot";
 import { SendBar, type SendBarHandle } from "@/components/serial/SendBar";
-import { Converter } from "@/components/serial/Converter";
+import { SerialRecordView } from "@/components/serial/SerialRecordView";
+import { QuickSendPanel } from "@/components/serial/QuickSendPanel";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
-import { useHostsStore } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import {
   base64ToBytes,
   bytesToBase64,
   bytesToHex,
   formatTime,
-  hexToBytes,
-  unescapeSequences,
   LINE_ENDINGS,
 } from "@/lib/utils";
 import { serial } from "@/lib/api";
 import { useSerialLog } from "@/ai/serialLog";
+import { encodeSendData, type SendMeta } from "@/lib/serialCodec";
 import type {
   LineEnding,
-  QuickCommand,
   SerialEncoding,
   SerialLogEntry,
   SerialViewMode,
@@ -43,9 +49,9 @@ import type {
 } from "@/lib/types";
 
 const MODES: { id: SerialViewMode; label: string; icon: typeof ScrollText }[] = [
-  { id: "normal", label: "Normal", icon: ScrollText },
-  { id: "terminal", label: "Terminal", icon: TerminalSquare },
-  { id: "plot", label: "Plot", icon: LineChart },
+  { id: "normal", label: "数据", icon: ScrollText },
+  { id: "plot", label: "绘图", icon: LineChart },
+  { id: "terminal", label: "终端", icon: TerminalSquare },
 ];
 
 const ENCODINGS: SerialEncoding[] = ["utf-8", "gbk", "ascii", "hex"];
@@ -72,7 +78,8 @@ function decodeBytes(bytes: Uint8Array, enc: SerialEncoding): string {
 export function SerialWorkspace({ tab }: { tab: Tab }) {
   const t = useTerminalTheme();
   const reconnect = useTabsStore((s) => s.reconnect);
-  const allQuick = useHostsStore((s) => s.quickCommands);
+  const closeTab = useTabsStore((s) => s.closeTab);
+  const patch = useTabsStore((s) => s.patch);
 
   const sessionId = tab.sessionId;
   const connected = tab.status === "connected" && !!sessionId;
@@ -81,39 +88,60 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   const [encoding, setEncoding] = useState<SerialEncoding>("utf-8");
   const [lineEnding, setLineEnding] = useState<LineEnding>("lf");
   const [logs, setLogs] = useState<SerialLogEntry[]>([]);
-  const [showQuick, setShowQuick] = useState(true);
-  const [showConverter, setShowConverter] = useState(false);
+  const [rxHex, setRxHex] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [frozen, setFrozen] = useState(false);
+  const [txBytes, setTxBytes] = useState(0);
+  const [rxBytes, setRxBytes] = useState(0);
 
   const logId = useRef(0);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const encodingRef = useRef(encoding);
   encodingRef.current = encoding;
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const rxHexRef = useRef(rxHex);
+  rxHexRef.current = rxHex;
+  // Freeze: stop capturing into the visible log while data still buffers upstream.
+  // Kept in a ref so the (long-lived) receive closure sees the live value.
+  const frozenRef = useRef(false);
+  frozenRef.current = frozen;
+  const pendingRef = useRef<SerialLogEntry[]>([]);
   const sendBarRef = useRef<SendBarHandle>(null);
 
-  const quick = useMemo(
-    () => allQuick.filter((c) => c.scope === "serial" || c.scope === "both"),
-    [allQuick],
-  );
+  const appendLog = (dir: "rx" | "tx", text: string, hex: string, rawLen: number) => {
+    const entry: SerialLogEntry = { id: ++logId.current, at: Date.now(), dir, text, hex };
+    if (frozenRef.current) {
+      pendingRef.current.push(entry);
+      if (pendingRef.current.length > 2000) pendingRef.current.shift();
+    } else {
+      setLogs((prev) => {
+        const next = [...prev, entry];
+        if (next.length > 2000) next.shift();
+        return next;
+      });
+    }
+    if (dir === "rx") setRxBytes((v) => v + rawLen);
+    else setTxBytes((v) => v + rawLen);
+  };
 
-  const appendLog = (dir: "rx" | "tx", text: string, hex: string) => {
-    setLogs((prev) => {
-      const next = [
-        ...prev,
-        { id: ++logId.current, at: Date.now(), dir, text, hex },
-      ];
-      if (next.length > 2000) next.shift();
+  const toggleFreeze = () => {
+    setFrozen((f) => {
+      const next = !f;
+      if (!next) {
+        // Resuming: flush anything buffered while frozen into the visible log.
+        if (pendingRef.current.length) {
+          setLogs((prev) => {
+            const nextLogs = [...prev, ...pendingRef.current];
+            pendingRef.current = [];
+            if (nextLogs.length > 2000) nextLogs.splice(0, nextLogs.length - 2000);
+            return nextLogs;
+          });
+        }
+      }
       return next;
     });
   };
 
-  // Receive log only in Normal mode; Plot and Terminal subscribe themselves.
-  //
-  // Like the terminal, this listener attaches *after* the port is already open,
-  // so it asks the backend to flush what it buffered in the meantime. That
-  // matters most here: opening a port toggles DTR, which resets many boards —
-  // the entire boot log lands in that gap.
   useEffect(() => {
     if (!sessionId || mode !== "normal") return;
 
@@ -124,7 +152,9 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
 
     const receive = (bytes: Uint8Array) => {
       const text = decodeBytes(bytes, encodingRef.current);
-      appendLog("rx", text, bytesToHex(bytes));
+      const hex = bytesToHex(bytes);
+      const displayText = rxHexRef.current ? hex : text;
+      appendLog("rx", displayText, hex, bytes.length);
       useSerialLog.getState().push(text);
     };
 
@@ -159,42 +189,101 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     };
   }, [sessionId, mode]);
 
-  // Auto-scroll the log view to the newest entry.
-  useEffect(() => {
-    if (mode === "normal") bottomRef.current?.scrollIntoView();
-  }, [logs, mode]);
-
-  // Normal mode has no terminal to click into, so put the caret in the composer
-  // as soon as the port is live — typing should just work, like it does in
-  // Terminal mode.
   useEffect(() => {
     if (mode !== "terminal" && connected) sendBarRef.current?.focus();
   }, [mode, connected]);
 
-  const send = (raw: string, asHex: boolean) => {
-    if (!sessionId || !raw) return;
-    let bytes: Uint8Array;
-    if (asHex) {
-      bytes = hexToBytes(raw);
-    } else {
-      const escaped = unescapeSequences(raw);
-      const le = LINE_ENDINGS[lineEnding];
-      bytes = new TextEncoder().encode(escaped + le);
-    }
+  // When the backend reports the serial session closed (user disconnect, device
+  // unplugged, or port error), reflect it in the tab so the button flips back to
+  // "打开串口" and the disconnected overlay appears.
+  useEffect(() => {
+    if (!sessionId) return;
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void serial.onClosed(sessionId, (info) => {
+      if (disposed) return;
+      // Don't surface a clean user disconnect as an error message.
+      const isUserClose = info.reason === "closed by user";
+      patch(tab.id, {
+        status: "closed",
+        sessionId: undefined,
+        error: isUserClose ? undefined : info.reason,
+      });
+    }).then((un) => {
+      if (disposed) un();
+      else stop = un;
+    });
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, [sessionId, tab.id, patch]);
+
+  // Core writer: pushes already-encoded bytes to the port and records a TX entry.
+  // `meta` tells the log how to render the line (text -> raw string, hex/dec -> hex).
+  const writeOut = (bytes: Uint8Array, meta: SendMeta) => {
+    if (!sessionId || bytes.length === 0) return;
     void serial.write(sessionId, bytesToBase64(bytes));
     if (mode === "normal") {
-      appendLog("tx", asHex ? bytesToHex(bytes) : raw, bytesToHex(bytes));
+      const hex = bytesToHex(bytes);
+      const displayText = meta.format === "text" ? meta.raw : hex;
+      appendLog("tx", displayText, hex, bytes.length);
+    } else {
+      setTxBytes((v) => v + bytes.length);
     }
+  };
+
+  // Byte-based send — used by the SendBar composer (format + checksum resolved upstream).
+  const send = (bytes: Uint8Array, meta: SendMeta) => writeOut(bytes, meta);
+
+  // String-based send — used by the QuickSendPanel (plain text or raw hex items).
+  const sendRaw = (raw: string, asHex: boolean) => {
+    if (!sessionId || !raw.trim()) return;
+    const r = encodeSendData({
+      raw,
+      format: asHex ? "hex" : "text",
+      lineEnding: LINE_ENDINGS[lineEnding],
+      checksum: "none",
+    });
+    if (r.bytes) writeOut(r.bytes, { format: asHex ? "hex" : "text", raw, checksum: "none" });
+  };
+
+  const exportLog = () => {
+    const lines = logs.map((e) => `[${formatTime(e.at)}] ${e.dir.toUpperCase()} ${e.text}`);
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `serial-log-${tab.title}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const cfg = tab.serial;
   const configLabel = cfg
-    ? `${cfg.port} · ${cfg.baudRate} · ${cfg.parity}${cfg.dataBits}${cfg.stopBits}`
+    ? `${cfg.port} · ${cfg.baudRate} · ${cfg.parity}/${cfg.dataBits}/${cfg.stopBits}`
     : tab.subtitle;
+
+  const toggleConnect = () => {
+    if (connected) {
+      if (sessionId) {
+        void serial.close(sessionId);
+        // Optimistic update — flip the UI immediately so the button responds even
+        // before the backend's `serial-closed` event arrives.
+        patch(tab.id, { status: "closed", sessionId: undefined, error: undefined });
+      }
+    } else {
+      void reconnect(tab.id);
+    }
+  };
+
+  const dtrRts = (dtr?: boolean, rts?: boolean) => {
+    if (sessionId) void serial.signals(sessionId, dtr, rts);
+  };
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Toolbar */}
+      {/* Top toolbar */}
       <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
         <div className="flex items-center gap-1 rounded-md border border-border bg-bg p-0.5">
           {MODES.map((m) => {
@@ -217,12 +306,14 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
         </div>
 
         <div className="flex items-center gap-2 no-drag">
-          <Badge tone="warning">{configLabel}</Badge>
+          <Badge tone={connected ? "success" : tab.status === "error" ? "danger" : "warning"}>
+            {connected ? "已连接" : tab.status === "error" ? "错误" : tab.status === "connecting" ? "连接中" : "等待连接"}
+          </Badge>
           <Select
             value={encoding}
             onChange={(e) => setEncoding(e.target.value as SerialEncoding)}
             className="w-24"
-            title="Receive encoding"
+            title="接收编码"
           >
             {ENCODINGS.map((e) => (
               <option key={e} value={e}>
@@ -230,156 +321,206 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
               </option>
             ))}
           </Select>
-          <Button
-            variant={showQuick ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setShowQuick((v) => !v)}
-            title="Quick commands"
-          >
-            <Zap size={14} />
-          </Button>
-          <Button
-            variant={showConverter ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setShowConverter((v) => !v)}
-            title="Converter"
-          >
-            <Calculator size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLogs([])}
-            title="Clear log"
-          >
-            <Trash2 size={14} />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Reconnect">
+          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="重连">
             <RotateCw size={14} />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            title="Analyze recent serial data as a protocol"
+            title="解析最近串口数据为协议"
             onClick={() => void parseSerialProtocol()}
           >
-            <Sparkles size={14} /> Parse
+            协议解析
           </Button>
           <TerminalAiButton tab={tab} />
         </div>
       </div>
 
-      {/* Body */}
+      {/* Main body: left settings + center display + right quick send */}
       <div className="relative flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1">
-          {mode === "terminal" && connected && sessionId && (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="relative min-h-0 flex-1">
-                <Terminal
-                  key={sessionId}
-                  sessionId={sessionId}
-                  transport="serial"
-                  theme={t.theme}
-                  fontFamily={t.fontFamily}
-                  fontSize={t.fontSize}
-                  lineHeight={t.lineHeight}
-                  cursorBlink={t.cursorBlink}
-                  cursorStyle={t.cursorStyle}
-                  scrollback={t.scrollback}
-                />
+        {/* Left: serial settings panel */}
+        <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
+          <div className="flex h-9 items-center border-b border-border px-3 text-[12px] font-semibold text-fg">
+            串口设置
+          </div>
+          <div className="flex flex-col gap-3 p-3 text-[12px]">
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wide text-subtle">端口</span>
+              <span className="font-mono text-fg">{cfg?.port ?? "—"}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-subtle">波特率</span>
+                <span className="text-fg">{cfg?.baudRate ?? "—"}</span>
               </div>
-              <TerminalInlineAsk tab={tab} />
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-subtle">数据位</span>
+                <span className="text-fg">{cfg?.dataBits ?? "—"}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-subtle">校验位</span>
+                <span className="text-fg">{cfg?.parity ?? "—"}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wide text-subtle">停止位</span>
+                <span className="text-fg">{cfg?.stopBits ?? "—"}</span>
+              </div>
             </div>
-          )}
-          {mode === "plot" && connected && sessionId && <SerialPlot sessionId={sessionId} />}
-          {mode === "normal" && (
-            // Clicking the log drops the caret in the composer, so the view
-            // behaves like a terminal: click anywhere, start typing.
-            <div
-              onMouseUp={() => {
-                // Don't steal the caret when the click was a text selection.
-                if (!window.getSelection()?.toString()) sendBarRef.current?.focus();
-              }}
-              className="h-full overflow-y-auto py-1 font-mono text-[12px]"
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wide text-subtle">流控</span>
+              <span className="text-fg">{cfg?.flowControl ?? "—"}</span>
+            </div>
+
+            <div className="my-1 h-px bg-border" />
+
+            <Button
+              variant={connected ? "danger" : "primary"}
+              size="sm"
+              onClick={toggleConnect}
+              disabled={tab.status === "connecting"}
+              className="w-full"
             >
-              {logs.map((e) => (
-                <div
-                  key={e.id}
-                  className="border-b border-border/40 px-3 py-1 break-all whitespace-pre-wrap"
-                >
-                  <span className="mr-2 text-subtle">{formatTime(e.at)}</span>
-                  <span className={e.dir === "rx" ? "text-accent" : "text-warning"}>
-                    {e.dir === "rx" ? "RX" : "TX"}
-                  </span>
-                  <span className="ml-2 text-fg">{e.text || "(binary)"}</span>
-                  <span className="mt-0.5 block text-[10px] text-subtle">{e.hex}</span>
-                </div>
-              ))}
-              {logs.length === 0 && (
-                <p className="p-4 text-center text-[12px] text-subtle">
-                  No data yet. Incoming bytes appear here — type below to send.
-                </p>
-              )}
-              <div ref={bottomRef} />
+              {connected ? <PowerOff size={14} /> : <Power size={14} />}
+              {connected ? "断开连接" : tab.status === "connecting" ? "连接中…" : "打开串口"}
+            </Button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" onClick={() => dtrRts(true)} disabled={!connected}>
+                DTR
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => dtrRts(undefined, true)} disabled={!connected}>
+                RTS
+              </Button>
             </div>
-          )}
-          {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+
+            <Button variant="ghost" size="sm" onClick={() => void closeTab(tab.id)} className="mt-auto w-full">
+              <Trash2 size={14} /> 关闭标签
+            </Button>
+          </div>
+        </aside>
+
+        {/* Center: display area */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {/* Display toolbar */}
+          <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setRxHex((v) => !v)}
+                className={
+                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                  (rxHex ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+                }
+                title="以 HEX 显示接收数据"
+              >
+                <Activity size={12} /> 接收:HEX
+              </button>
+              <button
+                onClick={() => setAutoScroll((v) => !v)}
+                className={
+                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                  (autoScroll ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+                }
+                title="自动滚动到最新数据"
+              >
+                <ArrowUpDown size={12} /> 自动滚动
+              </button>
+              <button
+                onClick={toggleFreeze}
+                className={
+                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                  (frozen ? "bg-warning text-warning-fg" : "text-muted hover:bg-hover")
+                }
+                title="暂停记录显示（数据仍在后台缓存，恢复后补入）"
+              >
+                {frozen ? <Play size={12} /> : <Pause size={12} />}
+                {frozen ? "已暂停" : "暂停"}
+              </button>
+              <Button variant="ghost" size="sm" onClick={exportLog} disabled={logs.length === 0} title="导出日志">
+                <Download size={13} /> 导出
+              </Button>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" disabled title="发送文件（即将支持）">
+                <FileUp size={13} /> 发送文件
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setLogs([]);
+                  pendingRef.current = [];
+                }}
+                title="清屏"
+              >
+                <Eraser size={13} /> 清屏
+              </Button>
+            </div>
+          </div>
+
+          {/* Display content */}
+          <div className="relative flex-1">
+            {mode === "terminal" && connected && sessionId && (
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="relative min-h-0 flex-1">
+                  <Terminal
+                    key={sessionId}
+                    sessionId={sessionId}
+                    transport="serial"
+                    theme={t.theme}
+                    fontFamily={t.fontFamily}
+                    fontSize={t.fontSize}
+                    lineHeight={t.lineHeight}
+                    cursorBlink={t.cursorBlink}
+                    cursorStyle={t.cursorStyle}
+                    scrollback={t.scrollback}
+                  />
+                </div>
+                <TerminalInlineAsk tab={tab} />
+              </div>
+            )}
+            {mode === "plot" && connected && sessionId && <SerialPlot sessionId={sessionId} />}
+            {mode === "normal" && (
+              <SerialRecordView logs={logs} rxHex={rxHex} autoScroll={autoScroll} />
+            )}
+            {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}
+          </div>
         </div>
 
-        {(showQuick || showConverter) && (
-          <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-surface p-3">
-            {showQuick && (
-              <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-subtle">
-                  Quick Commands
-                </h3>
-                <div className="space-y-1.5">
-                  {quick.length === 0 && (
-                    <p className="text-[11px] text-subtle">
-                      None yet. Add some in Hosts → Quick Commands.
-                    </p>
-                  )}
-                  {quick.map((c: QuickCommand) => (
-                    <button
-                      key={c.id}
-                      onClick={() => send(c.value, c.isHex)}
-                      disabled={!connected}
-                      title={connected ? c.value : "Port is not connected"}
-                      className="flex w-full items-center justify-between gap-2 rounded border border-border bg-elevated px-2.5 py-1.5 text-left text-[12px] hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-elevated"
-                    >
-                      <span className="font-medium text-fg">{c.name}</span>
-                      <code className="truncate text-[10px] text-subtle">{c.value}</code>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {showConverter && (
-              <div>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-subtle">
-                  Converter
-                </h3>
-                <Converter />
-              </div>
-            )}
-          </aside>
-        )}
+        {/* Right: quick send panel */}
+        <QuickSendPanel connected={connected} onSend={sendRaw} />
       </div>
 
-      {/* Composer (hidden in Terminal mode — xterm captures keystrokes itself) */}
+      {/* Bottom composer + status bar */}
       {mode !== "terminal" && (
-        <SendBar
-          ref={sendBarRef}
-          connected={connected}
-          disabledReason={
-            tab.status === "connecting"
-              ? "Opening the port…"
-              : "Port is closed — hit Reconnect to send again."
-          }
-          lineEnding={lineEnding}
-          onLineEndingChange={setLineEnding}
-          onSend={send}
-        />
+        <div className="shrink-0 border-t border-border bg-surface">
+          <SendBar
+            ref={sendBarRef}
+            connected={connected}
+            disabledReason={
+              tab.status === "connecting"
+                ? "正在打开串口…"
+                : "串口已关闭 — 点击左侧“打开串口”重连。"
+            }
+            lineEnding={lineEnding}
+            onLineEndingChange={setLineEnding}
+            onSend={send}
+          />
+          <div className="flex h-7 items-center justify-between gap-3 border-t border-border px-3 text-[11px] text-subtle">
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1">
+                <Cable size={12} />
+                {configLabel}
+              </span>
+              <span className={connected ? "text-success" : "text-warning"}>
+                {connected ? "已连接" : "已断开"}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 font-mono">
+              <span>Tx: {txBytes} Bytes</span>
+              <span>Rx: {rxBytes} Bytes</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
