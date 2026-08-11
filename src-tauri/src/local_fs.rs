@@ -113,13 +113,15 @@ pub fn reveal_path(path: String) -> Result<(), String> {
         {
             let norm = path.trim_end_matches('/');
             let mut c = std::process::Command::new("open");
-            c.arg(norm)
+            c.arg(norm);
+            c
         }
         #[cfg(target_os = "linux")]
         {
             let norm = path.trim_end_matches('/');
             let mut c = std::process::Command::new("xdg-open");
-            c.arg(norm)
+            c.arg(norm);
+            c
         }
     };
 

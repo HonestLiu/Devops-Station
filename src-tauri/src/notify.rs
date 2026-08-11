@@ -85,6 +85,7 @@ pub fn show(app: &AppHandle, title: &str, body: &str) {
     #[cfg(not(windows))]
     {
         use tauri::Manager;
+        use tauri_plugin_notification::NotificationExt;
         let _ = app.notification().builder().title(title).body(body).show();
     }
 }
