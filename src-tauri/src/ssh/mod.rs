@@ -255,7 +255,6 @@ impl SshManager {
                                     data: B64.encode(data),
                                 },
                             );
-                            crate::perm::scan_and_emit(&app_for_task, &sid, data.as_ref());
                         }
                     }
                     ChannelMsg::ExitStatus { exit_status } => {

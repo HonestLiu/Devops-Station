@@ -408,7 +408,6 @@ impl BleManager {
                                                 data: B64.encode(&n.value),
                                             },
                                         );
-                                        crate::perm::scan_and_emit(&app, &sid, &n.value);
                                     }
                                 }
                                 None => {

@@ -19,8 +19,6 @@
 #[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::AppHandle;
-
 /// Must match `identifier` in `tauri.conf.json` and the AUMID the installer
 /// writes onto the Start Menu shortcut.
 #[cfg(windows)]
@@ -62,35 +60,6 @@ pub fn register_aumid() {
                 let _ = handle.join();
             }
         }
-    }
-}
-
-/// Raise an OS notification, attributed to this app when our AUMID is registered.
-///
-/// If the AUMID isn't ready we still send the toast without a custom app_id so it
-/// shows under "Windows PowerShell" rather than being silently dropped. And if the
-/// WinRT call errors for any reason we fall back to the Tauri plugin. We never
-/// want a permission prompt to go completely unnoticed.
-pub fn show(app: &AppHandle, title: &str, body: &str) {
-    #[cfg(windows)]
-    {
-        let mut n = notify_rust::Notification::new();
-        n.summary(title).body(body);
-        if AUMID_READY.load(Ordering::SeqCst) {
-            n.app_id(APP_AUMID);
-        }
-        if let Err(e) = n.show() {
-            eprintln!("[notify] winrt toast failed: {e:?}; falling back to Tauri plugin");
-            use tauri_plugin_notification::NotificationExt;
-            let _ = app.notification().builder().title(title).body(body).show();
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        // `app.notification()` comes from NotificationExt; `tauri::Manager` is
-        // not needed on this path.
-        use tauri_plugin_notification::NotificationExt;
-        let _ = app.notification().builder().title(title).body(body).show();
     }
 }
 

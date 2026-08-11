@@ -23,6 +23,8 @@ export interface AppSettings {
   localShell: string;
   /** Custom path to the J-Link executable (JLink.exe / JLinkExe). Empty = auto-detect. */
   jlinkPath: string;
+  /** Whether the left sidebar is collapsed to icon-only. */
+  sidebarCollapsed: boolean;
   ai: AISettings;
   /** Families of user-imported fonts, re-registered at startup. */
   importedFonts: string[];
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   confirmOnClose: true,
   localShell: "default",
   jlinkPath: "",
+  sidebarCollapsed: false,
   importedFonts: [],
   ai: {
     provider: "openai",

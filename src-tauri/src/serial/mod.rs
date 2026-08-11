@@ -164,7 +164,6 @@ impl SerialManager {
                                         data: B64.encode(&buf[..n]),
                                     },
                                 );
-                                crate::perm::scan_and_emit(&app, &sid, &buf[..n]);
                             }
                         }
                         Err(e) if e.kind() == ErrorKind::TimedOut => {}

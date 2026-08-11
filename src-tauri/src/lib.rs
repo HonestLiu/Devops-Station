@@ -9,7 +9,6 @@ mod jlink;
 mod kb;
 mod local_fs;
 mod notify;
-mod perm;
 mod pty;
 mod serial;
 mod ssh;
@@ -693,7 +692,6 @@ async fn sync_pull(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-            .plugin(tauri_plugin_notification::init())
             .setup(|app| {
             // Ensure OS notifications are attributed to this app (not
             // "Windows PowerShell") by registering our Start Menu shortcut +
