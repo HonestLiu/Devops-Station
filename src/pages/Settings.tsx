@@ -255,6 +255,25 @@ export function Settings() {
             />
           </Field>
         </Section>
+
+        {/* Local Shell */}
+        <Section title="Local Shell">
+          <Field
+            label="Default shell"
+            hint="Shell used when opening a new Local Shell tab. 'Default' uses your OS login shell."
+          >
+            <Select
+              value={settings.localShell}
+              onChange={(e) => set("localShell", e.target.value)}
+            >
+              <option value="default">Default (OS login shell)</option>
+              <option value="powershell">PowerShell</option>
+              <option value="cmd">Command Prompt (cmd)</option>
+              <option value="bash">Git Bash / bash</option>
+              <option value="git-bash">Git Bash (MinTTY)</option>
+            </Select>
+          </Field>
+        </Section>
       </div>
     </div>
   );

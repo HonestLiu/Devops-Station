@@ -10,7 +10,7 @@ import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
 export function SshWorkspace({ tab }: { tab: Tab }) {
-  const [sftpOpen, setSftpOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const patch = useTabsStore((s) => s.patch);
   const splitPane = useTabsStore((s) => s.splitPane);
@@ -49,13 +49,13 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
         </div>
         <div className="flex items-center gap-1.5 no-drag">
           <Button
-            variant={sftpOpen ? "primary" : "ghost"}
+            variant={filesOpen ? "primary" : "ghost"}
             size="sm"
-            onClick={() => setSftpOpen((v) => !v)}
-            title="Toggle SFTP file manager"
+            onClick={() => setFilesOpen((v) => !v)}
+            title="Toggle file manager for this connection"
           >
-            {sftpOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            SFTP
+            {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
+            Files
           </Button>
           <div className="mx-1 h-4 w-px bg-border" />
           <SplitControls
@@ -78,8 +78,8 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
 
-        {sftpOpen && connected && tab.sessionId && (
-          <SftpPanel sessionId={tab.sessionId} onClose={() => setSftpOpen(false)} />
+        {filesOpen && connected && tab.sessionId && (
+          <SftpPanel sessionId={tab.sessionId} onClose={() => setFilesOpen(false)} />
         )}
       </div>
     </div>

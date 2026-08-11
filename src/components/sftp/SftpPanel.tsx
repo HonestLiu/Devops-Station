@@ -316,7 +316,7 @@ export function SftpPanel({
         </div>
       )}
       {/* Path bar */}
-      <div className="flex h-9 items-center gap-1 border-b border-border px-2">
+      <div className="flex h-9 items-center gap-1 border-b border-border px-2.5">
         <Button variant="ghost" size="sm" onClick={() => navigate("/")} title="Root">
           <Home size={14} />
         </Button>

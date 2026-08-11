@@ -6,15 +6,25 @@ import {
   Bot,
   Cable,
   ChevronDown,
+  ChevronRight,
+  Command,
+  Copy,
+  ExternalLink,
+  FolderOpen,
+  FolderTree,
+  GitBranch,
   ScrollText,
+  Search,
   Send,
   Sparkles,
+  Terminal,
   Wand2,
   X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Tab } from "@/lib/types";
+import { localFs } from "@/lib/api";
 import { useAiStore } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
 import { useAiSuggestion } from "./useAiSuggestion";
@@ -23,6 +33,55 @@ import { runAgent } from "./agent";
 import { analyzeTerminal, monitoringInsight, parseSerialProtocol } from "./tasks";
 import { Markdown } from "./Markdown";
 import { writeToTerminal } from "./terminalAi";
+import { scanLocalDir, formatSize } from "./localFs";
+import { useSessionStore } from "@/store/useSessionStore";
+import { useTabsStore } from "@/store/useTabsStore";
+
+/**
+ * Grouped command snippets for the Wand2 "Snippets" flyout. They are *inserted*
+ * into the terminal (typed at the prompt) rather than auto-run, so the operator
+ * can review before pressing Enter — consistent with how AI-generated commands
+ * behave elsewhere.
+ */
+const SNIPPET_GROUPS: { group: string; items: { label: string; cmd: string }[] }[] = [
+  {
+    group: "Git",
+    items: [
+      { label: "git status (short)", cmd: "git status -s" },
+      { label: "recent commits", cmd: "git log --oneline -10" },
+      { label: "diff stat", cmd: "git diff --stat" },
+      { label: "add + commit", cmd: 'git add . && git commit -m ""' },
+      { label: "create branch", cmd: "git checkout -b feature/" },
+    ],
+  },
+  {
+    group: "Docker",
+    items: [
+      { label: "list containers", cmd: "docker ps -a" },
+      { label: "compose up", cmd: "docker compose up -d" },
+      { label: "list images", cmd: "docker images" },
+      { label: "prune system", cmd: "docker system prune -af" },
+    ],
+  },
+  {
+    group: "npm / Node",
+    items: [
+      { label: "install", cmd: "npm install" },
+      { label: "run dev", cmd: "npm run dev" },
+      { label: "build", cmd: "npm run build" },
+      { label: "scaffold vite", cmd: "npx create-vite@latest" },
+    ],
+  },
+  {
+    group: "System",
+    items: [
+      { label: "disk usage by dir", cmd: "du -sh ./* | sort -h" },
+      { label: "find large files", cmd: 'find . -type f -size +100M -exec ls -lh {} \\;' },
+      { label: "top memory procs", cmd: "ps aux --sort=-%mem | head" },
+      { label: "listen ports", cmd: "ss -ltnp" },
+    ],
+  },
+];
 
 /**
  * The inline AI composer: a command-line-style bar docked at the bottom of the
@@ -40,6 +99,11 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsBtnRef = useRef<HTMLButtonElement>(null);
   const [toolsMenuStyle, setToolsMenuStyle] = useState<React.CSSProperties>({});
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
+  // A snippet flyout is only meaningful while the tools menu is open.
+  useEffect(() => {
+    if (!toolsOpen) setSnippetsOpen(false);
+  }, [toolsOpen]);
 
   const agentRunning = useAiAgent((s) => s.running);
   const agentGoal = useAiAgent((s) => s.goal);
@@ -83,6 +147,51 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
     tab.panes?.forEach((p) => p.sessionId && ids.add(p.sessionId));
     return ids;
   }, [tab]);
+
+  // Live working directory for local tabs: the OSC 7 hook keeps it fresh in the
+  // session store as the user `cd`s; fall back to the spawn-time dir.
+  const liveCwd = useSessionStore((s) =>
+    sessionId ? s.cwdBySession[sessionId] : undefined,
+  );
+  const cwd = liveCwd ?? tab.cwd;
+
+  // --- Local-shell only: AI actions that read the directory tree ------------
+  const explainDirectory = async () => {
+    setToolsOpen(false);
+    if (!cwd) return;
+    const { tree, truncated } = await scanLocalDir(cwd, { maxDepth: 3, maxEntries: 400 });
+    const prompt =
+      `Explain the structure and likely purpose of the project at:\n${cwd}\n\n` +
+      `Directory tree:\n${tree}${truncated ? "\n\n(truncated — too many entries)" : ""}\n\n` +
+      `What kind of project is this, what are its main components, and what are the ` +
+      `likely build / test / run commands? Be concise.`;
+    submitValue(prompt);
+  };
+
+  const generateGitignore = async () => {
+    setToolsOpen(false);
+    if (!cwd) return;
+    const { tree } = await scanLocalDir(cwd, { maxDepth: 2, maxEntries: 300 });
+    const prompt =
+      `Based on the project directory structure below, generate a comprehensive ` +
+      `.gitignore for the detected languages and tooling. Output ONLY the .gitignore ` +
+      `contents (no explanation, no markdown fences).\n\nDirectory tree:\n${tree}`;
+    submitValue(prompt);
+  };
+
+  const findLargeFiles = async () => {
+    setToolsOpen(false);
+    if (!cwd) return;
+    const { bySize, truncated } = await scanLocalDir(cwd, { maxDepth: 6, maxEntries: 2500 });
+    const top = bySize.slice(0, 25);
+    const listing = top.map((f) => `${formatSize(f.size)}\t${f.path}`).join("\n");
+    const prompt =
+      `These are the largest files under ${cwd}:\n${listing}` +
+      `${truncated ? "\n(truncated — more files exist)" : ""}\n\n` +
+      `Recommend which of these should be added to .gitignore or safely deleted to ` +
+      `free space, and why. Be concise.`;
+    submitValue(prompt);
+  };
 
   const submitValue = useCallback(
     (v: string, system?: string) => {
@@ -175,6 +284,45 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
 
   return (
     <div className="shrink-0 border-t border-border bg-surface">
+      {/* Local-shell current directory: shows the live cwd, lets you open it in
+          the OS file manager, copy the path, or spawn a new terminal here. */}
+      {tab.kind === "local" && cwd && (
+        <div className="flex items-center gap-1.5 border-b border-border/70 px-3 py-1 text-[11px] text-subtle">
+          <FolderOpen size={12} className="shrink-0 text-accent" />
+          <span
+            className="min-w-0 flex-1 truncate font-mono"
+            title={cwd}
+          >
+            {cwd}
+          </span>
+          <button
+            type="button"
+            onClick={() => void localFs.reveal(cwd)}
+            className="shrink-0 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
+            title="Open in file manager"
+          >
+            <ExternalLink size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard.writeText(cwd)}
+            className="shrink-0 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
+            title="Copy path"
+          >
+            <Copy size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void useTabsStore.getState().openLocal(cwd)}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
+            title="Open a new terminal in this directory"
+          >
+            <Terminal size={12} />
+            <span className="hidden sm:inline">here</span>
+          </button>
+        </div>
+      )}
+
       {/* Inline answer (collapsible) — hidden while the agent runs so we don't
           duplicate its monologue; the AgentBlock below shows the compact steps. */}
       {open && answer && !agentActive && (
@@ -310,6 +458,71 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
                   void monitoringInsight(undefined, true);
                 }}
               />
+
+              <div className="my-1 h-px bg-border/70" />
+
+              {/* Snippets: a flyout of grouped command snippets (insert, not run). */}
+              <div
+                className="relative"
+                onMouseEnter={() => setSnippetsOpen(true)}
+              >
+                <ToolItem
+                  icon={<Command size={13} />}
+                  label="Snippets"
+                  onClick={() => setSnippetsOpen((v) => !v)}
+                />
+                {snippetsOpen && (
+                  <div className="absolute left-full top-0 z-10 max-h-72 w-52 overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-xl">
+                    {SNIPPET_GROUPS.map((g) => (
+                      <div key={g.group} className="mb-1">
+                        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                          {g.group}
+                        </div>
+                        {g.items.map((it) => (
+                          <button
+                            key={it.label}
+                            type="button"
+                            onClick={() => {
+                              setToolsOpen(false);
+                              onInsert(it.cmd);
+                            }}
+                            className="flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-[12px] text-fg transition-colors hover:bg-hover"
+                            title={it.cmd}
+                          >
+                            <ChevronRight size={11} className="shrink-0 text-subtle" />
+                            <span className="flex-1 truncate">{it.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Local-shell only: AI actions that read the cwd's directory tree. */}
+              {tab.kind === "local" && cwd && (
+                <>
+                  <div className="my-1 h-px bg-border/70" />
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    Local files
+                  </div>
+                  <ToolItem
+                    icon={<FolderTree size={13} />}
+                    label="Explain this directory"
+                    onClick={() => void explainDirectory()}
+                  />
+                  <ToolItem
+                    icon={<GitBranch size={13} />}
+                    label="Generate .gitignore"
+                    onClick={() => void generateGitignore()}
+                  />
+                  <ToolItem
+                    icon={<Search size={13} />}
+                    label="Find large files"
+                    onClick={() => void findLargeFiles()}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>

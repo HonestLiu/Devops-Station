@@ -70,3 +70,85 @@ pub fn local_list(path: String) -> Result<Vec<LocalEntry>, String> {
     });
     Ok(out)
 }
+
+/// Open the OS file manager at `path`, selecting the file when it is a regular
+/// file (so the user lands on it instead of just the containing folder). Used by
+/// the Local Shell's directory-navigation bar ("Open in Explorer/Finder").
+#[tauri::command]
+pub fn reveal_path(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+
+    let mut cmd = {
+        #[cfg(target_os = "windows")]
+        {
+            if p.is_dir() {
+                std::process::Command::new("explorer")
+            } else {
+                // `/select,` focuses the file inside an open Explorer window.
+                let mut c = std::process::Command::new("explorer");
+                c.arg(format!("/select,\"{}\"", path));
+                c
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let mut c = std::process::Command::new("open");
+            c.arg(path)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let mut c = std::process::Command::new("xdg-open");
+            c.arg(path)
+        }
+    };
+
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to launch file manager: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("file manager exited with status {status}"))
+    }
+}
+
+/// Open `path` in the OS-assigned default application (not just the file manager).
+/// Used by the Files sidebar's "Open" action. Differs from `reveal_path`, which
+/// navigates the file manager and (for files) selects rather than opens.
+#[tauri::command]
+pub fn open_path(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+
+    let status = {
+        #[cfg(target_os = "windows")]
+        {
+            // `start` opens the file with its default association. The empty ""
+            // is the required window-title placeholder; the quoted path survives
+            // spaces.
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "", &format!("\"{}\"", path)])
+                .status()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open").arg(path).status()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            std::process::Command::new("xdg-open").arg(path).status()
+        }
+    }
+    .map_err(|e| format!("failed to open file: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to open (exit status {status})"))
+    }
+}

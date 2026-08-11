@@ -679,6 +679,8 @@ pub fn run() {
             kb::kb_read,
             local_fs::local_home,
             local_fs::local_list,
+            local_fs::reveal_path,
+            local_fs::open_path,
             db_list_hosts,
             db_save_host,
             db_delete_host,

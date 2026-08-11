@@ -6,6 +6,7 @@ import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
 import type { Tab, TermPane } from "@/lib/types";
 
@@ -61,10 +62,29 @@ export function SplitView({ tab }: { tab: Tab }) {
   const patch = useTabsStore((s) => s.patch);
   const patchPane = useTabsStore((s) => s.patchPane);
   const focusPane = useTabsStore((s) => s.focusPane);
+  const localShell = useAppStore((s) => s.settings.localShell);
 
   // SSH talks over ssh-* events; local/WSL/Frp sessions are PTY sessions.
   const transport = tab.kind === "ssh" ? "ssh" : "pty";
-  const trackCwd = tab.kind === "ssh" || tab.kind === "wsl";
+  const trackCwd = tab.kind === "ssh" || tab.kind === "wsl" || tab.kind === "local";
+  // The OSC 7 emitter depends on the shell. POSIX remotes (ssh/wsl) use the
+  // bash/zsh snippet; for a local tab we must tell Terminal the *actual* kind,
+  // because the backend's default_shell() launches PowerShell on Windows (and the
+  // login shell elsewhere). Passing "default" through would make buildCwdSetup
+  // bail out and cwd tracking would never start — so resolve it here. "cmd"
+  // stays inert (cmd can't emit OSC 7 reliably), which is fine.
+  const isWindows =
+    typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || "");
+  const shell =
+    tab.kind === "ssh" || tab.kind === "wsl"
+      ? "bash"
+      : tab.kind === "local"
+        ? localShell === "default"
+          ? isWindows
+            ? "powershell"
+            : "bash"
+          : localShell
+        : undefined;
 
   const panes: TermPane[] = tab.panes ?? [
     { id: `${tab.id}-primary`, sessionId: tab.sessionId, status: tab.status },
@@ -108,6 +128,7 @@ export function SplitView({ tab }: { tab: Tab }) {
                   sessionId={p.sessionId}
                   transport={transport}
                   trackCwd={trackCwd}
+                  shell={shell}
                   theme={t.theme}
                   fontFamily={t.fontFamily}
                   fontSize={t.fontSize}

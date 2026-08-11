@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { frp, pty, serial, ssh, wsl } from "@/lib/api";
+import { useAppStore } from "@/store/useAppStore";
 import type {
   FrpConfig,
   FrpLaunchConfig,
@@ -32,7 +33,7 @@ interface TabsState {
 
   openSsh: (config: SshConnectConfig, title?: string) => Promise<string>;
   openSerial: (config: SerialOpenConfig, title?: string) => Promise<string>;
-  openLocal: () => Promise<string>;
+  openLocal: (cwd?: string) => Promise<string>;
   openWsl: (config: WslLaunchConfig, title?: string) => Promise<string>;
   openFrp: (config: FrpLaunchConfig, title?: string) => Promise<string>;
   /** Open a dedicated SFTP tab backed by an SSH session to a saved host. */
@@ -215,8 +216,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return id;
   },
 
-  openLocal: async () => {
+  openLocal: async (cwd?: string) => {
     const id = nextId();
+    const shellPref = useAppStore.getState().settings.localShell;
+    const shell = shellPref && shellPref !== "default" ? shellPref : undefined;
     set((s) => ({
       tabs: [
         ...s.tabs,
@@ -226,14 +229,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           title: "Local Shell",
           subtitle: "local",
           status: "connecting",
+          cwd,
         },
       ],
       activeId: id,
     }));
 
     try {
-      const sessionId = await pty.spawn(120, 32);
-      get().patch(id, { status: "connected", sessionId });
+      const sessionId = await pty.spawn(120, 32, shell, cwd);
+      get().patch(id, { status: "connected", sessionId, cwd });
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }

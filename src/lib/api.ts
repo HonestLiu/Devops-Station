@@ -321,4 +321,6 @@ export const kb = {
 export const localFs = {
   home: () => call<string>("local_home"),
   list: (path: string) => call<LocalEntry[]>("local_list", { path }),
+  reveal: (path: string) => call<void>("reveal_path", { path }),
+  open: (path: string) => call<void>("open_path", { path }),
 };

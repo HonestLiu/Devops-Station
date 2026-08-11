@@ -1,9 +1,11 @@
-import { RotateCw } from "lucide-react";
+import { useState } from "react";
+import { FolderClosed, FolderOpen, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { TerminalAiButton } from "@/ai/TerminalAiButton";
+import { FilesSidebar } from "@/components/FilesSidebar";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -16,6 +18,8 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
   const canSplit = paneCount < 4;
   const canClosePane = (tab.panes?.length ?? 0) > 1;
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+  const [filesOpen, setFilesOpen] = useState(false);
+  const connected = tab.status === "connected" && !!tab.sessionId;
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -29,6 +33,15 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 no-drag">
+          <Button
+            variant={filesOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setFilesOpen((v) => !v)}
+            title="Toggle local file explorer"
+          >
+            {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
+            Files
+          </Button>
           <SplitControls
             paneCount={paneCount}
             canSplit={canSplit}
@@ -43,8 +56,13 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1">
-        <SplitView tab={tab} />
+      <div className="relative flex min-h-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          <SplitView tab={tab} />
+        </div>
+        {filesOpen && connected && tab.sessionId && (
+          <FilesSidebar tab={tab} onClose={() => setFilesOpen(false)} />
+        )}
       </div>
     </div>
   );

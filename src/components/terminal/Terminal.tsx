@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -34,6 +34,45 @@ export interface TerminalProps {
   /** When true, capture the shell's working directory over OSC 7 and ask the
    *  shell to emit it on every prompt (SSH and WSL sessions). */
   trackCwd?: boolean;
+  /** Shell kind for local PTY sessions, used to pick the right OSC 7 emitter.
+   *  Omit for SSH/WSL (POSIX remote, treated as bash/zsh). */
+  shell?: string;
+}
+
+/**
+ * Build the per-prompt OSC 7 setup command for the given shell. Returns null
+ * when the shell is unknown / unsupported so we inject nothing instead of
+ * feeding bash syntax into powershell/cmd (which would error at startup).
+ */
+function buildCwdSetup(shell: string | undefined): string | null {
+  const s = (shell ?? "").toLowerCase();
+  if (s === "powershell") {
+    // Hook PowerShell's prompt to emit `OSC 7` on every prompt, preserving the
+    // user's existing prompt via $function:prompt. [Console]::Write keeps the
+    // escape sequence on the raw PTY stream (Write-Host can be swallowed).
+    //
+    // IMPORTANT: emit this as a SINGLE line terminated by CRLF. Feeding a
+    // multi-line `function {…}` block into the interactive PTY made PSReadLine
+    // treat it as an unterminated code block and left the shell stuck at the
+    // ">>" continuation prompt on startup. A single line + CRLF avoids the
+    // continuation parser entirely and runs cleanly once.
+    return (
+      "function global:__ds_cwd {$h=[System.Net.Dns]::GetHostName();$p=(Get-Location).Path.Replace('\\','/');[Console]::Write([char]27 + \"]7;file://\" + $h + \"/\" + $p + [char]27 + [char]92)}" +
+      ";$__ds_old_prompt=$function:prompt;function prompt{__ds_cwd;& $__ds_old_prompt};__ds_cwd" +
+      "\r\n"
+    );
+  }
+  if (s === "bash" || s === "git-bash") {
+    // POSIX shell: self-detects bash (PROMPT_COMMAND) vs zsh (precmd).
+    return (
+      "__ds_cwd(){ printf '\\033]7;file://%s%s\\033\\\\' \"$HOSTNAME\" \"$PWD\"; }; " +
+      "if [ -n \"$BASH_VERSION\" ]; then PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND}; }__ds_cwd\"; " +
+      "elif [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __ds_cwd; fi\n"
+    );
+  }
+  // default / cmd / unknown → stay inert (no injection) so we never crash the
+  // shell on startup. The cwd bar simply falls back to the spawn-time dir.
+  return null;
 }
 
 type TransportApi = {
@@ -64,6 +103,7 @@ export function Terminal(props: TerminalProps) {
     interactive = true,
     onClosed,
     trackCwd = false,
+    shell,
   } = props;
 
   const hostRef = useRef<HTMLDivElement>(null);
@@ -78,6 +118,9 @@ export function Terminal(props: TerminalProps) {
   // Kept in a ref so a changing callback never re-runs the session effect.
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+
+  // Drag-and-drop a local file onto the terminal to type its path at the prompt.
+  const [dragActive, setDragActive] = useState(false);
 
   // --- lifecycle ----------------------------------------------------------
   useEffect(() => {
@@ -114,7 +157,11 @@ export function Terminal(props: TerminalProps) {
       oscDisposable = term.parser.registerOscHandler(7, (data: string) => {
         const m = /^file:\/\/[^/]*(.*)$/.exec(data);
         if (m && m[1]) {
-          useSessionStore.getState().setCwd(sessionId, decodeURIComponent(m[1]));
+          let path = decodeURIComponent(m[1]);
+          // OSC 7 for Windows paths arrives as /C:/Users/... — strip the leading
+          // slash so it becomes a valid Windows path (C:/Users/...).
+          if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
+          useSessionStore.getState().setCwd(sessionId, path);
         }
         return true;
       });
@@ -205,16 +252,16 @@ export function Terminal(props: TerminalProps) {
         parked.length = 0;
         if (pending.closed) markClosed(pending.closed);
 
-        // Ask the remote shell to report its working directory on every prompt
-        // via an OSC 7 escape. We hook bash's PROMPT_COMMAND and zsh's precmd;
-        // other shells (fish, plain sh) simply won't emit it and the follow
-        // feature stays inert instead of breaking the session.
+        // Ask the shell to report its working directory on every prompt via an
+        // OSC 7 escape, so the cwd bar / SFTP follow stays in sync with `cd`.
+        // The exact snippet depends on the shell — feeding bash syntax into
+        // powershell/cmd would error on startup, so buildCwdSetup stays inert
+        // for shells we can't safely drive.
         if (trackCwd) {
-          const setup =
-            "__ds_cwd(){ printf '\\033]7;file://%s%s\\033\\\\' \"$HOSTNAME\" \"$PWD\"; }; " +
-            "if [ -n \"$BASH_VERSION\" ]; then PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND}; }__ds_cwd\"; " +
-            "elif [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __ds_cwd; fi\n";
-          void api.write(sessionId, textToBase64(setup)).catch(() => undefined);
+          const setup = buildCwdSetup(shell);
+          if (setup) {
+            void api.write(sessionId, textToBase64(setup)).catch(() => undefined);
+          }
         }
       } catch {
         // The session can vanish between mount and attach (fast disconnect).
@@ -235,8 +282,45 @@ export function Terminal(props: TerminalProps) {
     });
     ro.observe(host);
 
+    // Drag a local file onto the terminal to insert its (quoted) path at the
+    // prompt. Skipped for serial sessions where a path is meaningless. The Tauri
+    // drag event is window-global (same pattern as the SFTP/WSL panels); only
+    // terminal tabs mount this component, so it never collides with their upload
+    // handlers.
+    let unDrag: UnlistenFn | undefined;
+    let dragDisposed = false;
+    if (transport !== "serial") {
+      void import("@tauri-apps/api/webview")
+        .then(({ getCurrentWebview }) => {
+          if (dragDisposed) return;
+          const p = getCurrentWebview().onDragDropEvent((event) => {
+            const e = event.payload;
+            if (e.type === "drop") {
+              setDragActive(false);
+              if (e.paths.length) {
+                const typed = e.paths
+                  .map((p) => (p.includes(" ") ? `"${p}"` : p))
+                  .join(" ");
+                void api.write(sessionId, textToBase64(typed + " ")).catch(() => undefined);
+              }
+            } else if (e.type === "leave") {
+              setDragActive(false);
+            } else {
+              setDragActive(true);
+            }
+          });
+          p.then((fn) => {
+            if (dragDisposed) fn();
+            else unDrag = fn;
+          }).catch(() => undefined);
+        })
+        .catch(() => undefined);
+    }
+
     return () => {
       disposed = true;
+      dragDisposed = true;
+      unDrag?.();
       ro.disconnect();
       onData.dispose();
       onSel.dispose();
@@ -274,10 +358,40 @@ export function Terminal(props: TerminalProps) {
     s.sessionId === sessionId ? s.text : "",
   );
 
+  // In-app drag (e.g. a file dragged from the Files sidebar): the Tauri
+  // onDragDropEvent only fires for OS-level drags, so we also accept the HTML5
+  // drop here and type the (quoted) path at the prompt.
+  const handleFileDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (transport === "serial") return;
+    const data = e.dataTransfer.getData("text/plain");
+    if (!data) return;
+    e.preventDefault();
+    const typed = data.includes(" ") ? `"${data.replace(/"/g, '\\"')}"` : data;
+    const writer =
+      transport === "ssh" ? ssh.write : transport === "pty" ? pty.write : serial.write;
+    void writer(sessionId, textToBase64(typed + " ")).catch(() => undefined);
+  };
+
   return (
     <div className="relative h-full w-full">
-      <div ref={hostRef} className="h-full w-full bg-transparent" />
+      <div
+        ref={hostRef}
+        className="h-full w-full bg-transparent"
+        onDragOver={(e) => {
+          if (transport !== "serial" && e.dataTransfer.types.includes("text/plain")) {
+            e.preventDefault();
+          }
+        }}
+        onDrop={handleFileDrop}
+      />
       <SelectionMenu text={selText} />
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-accent/10 ring-2 ring-inset ring-accent/60">
+          <span className="rounded-md bg-surface px-3 py-1 text-[12px] text-fg shadow">
+            Drop to insert path
+          </span>
+        </div>
+      )}
     </div>
   );
 }

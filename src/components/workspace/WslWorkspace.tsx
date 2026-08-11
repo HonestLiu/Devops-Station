@@ -17,7 +17,7 @@ import type { Tab } from "@/lib/types";
  * store / backend).
  */
 export function WslWorkspace({ tab }: { tab: Tab }) {
-  const [wslOpen, setWslOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [usbOpen, setUsbOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
@@ -43,12 +43,12 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
         </div>
         <div className="flex items-center gap-1.5 no-drag">
           <Button
-            variant={wslOpen ? "primary" : "ghost"}
+            variant={filesOpen ? "primary" : "ghost"}
             size="sm"
-            onClick={() => setWslOpen((v) => !v)}
-            title="Toggle WSL file manager"
+            onClick={() => setFilesOpen((v) => !v)}
+            title="Toggle file manager for this connection"
           >
-            {wslOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
+            {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
             Files
           </Button>
           <Button
@@ -80,11 +80,11 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
 
-        {wslOpen && connected && tab.sessionId && (
+        {filesOpen && connected && tab.sessionId && (
           <WslPanel
             sessionId={tab.sessionId}
             distro={tab.wsl?.distro}
-            onClose={() => setWslOpen(false)}
+            onClose={() => setFilesOpen(false)}
           />
         )}
 

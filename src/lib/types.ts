@@ -204,7 +204,7 @@ export interface Tab {
   sessionId?: string;
   hostId?: string;
   error?: string;
-  /** SSH only */
+  /** SSH / Local — current working directory (local is kept fresh via OSC 7). */
   cwd?: string;
   fingerprint?: string;
   /** Serial only */

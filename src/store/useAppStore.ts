@@ -19,6 +19,8 @@ export interface AppSettings {
   /** Poll interval for the Monitoring page, in milliseconds. */
   metricsInterval: number;
   confirmOnClose: boolean;
+  /** Default shell for Local Shell tabs. "default" uses the OS login shell. */
+  localShell: string;
   ai: AISettings;
   /** Families of user-imported fonts, re-registered at startup. */
   importedFonts: string[];
@@ -36,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   copyOnSelect: true,
   metricsInterval: 2000,
   confirmOnClose: true,
+  localShell: "default",
   importedFonts: [],
   ai: {
     provider: "openai",
