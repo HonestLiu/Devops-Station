@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Copy, Check } from "lucide-react";
 
 import { localFs } from "@/lib/api";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ *
@@ -137,6 +138,7 @@ function CodeBlock({
   onInsert?: (code: string) => void;
   onRun?: (code: string) => void;
 }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -160,18 +162,18 @@ function CodeBlock({
                 <button
                   onClick={() => onRun(code)}
                   className="text-[11px] font-medium text-amber-400 hover:text-amber-300"
-                  title="Send this command to the terminal and run it"
+                  title={t("ai.mdRunTitle")}
                 >
-                  Run
+                  {t("ai.mdRun")}
                 </button>
               )}
               {onInsert && (
                 <button
                   onClick={() => onInsert(code)}
                   className="text-[11px] text-muted hover:text-fg"
-                  title="Insert this command at the terminal prompt (does not run)"
+                  title={t("ai.mdInsertTitle")}
                 >
-                  Insert
+                  {t("ai.mdInsert")}
                 </button>
               )}
             </>
@@ -181,7 +183,7 @@ function CodeBlock({
             className="flex items-center gap-1 text-[11px] text-muted hover:text-fg"
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("ai.mdCopied") : t("ai.mdCopy")}
           </button>
         </div>
       </div>

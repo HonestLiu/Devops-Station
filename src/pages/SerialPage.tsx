@@ -4,6 +4,7 @@ import { Cable, Usb, Bluetooth, Scan } from "lucide-react";
 import { Button, Field, Select } from "@/components/ui";
 import { PortPicker } from "@/components/serial/PortPicker";
 import { serial, ble } from "@/lib/api";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import {
   BLE_PRESETS,
@@ -35,6 +36,7 @@ const inputCls =
   "h-9 w-full rounded border border-border bg-bg px-2 text-[13px] text-fg outline-none focus:border-accent";
 
 export function SerialPage() {
+  const t = useT();
   const openSerial = useTabsStore((s) => s.openSerial);
 
   const [activeTab, setActiveTab] = useState<"serial" | "bluetooth">("serial");
@@ -90,8 +92,8 @@ export function SerialPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">串口终端</h1>
-          <p className="page-subtitle">选择串口或蓝牙设备，打开一个临时调试会话</p>
+          <h1 className="page-title">{t("serialPage.title")}</h1>
+          <p className="page-subtitle">{t("serialPage.subtitle")}</p>
         </div>
       </div>
 
@@ -106,7 +108,7 @@ export function SerialPage() {
                 (activeTab === "serial" ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
               }
             >
-              <Usb size={14} /> 串口
+              <Usb size={14} /> {t("serialPage.serialTab")}
             </button>
             <button
               onClick={() => setActiveTab("bluetooth")}
@@ -115,7 +117,7 @@ export function SerialPage() {
                 (activeTab === "bluetooth" ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
               }
             >
-              <Bluetooth size={14} /> 蓝牙
+              <Bluetooth size={14} /> {t("serialPage.bleTab")}
             </button>
           </div>
         </div>
@@ -124,16 +126,16 @@ export function SerialPage() {
           <div className="card p-5">
             <div className="mb-4 flex items-center gap-2 text-[14px] font-semibold text-fg">
               <Cable size={15} className="text-accent" />
-              串口设置
-              <span className="text-[12px] font-normal text-subtle">请选择串口并连接相关参数</span>
+              {t("serialPage.serialSettings")}
+              <span className="text-[12px] font-normal text-subtle">{t("serialPage.serialHint")}</span>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="串口" className="sm:col-span-2 lg:col-span-3">
+              <Field label={t("serialPage.port")} className="sm:col-span-2 lg:col-span-3">
                 <PortPicker value={port} onChange={setPort} autoSelectFirst />
               </Field>
 
-              <Field label="波特率">
+              <Field label={t("ws.baud")}>
                 <Select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))}>
                   {baudOptions.map((b) => (
                     <option key={b} value={b}>
@@ -143,7 +145,7 @@ export function SerialPage() {
                 </Select>
               </Field>
 
-              <Field label="数据位">
+              <Field label={t("ws.dataBits")}>
                 <Select value={dataBits} onChange={(e) => setDataBits(Number(e.target.value) as SerialOpenConfig["dataBits"])}>
                   {DATA_BITS.map((b) => (
                     <option key={b} value={b}>
@@ -153,17 +155,17 @@ export function SerialPage() {
                 </Select>
               </Field>
 
-              <Field label="校验位">
+              <Field label={t("ws.parity")}>
                 <Select value={parity} onChange={(e) => setParity(e.target.value as SerialOpenConfig["parity"])}>
                   {PARITY.map((p) => (
                     <option key={p} value={p}>
-                      {p === "none" ? "None" : p === "odd" ? "Odd" : "Even"}
+                      {p === "none" ? t("serialPage.parityNone") : p === "odd" ? t("serialPage.parityOdd") : t("serialPage.parityEven")}
                     </option>
                   ))}
                 </Select>
               </Field>
 
-              <Field label="停止位">
+              <Field label={t("ws.stopBits")}>
                 <Select value={stopBits} onChange={(e) => setStopBits(Number(e.target.value) as SerialOpenConfig["stopBits"])}>
                   {STOP_BITS.map((b) => (
                     <option key={b} value={b}>
@@ -173,11 +175,11 @@ export function SerialPage() {
                 </Select>
               </Field>
 
-              <Field label="流控" className="sm:col-span-2 lg:col-span-1">
+              <Field label={t("ws.flow")} className="sm:col-span-2 lg:col-span-1">
                 <Select value={flowControl} onChange={(e) => setFlowControl(e.target.value as SerialOpenConfig["flowControl"])}>
                   {FLOW_CONTROL.map((f) => (
                     <option key={f} value={f}>
-                      {f === "none" ? "None" : f === "software" ? "XON/XOFF" : "RTS/CTS"}
+                      {f === "none" ? t("serialPage.flowNone") : f === "software" ? t("serialPage.flowSoft") : t("serialPage.flowHard")}
                     </option>
                   ))}
                 </Select>
@@ -191,7 +193,7 @@ export function SerialPage() {
                 disabled={!port.trim() || opening}
                 className="min-w-[140px]"
               >
-                <Cable size={14} /> {opening ? "打开中…" : "选择串口设备"}
+                <Cable size={14} /> {opening ? t("serialPage.opening") : t("serialPage.selectPort")}
               </Button>
             </div>
           </div>
@@ -213,6 +215,7 @@ export function SerialPage() {
  * `openBle`, which reuses the exact same record / plot / send stack as serial.
  */
 function BluetoothPanel() {
+  const t = useT();
   const openBle = useTabsStore((s) => s.openBle);
 
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -277,12 +280,12 @@ function BluetoothPanel() {
       const list = await ble.scan(4000);
       setDevices(list);
       if (list.length === 0) {
-        setError("未发现蓝牙设备。请确认设备已上电并处于可发现状态后重试。");
+        setError(t("ble.noDeviceFound"));
       } else {
         setSelectedId((cur) => cur ?? list[0]?.id ?? null);
       }
     } catch (e) {
-      setError((e as Error).message || "扫描失败");
+      setError((e as Error).message || t("ble.scanFailed"));
     } finally {
       setScanning(false);
     }
@@ -292,7 +295,7 @@ function BluetoothPanel() {
 
   const connect = async () => {
     if (!selected) {
-      setError("请先选择一个设备");
+      setError(t("ble.selectDevice"));
       return;
     }
     let profile: { service: string; writeCharacteristic: string; notifyCharacteristic?: string };
@@ -327,7 +330,7 @@ function BluetoothPanel() {
         selected.name || selected.address,
       );
     } catch (e) {
-      setError((e as Error).message || "连接失败");
+      setError((e as Error).message || t("ble.connectFailed"));
       setConnecting(false);
     }
   };
@@ -336,9 +339,9 @@ function BluetoothPanel() {
     return (
       <div className="card flex flex-col items-center justify-center gap-3 py-16 text-center">
         <Bluetooth size={36} className="text-subtle" />
-        <p className="text-[14px] font-medium text-muted">本机未检测到蓝牙适配器</p>
+        <p className="text-[14px] font-medium text-muted"> {t("ble.noAdapter")}</p>
         <p className="max-w-sm text-[12px] text-subtle">
-          请确认蓝牙已开启，或当前设备配有可用的蓝牙硬件后再试。
+          {t("ble.noAdapterHint")}
         </p>
       </div>
     );
@@ -348,7 +351,7 @@ function BluetoothPanel() {
     return (
       <div className="card flex flex-col items-center justify-center gap-3 py-16 text-center">
         <Bluetooth size={36} className="animate-pulse text-subtle" />
-        <p className="text-[13px] text-muted">正在检测蓝牙适配器…</p>
+        <p className="text-[13px] text-muted"> {t("ble.detecting")}</p>
       </div>
     );
   }
@@ -357,16 +360,16 @@ function BluetoothPanel() {
     <div className="card p-5">
       <div className="mb-4 flex items-center gap-2 text-[14px] font-semibold text-fg">
         <Bluetooth size={15} className="text-accent" />
-        蓝牙透传设置
+        {t("ble.settingsTitle")}
         <span className="text-[12px] font-normal text-subtle">
-          选择 GATT 配置并连接附近的蓝牙串口设备
+          {t("ble.settingsHint")}
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Left: GATT profile */}
         <div className="flex flex-col gap-3">
-          <Field label="GATT 配置模板">
+          <Field label={t("ble.gattTemplate")}>
             <Select value={presetName} onChange={(e) => setPresetName(e.target.value)}>
               {BLE_PRESETS.map((p) => (
                 <option key={p.name} value={p.name}>
@@ -382,27 +385,27 @@ function BluetoothPanel() {
 
           {isCustom && (
             <div className="flex flex-col gap-3">
-              <Field label="服务 UUID（16/32/128 位）">
+              <Field label={t("ble.serviceUuid")}>
                 <input
                   className={inputCls}
                   value={custom.service}
-                  placeholder="例如 FFE0 或 6e400001-..."
+                  placeholder={t("ble.phService")}
                   onChange={(e) => setCustom((c) => ({ ...c, service: e.target.value }))}
                 />
               </Field>
-              <Field label="写入特征 UUID（主机 → 设备）">
+              <Field label={t("ble.writeChar")}>
                 <input
                   className={inputCls}
                   value={custom.write}
-                  placeholder="例如 FFE1 或 6e400002-..."
+                  placeholder={t("ble.phWrite")}
                   onChange={(e) => setCustom((c) => ({ ...c, write: e.target.value }))}
                 />
               </Field>
-              <Field label="通知特征 UUID（设备 → 主机，可留空）">
+              <Field label={t("ble.notifyChar")}>
                 <input
                   className={inputCls}
                   value={custom.notify}
-                  placeholder="留空为仅发送模式"
+                  placeholder={t("ble.phNotify")}
                   onChange={(e) => setCustom((c) => ({ ...c, notify: e.target.value }))}
                 />
               </Field>
@@ -416,17 +419,17 @@ function BluetoothPanel() {
         {/* Right: device list */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] font-medium text-fg">已发现设备</span>
+            <span className="text-[12px] font-medium text-fg"> {t("ble.devicesFound")}</span>
             <Button variant="secondary" size="sm" onClick={scan} disabled={scanning}>
               <Scan size={13} className={scanning ? "animate-spin" : ""} />
-              {scanning ? "扫描中…" : "扫描"}
+              {scanning ? t("ble.scanning") : t("ble.scan")}
             </Button>
           </div>
 
           <div className="flex max-h-72 min-h-[120px] flex-col gap-1 overflow-y-auto rounded border border-border p-1">
             {!scanning && devices.length === 0 && (
               <p className="px-2 py-6 text-center text-[12px] text-subtle">
-                尚未扫描，点击「扫描」查找附近的蓝牙设备。
+                {t("ble.notScanned")}
               </p>
             )}
             {devices.map((d) => {
@@ -442,7 +445,7 @@ function BluetoothPanel() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-fg">
-                      {d.name || "未知设备"}
+                      {d.name || t("ble.unknownDevice")}
                     </span>
                     {d.rssi != null && (
                       <span className="shrink-0 font-mono text-[11px] text-subtle">{d.rssi} dBm</span>
@@ -475,7 +478,7 @@ function BluetoothPanel() {
           disabled={scanning || connecting || !selected || (isCustom && !customValidation.valid)}
           className="min-w-[140px]"
         >
-          <Bluetooth size={14} /> {connecting ? "连接中…" : "连接设备"}
+          <Bluetooth size={14} /> {connecting ? t("common.connecting") : t("ble.connectDevice")}
         </Button>
       </div>
     </div>

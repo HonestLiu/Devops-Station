@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { ai } from "@/lib/api";
+import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
 import type { AIChatMessage, AIChatSession } from "@/lib/types";
@@ -110,7 +111,7 @@ export const useAiStore = create<AIState>((set, get) => {
       const id = uid();
       const session: AIChatSession = {
         id,
-        title: "New chat",
+        title: tFrom(useAppStore.getState().settings.language, "ai.newChat"),
         messages: [],
         createdAt: Date.now(),
       };
@@ -230,9 +231,17 @@ export const useAiStore = create<AIState>((set, get) => {
         .map((m) => ({ role: m.role, content: m.content }));
 
       // One-off system instruction for this request only (kept out of history).
-      const messages = opts?.system
-        ? [{ role: "system", content: opts.system }, ...history]
-        : history;
+      // The language directive comes first so the model answers in the user's
+      // chosen language regardless of the task-specific system prompt.
+      const appLang = useAppStore.getState().settings.language;
+      const messages = [
+        {
+          role: "system",
+          content: appLang === "zh" ? "请始终用中文回答用户。" : "Always respond in English.",
+        },
+        ...(opts?.system ? [{ role: "system", content: opts.system }] : []),
+        ...history,
+      ];
 
       const context = settings.terminalContext
         ? buildContext() ?? undefined
@@ -245,7 +254,9 @@ export const useAiStore = create<AIState>((set, get) => {
         patchMessage(aid, assistantMsg.id, {
           streaming: false,
           error: true,
-          content: `Request failed: ${String(e)}`,
+          content: tFrom(useAppStore.getState().settings.language, "ai.requestFailed", {
+            err: String(e),
+          }),
         });
         return;
       }

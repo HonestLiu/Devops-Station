@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Tab } from "@/lib/types";
 import { localFs } from "@/lib/api";
+import { useT } from "@/i18n";
 import { useAiStore } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
 import { useAiSuggestion } from "./useAiSuggestion";
@@ -91,6 +92,7 @@ export const SNIPPET_GROUPS: { group: string; items: { label: string; cmd: strin
  * output stream trips a high-signal error pattern.
  */
 export function TerminalInlineAsk({ tab }: { tab: Tab }) {
+  const t = useT();
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -299,7 +301,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             type="button"
             onClick={() => void localFs.reveal(cwd)}
             className="shrink-0 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title="Open in file manager"
+            title={t("ai.openInFileManager")}
           >
             <ExternalLink size={12} />
           </button>
@@ -307,7 +309,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             type="button"
             onClick={() => void navigator.clipboard.writeText(cwd)}
             className="shrink-0 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title="Copy path"
+            title={t("ai.copyPath")}
           >
             <Copy size={12} />
           </button>
@@ -315,10 +317,10 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             type="button"
             onClick={() => void useTabsStore.getState().openLocal(cwd)}
             className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-muted transition-colors hover:bg-hover hover:text-fg"
-            title="Open a new terminal in this directory"
+            title={t("ai.openTerminalHere")}
           >
             <Terminal size={12} />
-            <span className="hidden sm:inline">here</span>
+            <span className="hidden sm:inline">{t("ai.here")}</span>
           </button>
         </div>
       )}
@@ -335,14 +337,14 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               <button
                 onClick={() => togglePanel(true)}
                 className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
-                title="Open full assistant (history, knowledge base, agent)"
+                title={t("ai.openFull")}
               >
                 <ArrowUpRight size={13} />
               </button>
               <button
                 onClick={() => setOpen(false)}
                 className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
-                title="Collapse"
+                title={t("ai.collapse")}
               >
                 <X size={13} />
               </button>
@@ -350,7 +352,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           </div>
           {answer.error ? (
             <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-danger">
-              {answer.content || "Request failed."}
+              {answer.content || t("ai.requestFailedShort")}
             </p>
           ) : answer.content ? (
             <Markdown content={answer.content} onInsert={onInsert} onRun={onRun} />
@@ -393,7 +395,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             <button
               onClick={clearSuggestion}
               className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
-              title="Dismiss"
+              title={t("ai.dismiss")}
             >
               <X size={12} />
             </button>
@@ -424,7 +426,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             ref={toolsBtnRef}
             onClick={() => setToolsOpen((v) => !v)}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:bg-hover hover:text-fg"
-            title="Quick actions"
+            title={t("ai.quickActions")}
           >
             <Wand2 size={14} />
           </button>
@@ -436,7 +438,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             >
               <ToolItem
                 icon={<ScrollText size={13} />}
-                label="Analyze terminal output"
+                label={t("ai.analyzeTerminal")}
                 onClick={() => {
                   setToolsOpen(false);
                   analyzeTerminal(true);
@@ -444,7 +446,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               />
               <ToolItem
                 icon={<Cable size={13} />}
-                label="Parse serial protocol"
+                label={t("ai.parseSerial")}
                 onClick={() => {
                   setToolsOpen(false);
                   parseSerialProtocol(true);
@@ -452,7 +454,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               />
               <ToolItem
                 icon={<Activity size={13} />}
-                label="Monitoring insight"
+                label={t("ai.monitoringInsight")}
                 onClick={() => {
                   setToolsOpen(false);
                   void monitoringInsight(undefined, true);
@@ -468,7 +470,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               >
                 <ToolItem
                   icon={<Command size={13} />}
-                  label="Snippets"
+                  label={t("ai.snippets")}
                   onClick={() => setSnippetsOpen((v) => !v)}
                 />
                 {snippetsOpen && (
@@ -508,17 +510,17 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
                   </div>
                   <ToolItem
                     icon={<FolderTree size={13} />}
-                    label="Explain this directory"
+                    label={t("ai.explainDir")}
                     onClick={() => void explainDirectory()}
                   />
                   <ToolItem
                     icon={<GitBranch size={13} />}
-                    label="Generate .gitignore"
+                    label={t("ai.gitignore")}
                     onClick={() => void generateGitignore()}
                   />
                   <ToolItem
                     icon={<Search size={13} />}
-                    label="Find large files"
+                    label={t("ai.largeFiles")}
                     onClick={() => void findLargeFiles()}
                   />
                 </>
@@ -537,7 +539,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               ? "bg-accent text-accent-fg"
               : "text-subtle hover:bg-hover hover:text-fg",
           )}
-          title="Agent mode: let the AI plan and run commands here"
+          title={t("ai.agentModeTitle")}
         >
           <Bot size={14} />
         </button>
@@ -548,16 +550,14 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={
-            agentMode
-              ? "Describe a task for the agent…  (Enter to run)"
-              : "Ask this terminal…  (Enter to send)"
+            agentMode ? t("ai.agentPlaceholder") : t("ai.askPlaceholder")
           }
           className="flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-subtle"
         />
         {agentMode && (
           <label
             className="flex shrink-0 cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
-            title="Automatically execute agent commands"
+            title={t("ai.autoRunTitle")}
           >
             <input
               type="checkbox"
@@ -565,14 +565,14 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               onChange={(e) => setAgentAuto(e.target.checked)}
               className="h-3 w-3 accent-[rgb(var(--c-accent))]"
             />
-            auto
+            {t("ai.auto")}
           </label>
         )}
         <button
           type="button"
           onClick={() => togglePanel(true)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:bg-hover hover:text-fg"
-          title="Open full assistant"
+          title={t("ai.openFull")}
         >
           <ArrowUpRight size={14} />
         </button>
@@ -580,7 +580,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           type="submit"
           disabled={!input.trim()}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition hover:brightness-110 disabled:opacity-40"
-          title="Send (Enter)"
+          title={t("ai.send")}
         >
           <Send size={13} />
         </button>
@@ -615,13 +615,14 @@ function AgentBlock({
   onInsert: (c: string) => void;
   onRun: (c: string) => void;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(true);
   return (
     <div className="border-b border-border/70 bg-accent/5">
       <div className="flex items-center gap-2 px-3 py-1.5">
         <Bot size={13} className="shrink-0 text-accent" />
         <span className="truncate text-[12px] text-fg">
-          {running ? "Agent working" : "Agent"}
+          {running ? t("ai.agentWorking") : t("ai.agent")}
           {goal && <span className="text-subtle"> · {goal}</span>}
         </span>
         {running && (
@@ -634,7 +635,7 @@ function AgentBlock({
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
-            title={expanded ? "Collapse" : "Expand"}
+            title={expanded ? t("ai.collapse") : t("ai.expand")}
           >
             <ChevronDown size={12} className={cn(!expanded && "rotate-180")} />
           </button>
@@ -642,7 +643,7 @@ function AgentBlock({
             type="button"
             onClick={onClear}
             className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
-            title="Clear"
+            title={t("ai.clear")}
           >
             <X size={12} />
           </button>
@@ -659,7 +660,7 @@ function AgentBlock({
                   type="button"
                   onClick={() => onInsert(s.cmd)}
                   className="rounded p-0.5 text-subtle transition-colors hover:bg-hover hover:text-fg"
-                  title="Insert into terminal"
+                  title={t("ai.insertIntoTerminal")}
                 >
                   <ArrowUpRight size={12} />
                 </button>
@@ -667,7 +668,7 @@ function AgentBlock({
                   type="button"
                   onClick={() => onRun(s.cmd)}
                   className="rounded p-0.5 text-subtle transition-colors hover:bg-hover hover:text-fg"
-                  title="Run in terminal"
+                  title={t("ai.runInTerminal")}
                 >
                   <Send size={11} />
                 </button>

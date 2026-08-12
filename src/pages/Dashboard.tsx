@@ -4,12 +4,14 @@ import { ArrowRight, FolderOpen, MonitorSmartphone, Plug, Server, TerminalSquare
 import { MetricsView } from "@/components/MetricsView";
 import { Button, EmptyState } from "@/components/ui";
 import { monitoring } from "@/lib/api";
+import { useT } from "@/i18n";
 import { parseSshCommand } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { HostMetrics } from "@/lib/types";
 
 export function Dashboard() {
+  const t = useT();
   const interval = useAppStore((s) => s.settings.metricsInterval);
   const setPage = useAppStore((s) => s.setPage);
   const focusPage = useTabsStore((s) => s.focusPage);
@@ -48,7 +50,7 @@ export function Dashboard() {
   const connect = () => {
     const p = parseSshCommand(quick);
     if (!p.valid) {
-      setError("Could not parse. Try: user@host or host:port");
+      setError(t("dashboard.parseError"));
       return;
     }
     void openSsh(
@@ -70,8 +72,8 @@ export function Dashboard() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Jump into a session or watch this machine's live metrics</p>
+          <h1 className="page-title">{t("dashboard.title")}</h1>
+          <p className="page-subtitle">{t("dashboard.subtitle")}</p>
         </div>
       </div>
 
@@ -86,19 +88,19 @@ export function Dashboard() {
             value={quick}
             onChange={(e) => setQuick(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && connect()}
-            placeholder="Quick connect — ssh user@host[:port]"
+            placeholder={t("dashboard.quickConnect")}
             className="select-text h-10 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
           />
         </div>
         <Button variant="primary" onClick={connect} className="h-10 shrink-0">
-          Connect <ArrowRight size={14} />
+          {t("common.connect")} <ArrowRight size={14} />
         </Button>
       </div>
 
       {error && (
         <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-[12px] text-danger">
           {error.includes("invoke") || error.includes("tauri")
-            ? "Local metrics need the desktop runtime. Run with `npm run app:dev`."
+            ? t("dashboard.runtimeError")
             : error}
         </div>
       )}
@@ -113,8 +115,8 @@ export function Dashboard() {
             <MonitorSmartphone size={16} />
           </span>
           <div>
-            <p className="text-[13px] font-medium text-fg">Local Shell</p>
-            <p className="text-[11px] text-subtle">Open a terminal on this machine</p>
+            <p className="text-[13px] font-medium text-fg">{t("dashboard.localShell")}</p>
+            <p className="text-[11px] text-subtle">{t("dashboard.localShellHint")}</p>
           </div>
         </button>
         <button
@@ -128,8 +130,8 @@ export function Dashboard() {
             <Server size={16} />
           </span>
           <div>
-            <p className="text-[13px] font-medium text-fg">Saved Hosts</p>
-            <p className="text-[11px] text-subtle">Manage your connections</p>
+            <p className="text-[13px] font-medium text-fg">{t("dashboard.savedHosts")}</p>
+            <p className="text-[11px] text-subtle">{t("dashboard.savedHostsHint")}</p>
           </div>
         </button>
         <button
@@ -143,8 +145,8 @@ export function Dashboard() {
             <Plug size={16} />
           </span>
           <div>
-            <p className="text-[13px] font-medium text-fg">Serial Devices</p>
-            <p className="text-[11px] text-subtle">Connect to COM / tty ports</p>
+            <p className="text-[13px] font-medium text-fg">{t("dashboard.serial")}</p>
+            <p className="text-[11px] text-subtle">{t("dashboard.serialHint")}</p>
           </div>
         </button>
         <button
@@ -158,8 +160,8 @@ export function Dashboard() {
             <FolderOpen size={16} />
           </span>
           <div>
-            <p className="text-[13px] font-medium text-fg">SFTP Browser</p>
-            <p className="text-[11px] text-subtle">Transfer files over SSH</p>
+            <p className="text-[13px] font-medium text-fg">{t("dashboard.sftp")}</p>
+            <p className="text-[11px] text-subtle">{t("dashboard.sftpHint")}</p>
           </div>
         </button>
       </div>
@@ -170,8 +172,8 @@ export function Dashboard() {
         !error && (
           <EmptyState
             icon={<MonitorSmartphone size={28} />}
-            title="No metrics yet"
-            description="Local system metrics will appear here once the desktop runtime is available."
+            title={t("dashboard.noMetrics")}
+            description={t("dashboard.noMetricsHint")}
           />
         )
       )}

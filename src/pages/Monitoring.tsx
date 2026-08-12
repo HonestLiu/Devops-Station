@@ -5,12 +5,14 @@ import { MetricsView } from "@/components/MetricsView";
 import { Button, EmptyState, Select } from "@/components/ui";
 import { monitoringInsight } from "@/ai/tasks";
 import { monitoring } from "@/lib/api";
+import { useT } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { HostMetrics } from "@/lib/types";
 
 export function Monitoring() {
+  const t = useT();
   const interval = useAppStore((s) => s.settings.metricsInterval);
   const hosts = useHostsStore((s) => s.hosts);
   const tabs = useTabsStore((s) => s.tabs);
@@ -62,8 +64,8 @@ export function Monitoring() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Monitoring</h1>
-          <p className="page-subtitle">Live CPU, memory, disk, network and temperature</p>
+          <h1 className="page-title">{t("monitoring.title")}</h1>
+          <p className="page-subtitle">{t("monitoring.subtitle")}</p>
         </div>
         {sshSessions.length > 0 && (
           <div className="flex items-center gap-2">
@@ -82,10 +84,10 @@ export function Monitoring() {
             <Button
               variant="secondary"
               size="sm"
-              title="Ask the AI to interpret the current metrics"
+              title={t("monitoring.aiInsightTitle")}
               onClick={() => void monitoringInsight(activeSession)}
             >
-              <Sparkles size={14} /> AI Insight
+              <Sparkles size={14} /> {t("monitoring.aiInsight")}
             </Button>
           </div>
         )}
@@ -100,8 +102,8 @@ export function Monitoring() {
       {sshSessions.length === 0 ? (
         <EmptyState
           icon={<Server size={28} />}
-          title="No active SSH sessions"
-          description="Open an SSH connection first, then return here to watch its live CPU, memory, disk, network, and temperature."
+          title={t("monitoring.noSessions")}
+          description={t("monitoring.noSessionsHint")}
           action={
             sshHosts.length > 0 ? (
               <Button
@@ -109,7 +111,7 @@ export function Monitoring() {
                 size="sm"
                 onClick={() => void openFromHost(sshHosts[0])}
               >
-                Connect {sshHosts[0].name}
+                {t("monitoring.connectHost", { name: sshHosts[0].name })}
               </Button>
             ) : undefined
           }

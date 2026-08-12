@@ -5,10 +5,12 @@ import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { SftpPanel } from "@/components/sftp/SftpPanel";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
 export function SshWorkspace({ tab }: { tab: Tab }) {
+  const t = useT();
   const [filesOpen, setFilesOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const patch = useTabsStore((s) => s.patch);
@@ -31,15 +33,15 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           {paneCount > 1 && (
             <span
               className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent"
-              title={`${paneCount} split panes (max 4)`}
+              title={t("ws.screensTitle", { n: paneCount })}
             >
-              {paneCount} screens
+              {t("ws.screens", { n: paneCount })}
             </span>
           )}
           {tab.fingerprint && (
             <span
               className="hidden items-center gap-1 text-[11px] text-subtle sm:flex"
-              title="Server host key fingerprint (SHA-256)"
+              title={t("ws.fingerprint")}
             >
               <Fingerprint size={12} />
               {tab.fingerprint}
@@ -51,10 +53,10 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             variant={filesOpen ? "primary" : "ghost"}
             size="sm"
             onClick={() => setFilesOpen((v) => !v)}
-            title="Toggle file manager for this connection"
+            title={t("ws.filesTitle")}
           >
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            Files
+            {t("ws.files")}
           </Button>
           <div className="mx-1 h-4 w-px bg-border" />
           <SplitControls
@@ -64,7 +66,7 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Reconnect">
+          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("ws.reconnect")}>
             <RotateCw size={14} />
           </Button>
         </div>

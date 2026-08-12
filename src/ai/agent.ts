@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { ai } from "@/lib/api";
+import { tFrom } from "@/i18n";
 import { useAiStore } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
@@ -126,10 +127,18 @@ export async function runAgent(
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
       const aid = useAiStore.getState().addAssistantMessage();
+      const appLang = useAppStore.getState().settings.language;
       const text = await complete(
         sid,
         aid,
-        [{ role: "system", content: AGENT_SYSTEM }, ...history],
+        [
+          {
+            role: "system",
+            content: appLang === "zh" ? "请始终用中文回答用户。" : "Always respond in English.",
+          },
+          { role: "system", content: AGENT_SYSTEM },
+          ...history,
+        ],
         ctx,
       );
       history.push({ role: "assistant", content: text });
@@ -144,14 +153,15 @@ export async function runAgent(
       writeToTerminal(cmd, autoRun);
       await new Promise((r) => setTimeout(r, RESULT_WAIT_MS));
 
-      let result = "(no terminal output captured)";
+      const lang = useAppStore.getState().settings.language;
+      let result = tFrom(lang, "ai.agentNoOutput");
       let status: AgentStep["status"] = "ok";
       const sid2 = activeSessionId();
       if (sid2) {
         const screen = getTerminalText(sid2);
         result = screen.length > 4000 ? screen.slice(-4000) : screen;
         if (!screen.trim()) {
-          result = "(no output)";
+          result = tFrom(lang, "ai.agentNoOutput2");
           status = "empty";
         }
       }

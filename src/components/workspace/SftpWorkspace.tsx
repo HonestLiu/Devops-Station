@@ -3,6 +3,7 @@ import { Fingerprint, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { SftpDualPanel } from "@/components/sftp/SftpDualPanel";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -12,6 +13,7 @@ import type { Tab } from "@/lib/types";
  * drag-and-drop between the two). Credentials are resolved like SSH tabs.
  */
 export function SftpWorkspace({ tab }: { tab: Tab }) {
+  const t = useT();
   const closeTab = useTabsStore((s) => s.closeTab);
   const reconnect = useTabsStore((s) => s.reconnect);
 
@@ -27,7 +29,7 @@ export function SftpWorkspace({ tab }: { tab: Tab }) {
           {tab.fingerprint && (
             <span
               className="hidden items-center gap-1 text-[11px] text-subtle sm:flex"
-              title="Server host key fingerprint (SHA-256)"
+              title={t("ws.fingerprint")}
             >
               <Fingerprint size={12} />
               {tab.fingerprint}
@@ -39,7 +41,7 @@ export function SftpWorkspace({ tab }: { tab: Tab }) {
             variant="ghost"
             size="sm"
             onClick={() => void reconnect(tab.id)}
-            title="Reconnect"
+            title={t("ws.reconnect")}
           >
             <RotateCw size={14} />
           </Button>
@@ -47,7 +49,7 @@ export function SftpWorkspace({ tab }: { tab: Tab }) {
             variant="ghost"
             size="sm"
             onClick={() => void closeTab(tab.id)}
-            title="Close SFTP tab"
+            title={t("ws.closeSftp")}
           >
             <X size={14} />
           </Button>

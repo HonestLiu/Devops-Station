@@ -6,6 +6,7 @@ import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { WslPanel } from "@/components/sftp/WslPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -16,6 +17,7 @@ import type { Tab } from "@/lib/types";
  * store / backend).
  */
 export function WslWorkspace({ tab }: { tab: Tab }) {
+  const t = useT();
   const [filesOpen, setFilesOpen] = useState(false);
   const [usbOpen, setUsbOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
@@ -36,7 +38,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           <span className="truncate text-[12px] font-medium text-fg">{tab.title || "WSL"}</span>
           {paneCount > 1 && (
             <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-              {paneCount} screens
+              {t("ws.screens", { n: paneCount })}
             </span>
           )}
         </div>
@@ -45,19 +47,19 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             variant={filesOpen ? "primary" : "ghost"}
             size="sm"
             onClick={() => setFilesOpen((v) => !v)}
-            title="Toggle file manager for this connection"
+            title={t("ws.filesTitle")}
           >
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            Files
+            {t("ws.files")}
           </Button>
           <Button
             variant={usbOpen ? "primary" : "ghost"}
             size="sm"
             onClick={() => setUsbOpen((v) => !v)}
-            title="Toggle WSL USB Device Manager"
+            title={t("ws.usbTitle")}
           >
             <Usb size={14} />
-            USB
+            {t("ws.usb")}
           </Button>
           <SplitControls
             paneCount={paneCount}
@@ -66,7 +68,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart session">
+          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("ws.restartSession")}>
             <RotateCw size={14} />
           </Button>
         </div>

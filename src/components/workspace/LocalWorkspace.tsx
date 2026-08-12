@@ -5,10 +5,12 @@ import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { FilesSidebar } from "@/components/FilesSidebar";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
 export function LocalWorkspace({ tab }: { tab: Tab }) {
+  const t = useT();
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
   const closePane = useTabsStore((s) => s.closePane);
@@ -24,10 +26,10 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
     <div className="flex h-full flex-col bg-bg">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-surface px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[12px] font-medium text-fg">Local Shell</span>
+          <span className="truncate text-[12px] font-medium text-fg">{t("ws.localShell")}</span>
           {paneCount > 1 && (
             <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-              {paneCount} screens
+              {t("ws.screens", { n: paneCount })}
             </span>
           )}
         </div>
@@ -36,10 +38,10 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             variant={filesOpen ? "primary" : "ghost"}
             size="sm"
             onClick={() => setFilesOpen((v) => !v)}
-            title="Toggle local file explorer"
+            title={t("ws.filesLocalTitle")}
           >
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            Files
+            {t("ws.files")}
           </Button>
           <SplitControls
             paneCount={paneCount}
@@ -48,7 +50,7 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             onSplit={(axis) => void splitPane(tab.id, axis)}
             onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
           />
-          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="Restart shell">
+          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("ws.restartShell")}>
             <RotateCw size={14} />
           </Button>
         </div>

@@ -1,5 +1,7 @@
 import { ssh, pty, serial } from "@/lib/api";
 import { textToBase64 } from "@/lib/utils";
+import { tFrom } from "@/i18n";
+import { useAppStore } from "@/store/useAppStore";
 import { useAiStore } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
 import { useTerminalSelection } from "./terminalBridge";
@@ -82,5 +84,8 @@ export function generateCommand(prompt: string): void {
   if (!p) return;
   const store = useAiStore.getState();
   store.togglePanel(true);
-  void store.send(p, { title: "Generate command", system: GENERATE_SYSTEM });
+  void store.send(p, {
+    title: tFrom(useAppStore.getState().settings.language, "ai.taskGenerateCommand"),
+    system: GENERATE_SYSTEM,
+  });
 }

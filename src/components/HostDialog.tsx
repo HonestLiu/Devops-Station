@@ -4,6 +4,7 @@ import { Globe, MonitorSmartphone, Plus, Server, TerminalSquare, Trash2 } from "
 import { DistroPicker } from "@/components/wsl/DistroPicker";
 import { Button, Checkbox, Dialog, Field, Input, Select } from "@/components/ui";
 import { isWindows } from "@/lib/platform";
+import { useT, type TKey } from "@/i18n";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import type { FrpConfig, FrpProxy, FrpProxyType, FrpServer, Host, HostKind } from "@/lib/types";
 
@@ -13,11 +14,11 @@ const COLORS = [
 ];
 
 // Serial has its own dedicated page, so it's not a "host" you save here.
-const KIND_TABS: { id: HostKind; label: string; icon: typeof Server }[] = [
-  { id: "ssh", label: "SSH", icon: Server },
-  { id: "wsl", label: "WSL", icon: TerminalSquare },
-  { id: "frp", label: "Frp", icon: Globe },
-  { id: "local", label: "Local", icon: MonitorSmartphone },
+const KIND_TABS: { id: HostKind; labelKey: TKey; icon: typeof Server }[] = [
+  { id: "ssh", labelKey: "hosts.kindSsh", icon: Server },
+  { id: "wsl", labelKey: "hosts.kindWsl", icon: TerminalSquare },
+  { id: "frp", labelKey: "hosts.kindFrp", icon: Globe },
+  { id: "local", labelKey: "hosts.kindLocal", icon: MonitorSmartphone },
 ];
 
 /** Sentinel the backend interprets as "keep the previously stored secret". */
@@ -33,6 +34,7 @@ export function HostDialog({
   onSaved: () => void;
 }) {
   const saveHost = useHostsStore((s) => s.saveHost);
+  const t = useT();
   const [host, setHost] = useState<Host>({ ...emptyHost(initial.kind), ...initial });
   const [passwordInput, setPasswordInput] = useState(
     initial.password === SAVED ? "" : initial.password ?? "",
@@ -63,11 +65,11 @@ export function HostDialog({
   const patch = (p: Partial<Host>) => setHost((h) => ({ ...h, ...p }));
 
   const validate = (): string | undefined => {
-    if (!host.name.trim()) return "Name is required.";
-    if (host.kind === "ssh" && !host.hostname?.trim()) return "Hostname is required.";
+    if (!host.name.trim()) return t("hostDialog.nameRequired");
+    if (host.kind === "ssh" && !host.hostname?.trim()) return t("hostDialog.hostnameRequired");
     if (host.kind === "frp") {
-      if (!frpConfig.server?.serverAddr?.trim()) return "Server address is required.";
-      if (!frpConfig.proxies.length) return "Add at least one proxy.";
+      if (!frpConfig.server?.serverAddr?.trim()) return t("hostDialog.serverRequired");
+      if (!frpConfig.proxies.length) return t("hostDialog.proxyRequired");
     }
     return undefined;
   };
@@ -110,16 +112,16 @@ export function HostDialog({
     <Dialog
       open
       onClose={onClose}
-      title={host.id ? `Edit ${host.name}` : "New Host"}
-      description="Connections and secrets are stored locally, encrypted at rest."
+      title={host.id ? t("hostDialog.edit", { name: host.name }) : t("hostDialog.new")}
+      description={t("hostDialog.description")}
       width="max-w-lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={() => void save()} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("common.saving") : t("common.save")}
           </Button>
         </>
       }
@@ -140,70 +142,73 @@ export function HostDialog({
                 }
               >
                 <Icon size={14} />
-                {k.label}
+                {t(k.labelKey)}
               </button>
             );
           })}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Name" className="col-span-2">
+          <Field label={t("hostDialog.name")} className="col-span-2">
             <Input
               value={host.name}
               onChange={(e) => patch({ name: e.target.value })}
-              placeholder="My Server"
+              placeholder={t("hostDialog.phServer")}
               className="select-text"
             />
           </Field>
 
           {host.kind === "ssh" && (
             <>
-              <Field label="Hostname">
+              <Field label={t("hostDialog.hostname")}>
                 <Input
                   value={host.hostname ?? ""}
                   onChange={(e) => patch({ hostname: e.target.value })}
-                  placeholder="10.0.0.1 / box.local"
+                  placeholder={t("hostDialog.phHost")}
                   className="select-text"
                 />
               </Field>
-              <Field label="Port">
+              <Field label={t("hostDialog.port")}>
                 <Input
                   type="number"
                   value={host.port ?? 22}
                   onChange={(e) => patch({ port: Number(e.target.value) || 22 })}
                 />
               </Field>
-              <Field label="Username">
+              <Field label={t("hostDialog.username")}>
                 <Input
                   value={host.username ?? ""}
                   onChange={(e) => patch({ username: e.target.value })}
-                  placeholder="root"
+                  placeholder={t("hostDialog.phUser")}
                   className="select-text"
                 />
               </Field>
-              <Field label="Password" hint={host.password === SAVED ? "Stored · leave blank to keep" : undefined}>
+              <Field
+                label={t("hostDialog.password")}
+                hint={host.password === SAVED ? t("hostDialog.pwStored") : undefined}
+              >
                 <Input
                   type="password"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder={host.password === SAVED ? "•••••••• (unchanged)" : ""}
+                  placeholder={host.password === SAVED ? t("hostDialog.phPwUnchanged") : ""}
                   className="select-text"
                 />
               </Field>
-              <Field label="Private key path" className="col-span-2">
+              <Field label={t("hostDialog.privateKey")} className="col-span-2">
                 <Input
                   value={host.privateKeyPath ?? ""}
                   onChange={(e) => patch({ privateKeyPath: e.target.value })}
-                  placeholder="~/.ssh/id_rsa"
+                  placeholder={t("hostDialog.phKey")}
                   className="select-text font-mono text-[12px]"
                 />
               </Field>
-              <Field label="Passphrase" className="col-span-2">
+              <Field label={t("hostDialog.passphrase")} className="col-span-2">
                 <Input
                   type="password"
                   value={passphraseInput}
                   onChange={(e) => setPassphraseInput(e.target.value)}
-                  placeholder={host.passphrase === SAVED ? "•••••••• (unchanged)" : "optional"}
+                  placeholder={host.passphrase === SAVED ? t("hostDialog.phPwUnchanged") : t("hostDialog.phOptional")}
                   className="select-text"
                 />
               </Field>
@@ -212,25 +217,25 @@ export function HostDialog({
 
           {host.kind === "wsl" && (
             <>
-              <Field label="Distribution" className="col-span-2" hint="Leave empty to use WSL's default distro">
+              <Field label={t("hostDialog.distribution")} className="col-span-2" hint={t("hostDialog.distroHint")}>
                 <DistroPicker
                   value={host.wslDistro ?? ""}
                   onChange={(distro) => patch({ wslDistro: distro })}
                 />
               </Field>
-              <Field label="User" className="col-span-2" hint="Linux user inside the distro (wsl --user)">
+              <Field label={t("hostDialog.user")} className="col-span-2" hint={t("hostDialog.userHint")}>
                 <Input
                   value={host.wslUser ?? ""}
                   onChange={(e) => patch({ wslUser: e.target.value })}
-                  placeholder="default user"
+                  placeholder={t("hostDialog.phDefaultUser")}
                   className="select-text"
                 />
               </Field>
-              <Field label="Start directory" className="col-span-2" hint="Optional, passed as wsl --cd">
+              <Field label={t("hostDialog.startDir")} className="col-span-2" hint={t("hostDialog.cwdHint")}>
                 <Input
                   value={host.wslCwd ?? ""}
                   onChange={(e) => patch({ wslCwd: e.target.value })}
-                  placeholder="/home/user"
+                  placeholder={t("hostDialog.phHome")}
                   className="select-text font-mono text-[12px]"
                 />
               </Field>
@@ -241,7 +246,7 @@ export function HostDialog({
             <FrpForm config={frpConfig} onChange={setFrpConfig} />
           )}
 
-          <Field label="Color" className="col-span-2">
+          <Field label={t("hostDialog.color")} className="col-span-2">
             <div className="flex flex-wrap gap-1.5">
               {COLORS.map((c) => (
                 <button
@@ -258,11 +263,11 @@ export function HostDialog({
             </div>
           </Field>
 
-          <Field label="Tags" hint="comma separated" className="col-span-2">
+          <Field label={t("hostDialog.tags")} hint={t("hostDialog.tagsHint")} className="col-span-2">
             <Input
               value={tagsText}
               onChange={(e) => setTagsText(e.target.value)}
-              placeholder="prod, edge, raspberry"
+              placeholder={t("hostDialog.phTags")}
               className="select-text"
             />
           </Field>
@@ -288,6 +293,7 @@ function FrpForm({
   config: FrpConfig;
   onChange: (c: FrpConfig) => void;
 }) {
+  const t = useT();
   const server = config.server ?? { serverAddr: "", serverPort: 7000 };
   const setServer = (p: Partial<FrpServer>) =>
     onChange({ ...config, server: { ...server, ...p } });
@@ -317,57 +323,57 @@ function FrpForm({
     <div className="col-span-2 space-y-3">
       <div className="rounded-md border border-border bg-bg p-3 space-y-3">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted">
-          Server (common)
+          {t("hostDialog.frpServer")}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Server address">
+          <Field label={t("hostDialog.frpServerAddr")}>
             <Input
               value={server.serverAddr}
               onChange={(e) => setServer({ serverAddr: e.target.value })}
-              placeholder="frp.example.com"
+              placeholder={t("hostDialog.frpPhServer")}
               className="select-text"
             />
           </Field>
-          <Field label="Server port">
+          <Field label={t("hostDialog.frpServerPort")}>
             <Input
               type="number"
               value={server.serverPort}
               onChange={(e) => setServer({ serverPort: Number(e.target.value) || 7000 })}
             />
           </Field>
-          <Field label="Token" hint="optional">
+          <Field label={t("hostDialog.frpToken")} hint={t("hostDialog.frpOptional")}>
             <Input
               type="password"
               value={server.token ?? ""}
               onChange={(e) => setServer({ token: e.target.value || null })}
-              placeholder="optional"
+              placeholder={t("hostDialog.frpOptional")}
               className="select-text"
             />
           </Field>
-          <Field label="User" hint="optional — frpc namespace">
+          <Field label={t("hostDialog.frpUser")} hint={t("hostDialog.frpOptional")}>
             <Input
               value={server.user ?? ""}
               onChange={(e) => setServer({ user: e.target.value || null })}
-              placeholder="optional"
+              placeholder={t("hostDialog.frpOptional")}
               className="select-text"
             />
           </Field>
-          <Field label="TLS">
+          <Field label={t("hostDialog.frpTls")}>
             <span className="flex h-8 items-center gap-2 text-[12px] text-fg">
               <input
                 type="checkbox"
                 checked={!!server.tlsEnable}
                 onChange={(e) => setServer({ tlsEnable: e.target.checked })}
               />
-              Enable TLS
+              {t("hostDialog.frpEnableTls")}
             </span>
           </Field>
-          <Field label="Log level" hint="optional">
+          <Field label={t("hostDialog.frpLogLevel")} hint={t("hostDialog.frpOptional")}>
             <Select
               value={server.logLevel ?? ""}
               onChange={(e) => setServer({ logLevel: e.target.value || null })}
             >
-              <option value="">default</option>
+              <option value="">{t("hostDialog.frpLogDefault")}</option>
               <option value="trace">trace</option>
               <option value="debug">debug</option>
               <option value="info">info</option>
@@ -380,9 +386,11 @@ function FrpForm({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Proxies</div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted">
+            {t("hostDialog.frpProxies")}
+          </div>
           <Button variant="secondary" size="sm" onClick={addProxy}>
-            <Plus size={13} /> Add proxy
+            <Plus size={13} /> {t("hostDialog.frpAddProxy")}
           </Button>
         </div>
         {config.proxies.map((p, i) => (
@@ -391,47 +399,47 @@ function FrpForm({
               <Input
                 value={p.name}
                 onChange={(e) => setProxy(i, { name: e.target.value })}
-                placeholder="proxy name"
+                placeholder={t("hostDialog.frpPhProxy")}
                 className="flex-1 select-text font-mono text-[12px]"
               />
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => removeProxy(i)}
-                title="Remove proxy"
+                title={t("hostDialog.frpRemoveProxy")}
               >
                 <Trash2 size={14} />
               </Button>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <Field label="Type">
+              <Field label={t("hostDialog.frpType")}>
                 <Select
                   value={p.type}
                   onChange={(e) => setProxy(i, { type: e.target.value as FrpProxyType })}
                 >
-                  {FRP_PROXY_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {FRP_PROXY_TYPES.map((ty) => (
+                    <option key={ty} value={ty}>
+                      {ty}
                     </option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Local IP">
+              <Field label={t("hostDialog.frpLocalIp")}>
                 <Input
                   value={p.localIp}
                   onChange={(e) => setProxy(i, { localIp: e.target.value })}
-                  placeholder="127.0.0.1"
+                  placeholder={t("hostDialog.frpPhLocalIp")}
                   className="select-text font-mono text-[11px]"
                 />
               </Field>
-              <Field label="Local port">
+              <Field label={t("hostDialog.frpLocalPort")}>
                 <Input
                   type="number"
                   value={p.localPort}
                   onChange={(e) => setProxy(i, { localPort: Number(e.target.value) || 0 })}
                 />
               </Field>
-              <Field label="Remote port" hint="tcp/udp">
+              <Field label={t("hostDialog.frpRemotePort")} hint="tcp/udp">
                 <Input
                   type="number"
                   value={p.remotePort ?? ""}
@@ -441,19 +449,19 @@ function FrpForm({
                   placeholder="—"
                 />
               </Field>
-              <Field label="Custom domains" hint="http/https, comma-sep" className="col-span-2">
+              <Field label={t("hostDialog.frpDomains")} hint="http/https, comma-sep" className="col-span-2">
                 <Input
                   value={p.customDomains ?? ""}
                   onChange={(e) => setProxy(i, { customDomains: e.target.value || null })}
-                  placeholder="a.example.com, b.example.com"
+                  placeholder={t("hostDialog.frpPhDomains")}
                   className="select-text"
                 />
               </Field>
-              <Field label="Subdomain" hint="optional">
+              <Field label={t("hostDialog.frpSubdomain")} hint={t("hostDialog.frpOptional")}>
                 <Input
                   value={p.subdomain ?? ""}
                   onChange={(e) => setProxy(i, { subdomain: e.target.value || null })}
-                  placeholder="optional"
+                  placeholder={t("hostDialog.frpOptional")}
                   className="select-text"
                 />
               </Field>
@@ -465,7 +473,7 @@ function FrpForm({
                   checked={!!p.useEncryption}
                   onChange={(e) => setProxy(i, { useEncryption: e.target.checked })}
                 />
-                Encrypt
+                {t("hostDialog.frpEncrypt")}
               </label>
               <label className="flex items-center gap-1.5 text-[11px] text-fg">
                 <input
@@ -473,13 +481,13 @@ function FrpForm({
                   checked={!!p.useCompression}
                   onChange={(e) => setProxy(i, { useCompression: e.target.checked })}
                 />
-                Compress
+                {t("hostDialog.frpCompress")}
               </label>
             </div>
           </div>
         ))}
         {config.proxies.length === 0 && (
-          <p className="text-[12px] text-subtle">No proxies yet — add one above.</p>
+          <p className="text-[12px] text-subtle">{t("hostDialog.frpNoProxies")}</p>
         )}
       </div>
     </div>

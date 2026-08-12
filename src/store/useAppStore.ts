@@ -7,8 +7,18 @@ import type { AISettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink";
 
+export type Language = "zh" | "en";
+
+/** OS/browser locale → default app language: zh-* → Chinese, else English. */
+function detectLanguage(): Language {
+  if (typeof navigator === "undefined") return "en";
+  return /^zh/i.test(navigator.language || "") ? "zh" : "en";
+}
+
 export interface AppSettings {
   theme: ThemeId;
+  /** UI + AI answer language. */
+  language: Language;
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
@@ -32,6 +42,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "tokyo-night",
+  language: detectLanguage(),
   // Monospace-only stack: on macOS/Linux the old stack (JetBrains Mono …
   // Consolas …) fell through to the proportional CJK fonts (PingFang SC /
   // Microsoft YaHei / Noto Sans CJK SC), rendering the whole terminal in a
@@ -95,6 +106,7 @@ function applyWindowTheme(settings: AppSettings) {
 function applySettings(settings: AppSettings) {
   const root = document.documentElement;
   root.setAttribute("data-theme", settings.theme);
+  root.lang = settings.language;
   root.style.setProperty("--font-mono", settings.fontFamily);
   root.style.setProperty("--terminal-font-size", `${settings.fontSize}px`);
   root.style.setProperty("--terminal-line-height", String(settings.lineHeight));

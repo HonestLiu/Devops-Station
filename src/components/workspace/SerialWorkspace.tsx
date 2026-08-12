@@ -28,6 +28,7 @@ import { SendBar, type SendBarHandle } from "@/components/serial/SendBar";
 import { SerialRecordView } from "@/components/serial/SerialRecordView";
 import { QuickSendPanel } from "@/components/serial/QuickSendPanel";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
+import { useT, type TKey } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import {
   base64ToBytes,
@@ -49,10 +50,10 @@ import type {
   Tab,
 } from "@/lib/types";
 
-const MODES: { id: SerialViewMode; label: string; icon: typeof ScrollText }[] = [
-  { id: "normal", label: "数据", icon: ScrollText },
-  { id: "plot", label: "绘图", icon: LineChart },
-  { id: "terminal", label: "终端", icon: TerminalSquare },
+const MODES: { id: SerialViewMode; labelKey: TKey; icon: typeof ScrollText }[] = [
+  { id: "normal", labelKey: "ws.modeData", icon: ScrollText },
+  { id: "plot", labelKey: "ws.modePlot", icon: LineChart },
+  { id: "terminal", labelKey: "ws.modeTerminal", icon: TerminalSquare },
 ];
 
 const ENCODINGS: SerialEncoding[] = ["utf-8", "gbk", "ascii", "hex"];
@@ -77,7 +78,8 @@ function decodeBytes(bytes: Uint8Array, enc: SerialEncoding): string {
 }
 
 export function SerialWorkspace({ tab }: { tab: Tab }) {
-  const t = useTerminalTheme();
+  const tt = useTerminalTheme();
+  const t = useT();
   const reconnect = useTabsStore((s) => s.reconnect);
   const closeTab = useTabsStore((s) => s.closeTab);
   const patch = useTabsStore((s) => s.patch);
@@ -310,7 +312,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                 }
               >
                 <Icon size={13} />
-                {m.label}
+                {t(m.labelKey)}
               </button>
             );
           })}
@@ -318,13 +320,13 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
 
         <div className="flex items-center gap-2 no-drag">
           <Badge tone={connected ? "success" : tab.status === "error" ? "danger" : "warning"}>
-            {connected ? "已连接" : tab.status === "error" ? "错误" : tab.status === "connecting" ? "连接中" : "等待连接"}
+            {connected ? t("ws.statusConnected") : tab.status === "error" ? t("ws.statusError") : tab.status === "connecting" ? t("ws.statusConnecting") : t("ws.statusWaiting")}
           </Badge>
           <Select
             value={encoding}
             onChange={(e) => setEncoding(e.target.value as SerialEncoding)}
             className="w-24"
-            title="接收编码"
+            title={t("ws.receiveEncoding")}
           >
             {ENCODINGS.map((e) => (
               <option key={e} value={e}>
@@ -332,13 +334,13 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
               </option>
             ))}
           </Select>
-          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title="重连">
+          <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("common.reconnect")}>
             <RotateCw size={14} />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            title="解析最近串口数据为协议"
+            title={t("ws.protocolParseTitle")}
             onClick={() => void parseSerialProtocol()}
           >
             协议解析
@@ -351,25 +353,25 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
         {/* Left: transport settings panel (serial or BLE) */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
           <div className="flex h-9 items-center border-b border-border px-3 text-[12px] font-semibold text-fg">
-            {isBle ? "蓝牙设置" : "串口设置"}
+            {isBle ? t("ws.bleSettings") : t("ws.serialSettings")}
           </div>
           <div className="flex flex-col gap-3 p-3 text-[12px]">
             {isBle ? (
               <>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">设备</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.device")}</span>
                   <span className="font-mono text-fg">{bleCfg?.deviceName ?? bleCfg?.deviceId ?? "—"}</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">服务 UUID</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.serviceUuid")}</span>
                   <span className="font-mono text-fg break-all">{bleCfg ? shortUuid(bleCfg.service) : "—"}</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">写入特征</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.writeChar")}</span>
                   <span className="font-mono text-fg break-all">{bleCfg ? shortUuid(bleCfg.writeCharacteristic) : "—"}</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">通知特征</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.notifyChar")}</span>
                   <span className="font-mono text-fg break-all">
                     {bleCfg?.notifyCharacteristic ? shortUuid(bleCfg.notifyCharacteristic) : "无（仅发送）"}
                   </span>
@@ -378,29 +380,29 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
             ) : (
               <>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">端口</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.port")}</span>
                   <span className="font-mono text-fg">{cfg?.port ?? "—"}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] uppercase tracking-wide text-subtle">波特率</span>
+                    <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.baud")}</span>
                     <span className="text-fg">{cfg?.baudRate ?? "—"}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] uppercase tracking-wide text-subtle">数据位</span>
+                    <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.dataBits")}</span>
                     <span className="text-fg">{cfg?.dataBits ?? "—"}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] uppercase tracking-wide text-subtle">校验位</span>
+                    <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.parity")}</span>
                     <span className="text-fg">{cfg?.parity ?? "—"}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] uppercase tracking-wide text-subtle">停止位</span>
+                    <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.stopBits")}</span>
                     <span className="text-fg">{cfg?.stopBits ?? "—"}</span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] uppercase tracking-wide text-subtle">流控</span>
+                  <span className="text-[11px] uppercase tracking-wide text-subtle"> {t("ws.flow")}</span>
                   <span className="text-fg">{cfg?.flowControl ?? "—"}</span>
                 </div>
               </>
@@ -417,12 +419,12 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
             >
               {connected ? <PowerOff size={14} /> : <Power size={14} />}
               {connected
-                ? "断开连接"
+                ? t("ws.disconnect")
                 : tab.status === "connecting"
-                  ? "连接中…"
+                  ? t("common.connecting")
                   : isBle
-                    ? "连接"
-                    : "打开串口"}
+                    ? t("ws.connectBle")
+                    : t("ws.openSerial")}
             </Button>
 
             {!isBle && (
@@ -453,7 +455,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                   "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
                   (rxHex ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
                 }
-                title="以 HEX 显示接收数据"
+                title={t("ws.receiveHex")}
               >
                 <Activity size={12} /> 接收:HEX
               </button>
@@ -463,7 +465,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                   "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
                   (autoScroll ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
                 }
-                title="自动滚动到最新数据"
+                title={t("ws.autoScroll")}
               >
                 <ArrowUpDown size={12} /> 自动滚动
               </button>
@@ -473,17 +475,17 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                   "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
                   (frozen ? "bg-warning text-warning-fg" : "text-muted hover:bg-hover")
                 }
-                title="暂停记录显示（数据仍在后台缓存，恢复后补入）"
+                title={t("ws.pauseTitle")}
               >
                 {frozen ? <Play size={12} /> : <Pause size={12} />}
-                {frozen ? "已暂停" : "暂停"}
+                {frozen ? t("ws.paused") : t("ws.pause")}
               </button>
-              <Button variant="ghost" size="sm" onClick={exportLog} disabled={logs.length === 0} title="导出日志">
+              <Button variant="ghost" size="sm" onClick={exportLog} disabled={logs.length === 0} title={t("ws.exportTitle")}>
                 <Download size={13} /> 导出
               </Button>
             </div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" disabled title="发送文件（即将支持）">
+              <Button variant="ghost" size="sm" disabled title={t("ws.sendFileTitle")}>
                 <FileUp size={13} /> 发送文件
               </Button>
               <Button
@@ -493,7 +495,7 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                   setLogs([]);
                   pendingRef.current = [];
                 }}
-                title="清屏"
+                title={t("ws.clearTitle")}
               >
                 <Eraser size={13} /> 清屏
               </Button>
@@ -509,13 +511,13 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                     key={sessionId}
                     sessionId={sessionId}
                     transport={isBle ? "ble" : "serial"}
-                    theme={t.theme}
-                    fontFamily={t.fontFamily}
-                    fontSize={t.fontSize}
-                    lineHeight={t.lineHeight}
-                    cursorBlink={t.cursorBlink}
-                    cursorStyle={t.cursorStyle}
-                    scrollback={t.scrollback}
+                    theme={tt.theme}
+                    fontFamily={tt.fontFamily}
+                    fontSize={tt.fontSize}
+                    lineHeight={tt.lineHeight}
+                    cursorBlink={tt.cursorBlink}
+                    cursorStyle={tt.cursorStyle}
+                    scrollback={tt.scrollback}
                   />
                 </div>
                 <TerminalInlineAsk tab={tab} />
@@ -545,10 +547,10 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
               tab.status === "connecting"
                 ? isBle
                   ? "正在连接蓝牙…"
-                  : "正在打开串口…"
+                  : t("ws.connectingSerial")
                 : isBle
-                  ? "蓝牙已断开 — 点击左侧“连接”重连。"
-                  : "串口已关闭 — 点击左侧“打开串口”重连。"
+                  ? t("ws.disconnectedBle")
+                  : t("ws.disconnectedSerial")
             }
             lineEnding={lineEnding}
             onLineEndingChange={setLineEnding}
@@ -561,12 +563,12 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                 {configLabel}
               </span>
               <span className={connected ? "text-success" : "text-warning"}>
-                {connected ? "已连接" : "已断开"}
+                {connected ? t("ws.statusConnected") : t("ws.statusDisconnected")}
               </span>
             </div>
             <div className="flex items-center gap-3 font-mono">
-              <span>Tx: {txBytes} Bytes</span>
-              <span>Rx: {rxBytes} Bytes</span>
+              <span>{t("ws.txBytes", { n: txBytes })}</span>
+              <span>{t("ws.rxBytes", { n: rxBytes })}</span>
             </div>
           </div>
         </div>

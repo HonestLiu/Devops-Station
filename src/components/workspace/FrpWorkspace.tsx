@@ -5,6 +5,7 @@ import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
 
@@ -14,7 +15,8 @@ import type { Tab } from "@/lib/types";
  * with the same config kept on the tab.
  */
 export function FrpWorkspace({ tab }: { tab: Tab }) {
-  const t = useTerminalTheme();
+  const tt = useTerminalTheme();
+  const t = useT();
   const reconnect = useTabsStore((s) => s.reconnect);
   const patch = useTabsStore((s) => s.patch);
   const connected = tab.status === "connected" && !!tab.sessionId;
@@ -28,7 +30,7 @@ export function FrpWorkspace({ tab }: { tab: Tab }) {
             variant="ghost"
             size="sm"
             onClick={() => void reconnect(tab.id)}
-            title="Restart tunnel"
+            title={t("ws.restartTunnel")}
           >
             <RotateCw size={14} />
           </Button>
@@ -42,13 +44,13 @@ export function FrpWorkspace({ tab }: { tab: Tab }) {
               key={tab.sessionId}
               sessionId={tab.sessionId}
               transport="pty"
-              theme={t.theme}
-              fontFamily={t.fontFamily}
-              fontSize={t.fontSize}
-              lineHeight={t.lineHeight}
-              cursorBlink={t.cursorBlink}
-              cursorStyle={t.cursorStyle}
-              scrollback={t.scrollback}
+              theme={tt.theme}
+              fontFamily={tt.fontFamily}
+              fontSize={tt.fontSize}
+              lineHeight={tt.lineHeight}
+              cursorBlink={tt.cursorBlink}
+              cursorStyle={tt.cursorStyle}
+              scrollback={tt.scrollback}
               onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
             />
           )}

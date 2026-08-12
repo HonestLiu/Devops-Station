@@ -16,6 +16,7 @@ import {
 import { THEME_LIST } from "@/lib/themes";
 import { cn, parseSshCommand } from "@/lib/utils";
 import { isWindows } from "@/lib/platform";
+import { useT } from "@/i18n";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -34,6 +35,7 @@ interface Cmd {
 }
 
 export function CommandPalette() {
+  const t = useT();
   const open = useAppStore((s) => s.paletteOpen);
   const togglePalette = useAppStore((s) => s.togglePalette);
   const setPage = useAppStore((s) => s.setPage);
@@ -61,50 +63,50 @@ export function CommandPalette() {
     const list: Cmd[] = [
       {
         id: "nav-dashboard",
-        label: "Go to Dashboard",
-        group: "Navigation",
+        label: t("palette.goDashboard"),
+        group: t("palette.navigation"),
         icon: <LayoutDashboard size={15} />,
         run: go("dashboard"),
       },
       {
         id: "nav-hosts",
-        label: "Go to Hosts",
-        group: "Navigation",
+        label: t("palette.goHosts"),
+        group: t("palette.navigation"),
         icon: <Server size={15} />,
         run: go("hosts"),
       },
       {
         id: "nav-monitoring",
-        label: "Go to Monitoring",
-        group: "Navigation",
+        label: t("palette.goMonitoring"),
+        group: t("palette.navigation"),
         icon: <Activity size={15} />,
         run: go("monitoring"),
       },
       {
         id: "nav-sftp",
-        label: "Go to SFTP",
-        group: "Navigation",
+        label: t("palette.goSftp"),
+        group: t("palette.navigation"),
         icon: <FolderOpen size={15} />,
         run: go("sftp"),
       },
       {
         id: "nav-serial",
-        label: "Go to Serial",
-        group: "Navigation",
+        label: t("palette.goSerial"),
+        group: t("palette.navigation"),
         icon: <Cable size={15} />,
         run: go("serial"),
       },
       {
         id: "nav-settings",
-        label: "Go to Settings",
-        group: "Navigation",
+        label: t("palette.goSettings"),
+        group: t("palette.navigation"),
         icon: <SettingsIcon size={15} />,
         run: go("settings"),
       },
       {
         id: "conn-local",
-        label: "Open Local Shell",
-        group: "Connections",
+        label: t("palette.openLocalShell"),
+        group: t("palette.connections"),
         icon: <MonitorSmartphone size={15} />,
         run: () => {
           void openLocal();
@@ -113,12 +115,12 @@ export function CommandPalette() {
       },
       {
         id: "conn-ssh",
-        label: "Connect via SSH…",
-        group: "Connections",
+        label: t("palette.connectSsh"),
+        group: t("palette.connections"),
         icon: <TerminalSquare size={15} />,
         run: () => {
           close();
-          const target = window.prompt("ssh user@host[:port]");
+          const target = window.prompt(t("palette.sshPrompt"));
           if (!target) return;
           const p = parseSshCommand(target);
           if (!p.valid) return;
@@ -137,12 +139,12 @@ export function CommandPalette() {
       },
       {
         id: "conn-serial",
-        label: "Open serial port…",
-        group: "Connections",
+        label: t("palette.openSerialPort"),
+        group: t("palette.connections"),
         icon: <Cable size={15} />,
         run: () => {
           close();
-          const target = window.prompt("Serial port (e.g. COM3 or /dev/ttyUSB0)");
+          const target = window.prompt(t("palette.serialPrompt"));
           if (!target) return;
           const port = target.trim();
           if (!port) return;
@@ -161,8 +163,8 @@ export function CommandPalette() {
       },
       {
         id: "ai-explain-selection",
-        label: "Explain selected command",
-        group: "AI",
+        label: t("palette.explainSelected"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
@@ -171,8 +173,8 @@ export function CommandPalette() {
       },
       {
         id: "ai-generate-command",
-        label: "Generate command…",
-        group: "AI",
+        label: t("palette.generateCommand"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
@@ -181,8 +183,8 @@ export function CommandPalette() {
       },
       {
         id: "ai-analyze-log",
-        label: "Analyze terminal log",
-        group: "AI",
+        label: t("palette.analyzeTerminalLog"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
@@ -191,8 +193,8 @@ export function CommandPalette() {
       },
       {
         id: "ai-parse-serial",
-        label: "Parse serial protocol",
-        group: "AI",
+        label: t("palette.parseSerialProtocol"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
@@ -201,8 +203,8 @@ export function CommandPalette() {
       },
       {
         id: "ai-monitor-insight",
-        label: "Monitoring insight…",
-        group: "AI",
+        label: t("palette.monitoringInsight"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
@@ -215,12 +217,12 @@ export function CommandPalette() {
       },
       {
         id: "ai-run-agent",
-        label: "Run AI agent…",
-        group: "AI",
+        label: t("palette.runAgent"),
+        group: t("palette.ai"),
         icon: <Sparkles size={15} />,
         run: () => {
           close();
-          const goal = window.prompt("What should the agent accomplish on this host?");
+          const goal = window.prompt(t("palette.agentGoal"));
           if (goal && goal.trim()) void runAgent(goal, false);
         },
       },
@@ -231,9 +233,9 @@ export function CommandPalette() {
       if (h.kind === "wsl" && !isWindows) continue;
       list.push({
         id: `host-${h.id}`,
-        label: `Connect: ${h.name}`,
-        group: "Hosts",
-        hint: h.kind === "serial" ? h.serialPort ?? "" : h.kind === "wsl" ? h.wslDistro ?? "" : h.kind === "frp" ? "frp tunnel" : h.hostname ?? "",
+        label: t("palette.connectHost", { name: h.name }),
+        group: t("palette.hosts"),
+        hint: h.kind === "serial" ? h.serialPort ?? "" : h.kind === "wsl" ? h.wslDistro ?? "" : h.kind === "frp" ? t("palette.frpTunnel") : h.hostname ?? "",
         icon: h.kind === "serial" ? <Cable size={15} /> : h.kind === "wsl" ? <TerminalSquare size={15} /> : h.kind === "frp" ? <Globe size={15} /> : <Server size={15} />,
         run: () => {
           void (h.kind === "local" ? openLocal() : openFromHost(h));
@@ -242,14 +244,14 @@ export function CommandPalette() {
       });
     }
 
-    for (const t of THEME_LIST) {
+    for (const th of THEME_LIST) {
       list.push({
-        id: `theme-${t.id}`,
-        label: `Theme: ${t.label}`,
-        group: "Appearance",
+        id: `theme-${th.id}`,
+        label: t("palette.theme", { label: th.label }),
+        group: t("palette.appearance"),
         icon: <Palette size={15} />,
         run: () => {
-          void updateSetting("theme", t.id);
+          void updateSetting("theme", th.id);
           close();
         },
       });
@@ -318,7 +320,7 @@ export function CommandPalette() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Type a command or search…"
+          placeholder={t("palette.typeToSearch")}
           className="select-text h-11 w-full border-b border-border bg-transparent px-4 text-[14px] text-fg placeholder:text-subtle focus:outline-none"
         />
         <div className="max-h-[50vh] overflow-y-auto py-1">

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n";
 import { useAiComposer } from "./useAiComposer";
 import { EXPLAIN_SYSTEM, FIX_SYSTEM, GENERATE_SYSTEM } from "./terminalAi";
 
@@ -20,6 +21,7 @@ import { EXPLAIN_SYSTEM, FIX_SYSTEM, GENERATE_SYSTEM } from "./terminalAi";
  * it into a command.
  */
 export function SelectionMenu({ text }: { text: string }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const safe = text.trim();
@@ -50,7 +52,7 @@ export function SelectionMenu({ text }: { text: string }) {
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-accent-fg shadow-lg hover:opacity-90"
-        title="AI actions for the selection"
+        title={t("ai.quickActions")}
       >
         <Sparkles size={12} /> AI
         <ChevronDown size={11} className={cn("transition-transform", open && "rotate-180")} />
@@ -63,14 +65,14 @@ export function SelectionMenu({ text }: { text: string }) {
         >
           <MenuItem
             icon={<Sparkles size={13} />}
-            label="Explain"
+            label={t("ai.explain")}
             onClick={() =>
               run(`Explain the following terminal selection:\n\n${safe}`, EXPLAIN_SYSTEM)
             }
           />
           <MenuItem
             icon={<Wrench size={13} />}
-            label="Fix it"
+            label={t("ai.fixIt")}
             onClick={() =>
               run(
                 `Here is the terminal excerpt:\n\n${safe}\n\nWhat went wrong and how do I fix it?`,
@@ -80,7 +82,7 @@ export function SelectionMenu({ text }: { text: string }) {
           />
           <MenuItem
             icon={<TerminalIcon size={13} />}
-            label="Rewrite as command"
+            label={t("ai.rewriteCommand")}
             onClick={() =>
               run(
                 `Turn the following into the shell command(s) I should run:\n\n${safe}`,

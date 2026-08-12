@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import type { Tab, TabKind } from "@/lib/types";
@@ -42,6 +43,7 @@ function statusColor(tab: Tab): string {
 }
 
 export function TabBar() {
+  const t = useT();
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
@@ -59,7 +61,7 @@ export function TabBar() {
     const items: MenuItem[] = [
       {
         id: "duplicate",
-        label: "复制标签页",
+        label: t("tabs.duplicate"),
         icon: <Copy size={14} />,
         onClick: () => {
           closeCtx();
@@ -68,7 +70,7 @@ export function TabBar() {
       },
       {
         id: "close",
-        label: "关闭",
+        label: t("tabs.close"),
         icon: <X size={14} />,
         onClick: () => {
           closeCtx();
@@ -77,7 +79,7 @@ export function TabBar() {
       },
       {
         id: "close-others",
-        label: "关闭其他",
+        label: t("tabs.closeOthers"),
         icon: <X size={14} />,
         onClick: () => {
           closeCtx();
@@ -86,7 +88,7 @@ export function TabBar() {
       },
       {
         id: "close-right",
-        label: "关闭右侧",
+        label: t("tabs.closeRight"),
         icon: <ChevronsRight size={14} />,
         onClick: () => {
           closeCtx();
@@ -98,7 +100,7 @@ export function TabBar() {
       items.push({ id: "sep", separator: true, label: "" });
       items.push({
         id: "reconnect",
-        label: "重新连接",
+        label: t("tabs.reconnect"),
         icon: <RefreshCw size={14} />,
         onClick: () => {
           closeCtx();
@@ -145,7 +147,7 @@ export function TabBar() {
                 void closeTab(tab.id);
               }}
               className="shrink-0 rounded p-0.5 text-subtle opacity-0 hover:bg-border hover:text-fg group-hover:opacity-100"
-              aria-label="Close tab"
+              aria-label={t("tabs.closeAria")}
             >
               <X size={13} />
             </button>

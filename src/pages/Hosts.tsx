@@ -18,6 +18,7 @@ import { HostDialog } from "@/components/HostDialog";
 import { QuickCommandsEditor } from "@/components/QuickCommandsEditor";
 import { parseSshCommand, hashColor } from "@/lib/utils";
 import { isWindows } from "@/lib/platform";
+import { useT, type TKey } from "@/i18n";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
@@ -31,15 +32,16 @@ const KIND_ICON = {
   local: MonitorSmartphone,
 } as const;
 
-const KIND_LABEL: Record<HostKind, string> = {
-  ssh: "SSH",
-  serial: "Serial",
-  wsl: "WSL",
-  frp: "Frp",
-  local: "Local",
+const KIND_LABEL: Record<HostKind, TKey> = {
+  ssh: "hosts.kindSsh",
+  serial: "hosts.kindSerial",
+  wsl: "hosts.kindWsl",
+  frp: "hosts.kindFrp",
+  local: "hosts.kindLocal",
 };
 
 export function Hosts() {
+  const t = useT();
   const hosts = useHostsStore((s) => s.hosts);
   const deleteHost = useHostsStore((s) => s.deleteHost);
   const openFromHost = useTabsStore((s) => s.openFromHost);
@@ -82,7 +84,7 @@ export function Hosts() {
     const items: MenuItem[] = [
       {
         id: "connect",
-        label: "连接",
+        label: t("common.connect"),
         icon: <LogIn size={14} />,
         onClick: () => {
           closeCtx();
@@ -91,7 +93,7 @@ export function Hosts() {
       },
       {
         id: "edit",
-        label: "编辑",
+        label: t("common.edit"),
         icon: <Pencil size={14} />,
         onClick: () => {
           closeCtx();
@@ -101,12 +103,12 @@ export function Hosts() {
       { id: "sep", separator: true, label: "" },
       {
         id: "delete",
-        label: "删除",
+        label: t("common.delete"),
         icon: <Trash2 size={14} />,
         danger: true,
         onClick: () => {
           closeCtx();
-          if (window.confirm(`Delete host "${h.name}"?`)) void deleteHost(h.id);
+          if (window.confirm(t("hosts.deleteConfirm", { name: h.name }))) void deleteHost(h.id);
         },
       },
     ];
@@ -130,15 +132,15 @@ export function Hosts() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Hosts</h1>
-          <p className="page-subtitle">Saved SSH, WSL and Frp targets</p>
+          <h1 className="page-title">{t("hosts.title")}</h1>
+          <p className="page-subtitle">{t("hosts.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setQcOpen(true)}>
-            <Zap size={14} /> Quick Commands
+            <Zap size={14} /> {t("hosts.quickCommands")}
           </Button>
           <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            <Plus size={14} /> New Host
+            <Plus size={14} /> {t("hosts.newHost")}
           </Button>
         </div>
       </div>
@@ -152,11 +154,11 @@ export function Hosts() {
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && quickConnect()}
-          placeholder="Quick connect: ssh user@host or host:port"
+          placeholder={t("hosts.quickConnectPlaceholder")}
           className="select-text h-8 flex-1 bg-transparent text-[13px] text-fg placeholder:text-subtle focus:outline-none"
         />
         <Button variant="ghost" size="sm" onClick={quickConnect}>
-          Connect
+          {t("common.connect")}
         </Button>
       </div>
 
@@ -166,7 +168,7 @@ export function Hosts() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter hosts…"
+          placeholder={t("hosts.filterPlaceholder")}
           className="select-text h-9 w-full rounded-xl border border-border/80 bg-surface pl-9 pr-3 text-[13px] text-fg placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
         />
       </div>
@@ -175,16 +177,12 @@ export function Hosts() {
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Server size={28} />}
-          title={hosts.length === 0 ? "No hosts yet" : "No matches"}
-          description={
-            hosts.length === 0
-              ? "Add a host to start managing SSH, local, and Frp connections."
-              : "Try a different search term."
-          }
+          title={hosts.length === 0 ? t("hosts.emptyTitle") : t("hosts.noMatches")}
+          description={hosts.length === 0 ? t("hosts.emptyHint") : t("hosts.noMatchesHint")}
           action={
             hosts.length === 0 ? (
               <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-                <Plus size={14} /> New Host
+                <Plus size={14} /> {t("hosts.newHost")}
               </Button>
             ) : undefined
           }
@@ -196,14 +194,17 @@ export function Hosts() {
             const color = h.color || hashColor(h.name);
             const subtitle =
               h.kind === "serial"
-                ? `${h.serialPort ?? "?"} · ${h.baudRate ?? 115200} baud`
+                ? t("hosts.baud", { port: h.serialPort ?? "?", baud: h.baudRate ?? 115200 })
                 : h.kind === "local"
-                  ? "this machine"
-              : h.kind === "wsl"
-                ? `WSL · ${h.wslDistro || "default"}`
-                : h.kind === "frp"
-                  ? `Frp · ${h.frpConfig ? "configured" : "unconfigured"}`
-                  : `${h.username ? h.username + "@" : ""}${h.hostname ?? "?"}${h.port ? ":" + h.port : ""}`;
+                  ? t("hosts.thisMachine")
+                  : h.kind === "wsl"
+                    ? t("hosts.wslDistro", { distro: h.wslDistro || "default" })
+                    : h.kind === "frp"
+                      ? h.frpConfig
+                        ? t("hosts.frpConfigured")
+                        : t("hosts.frpUnconfigured")
+                      : // user@host:port is a language-neutral format.
+                        `${h.username ? h.username + "@" : ""}${h.hostname ?? "?"}${h.port ? ":" + h.port : ""}`;
             return (
               <div
                 key={h.id}
@@ -221,7 +222,7 @@ export function Hosts() {
                     {h.name}
                   </span>
                   <Badge tone={h.kind === "serial" ? "warning" : "accent"}>
-                    {KIND_LABEL[h.kind]}
+                    {t(KIND_LABEL[h.kind])}
                   </Badge>
                 </div>
                 <div className="mb-3 flex items-center gap-1.5 text-[12px] text-muted">
@@ -244,18 +245,19 @@ export function Hosts() {
 
                 <div className="mt-auto flex items-center gap-1.5">
                   <Button variant="primary" size="sm" className="flex-1" onClick={() => connect(h)}>
-                    Connect
+                    {t("common.connect")}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditing(h)} title="Edit">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(h)} title={t("common.edit")}>
                     <Pencil size={13} />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      if (window.confirm(`Delete host "${h.name}"?`)) void deleteHost(h.id);
+                      if (window.confirm(t("hosts.deleteConfirm", { name: h.name })))
+                        void deleteHost(h.id);
                     }}
-                    title="Delete"
+                    title={t("common.delete")}
                   >
                     <Trash2 size={13} className="text-danger" />
                   </Button>

@@ -5,6 +5,7 @@ import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
 import { useTerminalTheme } from "@/hooks/useTerminalTheme";
+import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ import type { Tab, TermPane } from "@/lib/types";
 
 /** Pane-level overlay: unlike ConnectionOverlay it reconnects THIS pane. */
 function PaneOverlay({ tab, pane }: { tab: Tab; pane: TermPane }) {
+  const t = useT();
   const reconnect = useTabsStore((s) => s.reconnect);
   const focusPane = useTabsStore((s) => s.focusPane);
 
@@ -19,7 +21,7 @@ function PaneOverlay({ tab, pane }: { tab: Tab; pane: TermPane }) {
     return (
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-bg">
         <Loader2 size={22} className="animate-spin text-accent" />
-        <p className="text-[12px] text-muted">Connecting…</p>
+        <p className="text-[12px] text-muted">{t("common.connecting")}</p>
       </div>
     );
   }
@@ -29,7 +31,7 @@ function PaneOverlay({ tab, pane }: { tab: Tab; pane: TermPane }) {
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-bg/95 px-4 text-center backdrop-blur-sm">
         <AlertTriangle size={22} className="text-danger" />
         <p className="text-[12px] font-medium text-fg">
-          {pane.status === "closed" ? "Connection closed" : "Connection failed"}
+          {pane.status === "closed" ? t("overlay.closed") : t("overlay.failed")}
         </p>
         {pane.error && (
           <p className="max-w-[300px] break-words text-[11px] text-muted">{pane.error}</p>
@@ -43,7 +45,7 @@ function PaneOverlay({ tab, pane }: { tab: Tab; pane: TermPane }) {
           }}
         >
           <RotateCw size={12} />
-          Retry
+          {t("common.retry")}
         </Button>
       </div>
     );

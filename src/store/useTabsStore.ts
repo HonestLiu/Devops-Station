@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { ble, frp, pty, serial, ssh, wsl } from "@/lib/api";
+import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import type {
@@ -19,6 +20,14 @@ let counter = 0;
 const nextId = () => `tab-${++counter}`;
 let paneCounter = 0;
 const nextPaneId = () => `pane-${++paneCounter}`;
+
+/** Non-React translate helper — the tabs store runs outside React. */
+function lang(
+  key: Parameters<typeof tFrom>[1],
+  params?: Record<string, string | number>,
+): string {
+  return tFrom(useAppStore.getState().settings.language, key, params);
+}
 
 interface TabsState {
   tabs: Tab[];
@@ -235,7 +244,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           id,
           kind: "ble",
           title: label,
-          subtitle: "BLE",
+          subtitle: lang("tabs.ble"),
           status: "connecting",
           hostId: config.hostId,
           ble: config,
@@ -269,8 +278,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         {
           id,
           kind: "local",
-          title: "Local Shell",
-          subtitle: "local",
+          title: lang("ws.localShell"),
+          subtitle: lang("tabs.local"),
           status: "connecting",
           cwd,
           shell,
@@ -296,8 +305,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         {
           id,
           kind: "wsl",
-          title: title || (config.distro ? `WSL · ${config.distro}` : "WSL"),
-          subtitle: config.distro || "default distro",
+          title: title || (config.distro ? lang("hosts.wslDistro", { distro: config.distro }) : "WSL"),
+          subtitle: config.distro || lang("tabs.defaultDistro"),
           status: "connecting",
           hostId: config.hostId,
           // Stash the launch config so Reconnect can respawn identically.
@@ -325,7 +334,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         {
           id,
           kind: "frp",
-          title: title || "Frp Tunnel",
+          title: title || lang("tabs.frpTunnel"),
           subtitle: config.config.server?.serverAddr || "frpc",
           status: "connecting",
           hostId: config.hostId,

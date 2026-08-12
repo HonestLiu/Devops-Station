@@ -34,6 +34,7 @@ import { useAiStore } from "./ai/useAiStore";
 import { useAppStore, type Page } from "./store/useAppStore";
 import { useTabsStore } from "./store/useTabsStore";
 import { useContextMenu, type MenuItem } from "./store/useContextMenu";
+import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import type { Tab } from "./lib/types";
 
@@ -66,6 +67,7 @@ function TabContent({ tab }: { tab: Tab }) {
 }
 
 export default function App() {
+  const t = useT();
   const page = useAppStore((s) => s.page);
   const togglePalette = useAppStore((s) => s.togglePalette);
 
@@ -98,7 +100,7 @@ export default function App() {
       showCtx(e.clientX, e.clientY, [
         {
           id: "copy",
-          label: "Copy",
+          label: t("common.copy"),
           icon: <Copy size={14} />,
           onClick: () => {
             closeCtx();
@@ -114,7 +116,7 @@ export default function App() {
       items.push(
         {
           id: "copy",
-          label: "Copy",
+          label: t("common.copy"),
           icon: <Copy size={14} />,
           onClick: () => {
             closeCtx();
@@ -127,7 +129,7 @@ export default function App() {
     items.push(
       {
         id: "local",
-        label: "新建本地终端",
+        label: t("app.newLocalTerminal"),
         icon: <MonitorSmartphone size={14} />,
         onClick: () => {
           closeCtx();
@@ -137,7 +139,7 @@ export default function App() {
       { id: "sep1", separator: true, label: "" },
       {
         id: "hosts",
-        label: "打开主机列表",
+        label: t("app.openHosts"),
         icon: <Server size={14} />,
         onClick: () => {
           closeCtx();
@@ -146,7 +148,7 @@ export default function App() {
       },
       {
         id: "serial",
-        label: "打开 Serial",
+        label: t("app.openSerial"),
         icon: <Cable size={14} />,
         onClick: () => {
           closeCtx();
@@ -155,7 +157,7 @@ export default function App() {
       },
       {
         id: "jlink",
-        label: "打开 J-Link",
+        label: t("app.openJlink"),
         icon: <Microchip size={14} />,
         onClick: () => {
           closeCtx();
@@ -164,7 +166,7 @@ export default function App() {
       },
       {
         id: "sftp",
-        label: "打开 SFTP",
+        label: t("app.openSftp"),
         icon: <FolderOpen size={14} />,
         onClick: () => {
           closeCtx();
@@ -174,7 +176,7 @@ export default function App() {
       { id: "sep2", separator: true, label: "" },
       {
         id: "settings",
-        label: "设置",
+        label: t("app.settings"),
         icon: <SettingsIcon size={14} />,
         onClick: () => {
           closeCtx();

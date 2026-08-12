@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui";
 import { SftpDualPanel } from "@/components/sftp/SftpDualPanel";
 import { ssh } from "@/lib/api";
+import { useT } from "@/i18n";
 import { cn, hashColor } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
@@ -21,6 +22,7 @@ import type { Host, SshConnectConfig } from "@/lib/types";
 
 /** Static dual-pane skeleton shown behind the frosted overlay before connect. */
 function SftpMockPanel() {
+  const t = useT();
   const remote = [
     { name: "deploy", dir: true, size: "—", time: "2d" },
     { name: "logs", dir: true, size: "—", time: "2d" },
@@ -69,7 +71,7 @@ function SftpMockPanel() {
             side === "remote" ? "bg-accent/15 text-accent" : "bg-hover text-muted",
           )}
         >
-          {side === "remote" ? "REMOTE" : "LOCAL"}
+          {side === "remote" ? t("sftp.remote") : t("sftp.local")}
         </span>
       </div>
       <div className="flex-1 space-y-0.5 overflow-hidden p-1.5">
@@ -82,7 +84,7 @@ function SftpMockPanel() {
     <div className="flex h-full flex-col gap-2 bg-surface p-2">
       <div className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-border/50 bg-bg/40 text-[11px] text-subtle/70">
         <FolderOpen size={13} className="text-accent/60" />
-        Remote ⇄ Local — pick a host to start transferring files
+        {t("sftp.connectHint")}
       </div>
       <div className="flex min-h-0 flex-1 gap-2">
         {pane("remote", "/home/admin", remote)}
@@ -93,6 +95,7 @@ function SftpMockPanel() {
 }
 
 export function SftpPage() {
+  const t = useT();
   const setPage = useAppStore((s) => s.setPage);
   const hosts = useHostsStore((s) => s.hosts);
   const sshHosts = useMemo(() => hosts.filter((h) => h.kind === "ssh"), [hosts]);
@@ -156,8 +159,8 @@ export function SftpPage() {
               {host.hostname}:{host.port ?? 22}
             </span>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => void disconnect()} title="Disconnect">
-            <LogOut size={13} /> Disconnect
+          <Button variant="ghost" size="sm" onClick={() => void disconnect()} title={t("sftp.disconnect")}>
+            <LogOut size={13} /> {t("sftp.disconnect")}
           </Button>
         </div>
       )}
@@ -174,9 +177,9 @@ export function SftpPage() {
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg/55 p-6 backdrop-blur-md">
             <div className="card w-[460px] max-w-full p-0 shadow-2xl">
               <div className="border-b border-border/70 px-5 py-4">
-                <h2 className="text-[15px] font-semibold text-fg">Connect via SFTP</h2>
+                <h2 className="text-[15px] font-semibold text-fg">{t("sftp.connectVia")}</h2>
                 <p className="mt-0.5 text-[12px] text-muted">
-                  Pick a saved SSH host to open its file system
+                  {t("sftp.pickHost")}
                 </p>
               </div>
 
@@ -184,20 +187,20 @@ export function SftpPage() {
                 {status === "connecting" ? (
                   <div className="flex flex-col items-center gap-3 py-10">
                     <Loader2 size={24} className="animate-spin text-accent" />
-                    <p className="text-[13px] text-muted">Connecting to {host?.name}…</p>
+                    <p className="text-[13px] text-muted">{t("sftp.connecting", { name: host?.name ?? "" })}</p>
                   </div>
                 ) : status === "error" ? (
                   <div className="flex flex-col items-center gap-3 py-8 text-center">
                     <AlertTriangle size={24} className="text-danger" />
-                    <p className="text-[13px] font-medium text-fg">Connection failed</p>
+                    <p className="text-[13px] font-medium text-fg">{t("sftp.connectionFailed")}</p>
                     <p className="max-w-sm break-words text-[12px] text-muted">{error}</p>
                     <div className="flex gap-2">
                       <Button variant="secondary" size="sm" onClick={() => setStatus("idle")}>
-                        Choose another host
+                        {t("sftp.chooseAnother")}
                       </Button>
                       {host && (
                         <Button variant="primary" size="sm" onClick={() => void connectTo(host)}>
-                          Retry
+                          {t("common.retry")}
                         </Button>
                       )}
                     </div>
@@ -205,9 +208,9 @@ export function SftpPage() {
                 ) : sshHosts.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 py-10 text-center">
                     <Server size={26} className="text-subtle" />
-                    <p className="text-[13px] text-muted">No saved SSH hosts yet</p>
+                    <p className="text-[13px] text-muted">{t("sftp.noHosts")}</p>
                     <Button variant="primary" size="sm" onClick={() => setPage("hosts")}>
-                      Go to Hosts to add one
+                      {t("sftp.goToHosts")}
                     </Button>
                   </div>
                 ) : (

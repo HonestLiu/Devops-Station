@@ -9,6 +9,7 @@ import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "luc
 
 import { ssh, pty, localFs } from "@/lib/api";
 import { dataLink } from "@/lib/dataLink";
+import { useT } from "@/i18n";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { base64ToBytes, textToBase64 } from "@/lib/utils";
 import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
@@ -144,6 +145,7 @@ type TransportApi = {
  * (a board mid-boot, a binary cat) from corrupting the stream.
  */
 export function Terminal(props: TerminalProps) {
+  const t = useT();
   const {
     sessionId,
     transport,
@@ -187,7 +189,7 @@ export function Terminal(props: TerminalProps) {
     const items: MenuItem[] = [
       {
         id: "copy",
-        label: "复制",
+        label: t("term.copy"),
         icon: <Copy size={14} />,
         disabled: !term.hasSelection(),
         onClick: () => {
@@ -197,7 +199,7 @@ export function Terminal(props: TerminalProps) {
       },
       {
         id: "paste",
-        label: "粘贴",
+        label: t("term.paste"),
         icon: <ClipboardPaste size={14} />,
         onClick: () => {
           navigator.clipboard?.readText().then((t) => {
@@ -208,20 +210,20 @@ export function Terminal(props: TerminalProps) {
       { id: "sep", separator: true, label: "" },
       {
         id: "select-all",
-        label: "全选",
+        label: t("term.selectAll"),
         icon: <TextSelect size={14} />,
         onClick: () => term.selectAll(),
       },
       { id: "sep-snip", separator: true, label: "" },
       {
         id: "snippets",
-        label: "Snippets",
+        label: t("term.snippets"),
         icon: <Command size={14} />,
         submenu: SNIPPET_MENU,
       },
       {
         id: "clear",
-        label: "清屏",
+        label: t("term.clear"),
         icon: <Eraser size={14} />,
         onClick: () => {
           term.clear();
@@ -238,7 +240,7 @@ export function Terminal(props: TerminalProps) {
         { id: "sep-ai", separator: true, label: "" },
         {
           id: "ai-explain",
-          label: "AI 解释选中内容",
+          label: t("term.aiExplain"),
           icon: <Sparkles size={14} />,
           onClick: () =>
             useAiComposer.getState().setPrefill(
@@ -249,7 +251,7 @@ export function Terminal(props: TerminalProps) {
         },
         {
           id: "ai-fix",
-          label: "AI 修复选中问题",
+          label: t("term.aiFix"),
           icon: <Sparkles size={14} />,
           onClick: () =>
             useAiComposer.getState().setPrefill(
@@ -260,7 +262,7 @@ export function Terminal(props: TerminalProps) {
         },
         {
           id: "ai-generate",
-          label: "AI 转为命令",
+          label: t("term.aiCommand"),
           icon: <Sparkles size={14} />,
           onClick: () =>
             useAiComposer.getState().setPrefill(
@@ -558,7 +560,7 @@ export function Terminal(props: TerminalProps) {
       {dragActive && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-accent/10 ring-2 ring-inset ring-accent/60">
           <span className="rounded-md bg-surface px-3 py-1 text-[12px] text-fg shadow">
-            Drop to insert path
+            {t("term.dropToInsert")}
           </span>
         </div>
       )}

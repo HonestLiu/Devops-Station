@@ -1,6 +1,7 @@
 import { Columns2, Rows2, SquareX } from "lucide-react";
 
 import { Button } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,6 +21,7 @@ export function SplitControls({
   onSplit: (axis: "col" | "row") => void;
   onClosePane: () => void;
 }) {
+  const t = useT();
   return (
     <>
       <div className="mx-1 h-4 w-px bg-border" />
@@ -28,7 +30,7 @@ export function SplitControls({
         size="sm"
         disabled={!canSplit}
         onClick={() => onSplit("col")}
-        title={canSplit ? "Split right (Ctrl+Shift+D)" : "Max 4 screens"}
+        title={canSplit ? t("split.splitRight") : t("split.max4")}
       >
         <Columns2 size={14} />
       </Button>
@@ -37,7 +39,7 @@ export function SplitControls({
         size="sm"
         disabled={!canSplit}
         onClick={() => onSplit("row")}
-        title={canSplit ? "Split below (Ctrl+Shift+E)" : "Max 4 screens"}
+        title={canSplit ? t("split.splitBelow") : t("split.max4")}
       >
         <Rows2 size={14} />
       </Button>
@@ -46,7 +48,7 @@ export function SplitControls({
         size="sm"
         disabled={!canClosePane}
         onClick={onClosePane}
-        title={canClosePane ? "Close focused pane (Ctrl+Shift+W)" : "Only one pane"}
+        title={canClosePane ? t("split.closePane") : t("split.onePane")}
         className={cn(paneCount > 1 && "text-danger hover:text-danger")}
       >
         <SquareX size={14} />

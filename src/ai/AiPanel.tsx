@@ -19,6 +19,7 @@ import {
 
 import { Button, SideIconButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n";
 import { useAiStore } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
@@ -31,6 +32,7 @@ import { useTabsStore } from "@/store/useTabsStore";
 import type { AIChatSession } from "@/lib/types";
 
 function SessionList() {
+  const t = useT();
   const sessions = useAiStore((s) => s.sessions);
   const activeId = useAiStore((s) => s.activeId);
   const newSession = useAiStore((s) => s.newSession);
@@ -41,9 +43,9 @@ function SessionList() {
     <div className="flex h-full w-full flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-2.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle">
-          History
+          {t("ai.history")}
         </span>
-        <SideIconButton label="New chat" onClick={() => newSession()} icon={<Plus size={14} />} />
+        <SideIconButton label={t("ai.newChat")} onClick={() => newSession()} icon={<Plus size={14} />} />
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
         {sessions.length === 0 && (
@@ -52,9 +54,9 @@ function SessionList() {
               <MessageSquare size={15} />
             </span>
             <p className="text-[11px] leading-relaxed text-subtle">
-              No conversations yet.
+              {t("ai.noConversations")}
               <br />
-              Tap <Plus size={9} className="inline" /> to start one.
+              {t("ai.tapPlus")} <Plus size={9} className="inline" />
             </p>
           </div>
         )}
@@ -100,6 +102,7 @@ function MessageView({
   onInsert?: (code: string) => void;
   onRun?: (code: string) => void;
 }) {
+  const t = useT();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -110,7 +113,10 @@ function MessageView({
   // a terminal / issue tracker.
   const copyChat = async () => {
     const text = session.messages
-      .map((m) => `${m.role === "user" ? "You" : "AI Assistant"}:\n${m.content}`)
+      .map(
+        (m) =>
+          `${m.role === "user" ? t("ai.you") : t("ai.assistant")}:\n${m.content}`,
+      )
       .join("\n\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -132,10 +138,9 @@ function MessageView({
               <Sparkles size={20} />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-fg">AI Assistant</p>
+              <p className="text-[13px] font-semibold text-fg">{t("ai.emptyTitle")}</p>
               <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-subtle">
-                Ask about Linux ops, SSH, serial or logs — or jump straight in with a quick
-                action below.
+                {t("ai.emptySubtitle")}
               </p>
             </div>
             <div className="flex flex-col gap-1.5 self-stretch">
@@ -144,7 +149,7 @@ function MessageView({
                 className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
               >
                 <ScrollText size={14} className="text-accent" />
-                <span className="flex-1">Analyze terminal output</span>
+                <span className="flex-1">{t("ai.analyzeTerminal")}</span>
                 <span className="text-[10px] text-subtle">log</span>
               </button>
               <button
@@ -152,7 +157,7 @@ function MessageView({
                 className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
               >
                 <Cable size={14} className="text-accent" />
-                <span className="flex-1">Parse serial protocol</span>
+                <span className="flex-1">{t("ai.parseSerial")}</span>
                 <span className="text-[10px] text-subtle">serial</span>
               </button>
               <button
@@ -160,7 +165,7 @@ function MessageView({
                 className="flex items-center gap-2 rounded-lg border border-border/70 bg-elevated px-3 py-2 text-left text-[12px] text-fg transition-colors hover:border-accent/40 hover:bg-hover"
               >
                 <Activity size={14} className="text-accent" />
-                <span className="flex-1">Monitoring insight</span>
+                <span className="flex-1">{t("ai.monitoringInsight")}</span>
                 <span className="text-[10px] text-subtle">metrics</span>
               </button>
             </div>
@@ -214,11 +219,11 @@ function MessageView({
       {session.messages.length > 0 && (
         <button
           onClick={() => void copyChat()}
-          title="Copy conversation"
+          title={t("ai.copyConversation")}
           className="absolute bottom-2 right-2 z-10 flex h-7 items-center gap-1.5 rounded-lg border border-border/70 bg-elevated px-2 text-[11px] text-muted shadow-md transition-colors hover:bg-hover hover:text-fg"
         >
           {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       )}
     </div>
@@ -238,6 +243,7 @@ function Composer({
   agentMode: boolean;
   agentAuto: boolean;
 }) {
+  const t = useT();
   const [text, setText] = useState("");
   const send = useAiStore((s) => s.send);
   const streaming = useAiStore(
@@ -271,14 +277,14 @@ function Composer({
             }
           }}
           rows={2}
-          placeholder="Message the AI assistant…  (Enter to send, Shift+Enter for newline)"
+          placeholder={t("ai.messagePlaceholder")}
           className="flex-1 resize-none bg-transparent text-[13px] text-fg outline-none placeholder:text-subtle"
         />
         <button
           onClick={submit}
           disabled={!text.trim() || streaming}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition hover:brightness-110 disabled:opacity-40"
-          title="Send"
+          title={t("ai.send")}
         >
           <Send size={14} />
         </button>
@@ -289,6 +295,7 @@ function Composer({
 
 /** Docked right sidebar AI assistant. Hidden when closed; history is collapsible. */
 export function AiPanel() {
+  const t = useT();
   const panelOpen = useAiStore((s) => s.panelOpen);
   const width = useAiStore((s) => s.width);
   const setWidth = useAiStore((s) => s.setWidth);
@@ -306,15 +313,15 @@ export function AiPanel() {
   const loadKb = async () => {
     const s = useAppStore.getState().settings.ai;
     if (!s.useKnowledgeBase || !s.knowledgeBasePath?.trim()) {
-      window.alert("Enable the knowledge base and set a path in Settings → AI Assistant.");
+      window.alert(t("ai.enableKb"));
       return;
     }
-    setKbNote("KB: loading…");
+    setKbNote(t("ai.kbLoading"));
     try {
       await loadKnowledgeBase();
-      setKbNote(`KB: ${kbChunkCount()} chunks`);
+      setKbNote(t("ai.kbChunks", { n: kbChunkCount() }));
     } catch (e) {
-      setKbNote(`KB error: ${String(e)}`);
+      setKbNote(t("ai.kbError", { err: String(e) }));
     }
   };
 
@@ -335,7 +342,7 @@ export function AiPanel() {
       if (!activeTab) return;
       const c = cmd.trim();
       if (!c) return;
-      if (window.confirm(`Run this command in “${activeTab.title}”?\n\n${c}`)) {
+      if (window.confirm(t("ai.runConfirm", { title: activeTab.title, cmd: c }))) {
         writeToTerminal(c, true);
       }
     },
@@ -398,37 +405,37 @@ export function AiPanel() {
       <div
         onMouseDown={startResize}
         className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-accent/50"
-        title="Drag to resize"
+        title={t("ai.dragResize")}
       />
       {/* Header */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
         <SideIconButton
-          label={showHistory ? "Collapse chat history" : "Show chat history"}
+          label={showHistory ? t("ai.collapseHistory") : t("ai.showHistory")}
           onClick={() => setShowHistory((v) => !v)}
           active={showHistory}
           icon={showHistory ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
         />
         <SideIconButton
-          label="New chat"
+          label={t("ai.newChat")}
           onClick={() => useAiStore.getState().newSession()}
           icon={<Plus size={14} />}
         />
         <span className="icon-chip h-6 w-6 shrink-0">
           <MessageSquare size={12} />
         </span>
-        <span className="flex-1 truncate text-[12px] font-semibold text-fg">AI Assistant</span>
+        <span className="flex-1 truncate text-[12px] font-semibold text-fg">{t("ai.assistant")}</span>
         {contextOn && (
           <span
             className="pill shrink-0 bg-accent/15 text-accent"
-            title="Terminal environment context is attached to your messages"
+            title={t("ai.contextOnTitle")}
           >
-            context on
+            {t("ai.contextOn")}
           </span>
         )}
         {agentMode && (
           <label
             className="flex cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
-            title="Automatically execute agent commands"
+            title={t("ai.autoRunTitle")}
           >
             <input
               type="checkbox"
@@ -436,22 +443,22 @@ export function AiPanel() {
               onChange={(e) => setAgentAuto(e.target.checked)}
               className="h-3 w-3 accent-[rgb(var(--c-accent))]"
             />
-            auto-run
+            {t("ai.autoRun")}
           </label>
         )}
         <button
           onClick={() => setAgentMode((v) => !v)}
           className={toolBtn(agentMode)}
-          title="Agent mode: the model plans and runs commands in the active terminal"
+          title={t("ai.agentTitle")}
         >
-          <Bot size={13} /> Agent
+          <Bot size={13} /> {t("ai.agent")}
         </button>
         <button
           onClick={() => void loadKb()}
           className={toolBtn(!!(kbNote && !kbNote.includes("error") && kbNote.startsWith("KB:")))}
-          title="Load the local knowledge base (path configured in Settings)"
+          title={t("ai.kbTitle")}
         >
-          <BookOpen size={13} /> KB
+          <BookOpen size={13} /> {t("ai.kb")}
         </button>
         {kbNote && (
           <span className="max-w-[120px] truncate text-[10px] text-subtle" title={kbNote}>
@@ -459,7 +466,7 @@ export function AiPanel() {
           </span>
         )}
         <SideIconButton
-          label="Close (Esc)"
+          label={t("ai.closeEsc")}
           onClick={() => togglePanel(false)}
           icon={<X size={14} />}
         />
@@ -495,7 +502,7 @@ export function AiPanel() {
               <MessageSquare size={20} />
             </span>
             <Button variant="secondary" size="sm" onClick={() => useAiStore.getState().newSession()}>
-              <Plus size={13} /> Start a conversation
+              <Plus size={13} /> {t("ai.startConversation")}
             </Button>
           </div>
         )}

@@ -15,28 +15,30 @@ import {
 
 import { cn } from "@/lib/utils";
 import { isMac } from "@/lib/platform";
+import { useT, type TKey } from "@/i18n";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { AboutDialog } from "./AboutDialog";
 
 interface NavItem {
   id: Page;
-  label: string;
+  labelKey: TKey;
   icon: typeof LayoutDashboard;
 }
 
 /** Top navigation, in display order. SFTP is a first-class page. */
 const NAV: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "hosts", label: "Hosts", icon: Server },
-  { id: "monitoring", label: "Monitoring", icon: Activity },
-  { id: "sftp", label: "SFTP", icon: FolderOpen },
-  { id: "serial", label: "Serial", icon: Cable },
-  { id: "jlink", label: "J-Link", icon: Microchip },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { id: "hosts", labelKey: "nav.hosts", icon: Server },
+  { id: "monitoring", labelKey: "nav.monitoring", icon: Activity },
+  { id: "sftp", labelKey: "nav.sftp", icon: FolderOpen },
+  { id: "serial", labelKey: "nav.serial", icon: Cable },
+  { id: "jlink", labelKey: "nav.jlink", icon: Microchip },
+  { id: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
 export function Sidebar() {
+  const t = useT();
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
   const togglePalette = useAppStore((s) => s.togglePalette);
@@ -80,17 +82,18 @@ export function Sidebar() {
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden px-2 pt-3">
         {!collapsed && (
           <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle select-none">
-            Workspace
+            {t("nav.workspace")}
           </p>
         )}
         {NAV.map((item) => {
           const active = page === item.id;
           const Icon = item.icon;
+          const label = t(item.labelKey);
           return (
             <button
               key={item.id}
               onClick={() => go(item.id)}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? label : undefined}
               className={cn(
                 "flex items-center gap-2.5 rounded-lg text-[13px] transition-colors no-drag",
                 collapsed ? "justify-center px-0 py-2" : "px-2.5 py-2",
@@ -100,7 +103,7 @@ export function Sidebar() {
               )}
             >
               <Icon size={16} strokeWidth={2} className="shrink-0" />
-              {!collapsed && item.label}
+              {!collapsed && label}
             </button>
           );
         })}
@@ -112,7 +115,7 @@ export function Sidebar() {
       <div className="flex flex-col gap-0.5 border-t border-border/70 px-2 py-2">
         <button
           onClick={() => togglePalette()}
-          title={collapsed ? "Command Palette" : undefined}
+          title={collapsed ? t("nav.commandPalette") : undefined}
           className={cn(
             "no-drag flex items-center rounded-lg text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg",
             collapsed ? "justify-center px-0 py-2" : "justify-between px-2.5 py-2",
@@ -120,7 +123,7 @@ export function Sidebar() {
         >
           <span className={cn("flex items-center gap-2.5")}>
             <TerminalSquare size={16} strokeWidth={2} />
-            {!collapsed && "Command Palette"}
+            {!collapsed && t("nav.commandPalette")}
           </span>
           {!collapsed && (
             <span className="rounded-full bg-bg px-1.5 py-0.5 font-mono text-[10px] text-subtle">
@@ -131,14 +134,14 @@ export function Sidebar() {
 
         <button
           onClick={() => setAboutOpen(true)}
-          title={collapsed ? "About" : undefined}
+          title={collapsed ? t("nav.about") : undefined}
           className={cn(
             "no-drag flex items-center rounded-lg text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg",
             collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
           )}
         >
           <Info size={16} strokeWidth={2} className="shrink-0" />
-          {!collapsed && "About"}
+          {!collapsed && t("nav.about")}
         </button>
 
         {!collapsed && (
@@ -150,7 +153,7 @@ export function Sidebar() {
               )}
             />
             <span className="truncate text-[10px] text-subtle">
-              {tabs.length} connection{tabs.length === 1 ? "" : "s"} open
+              {t("nav.connections", { n: tabs.length, s: tabs.length === 1 ? "" : "s" })}
             </span>
           </div>
         )}
@@ -158,7 +161,7 @@ export function Sidebar() {
         {/* Collapse toggle */}
         <button
           onClick={() => void updateSetting("sidebarCollapsed", !collapsed)}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? t("nav.expand") : t("nav.collapse")}
           className={cn(
             "no-drag mt-1 flex items-center rounded-lg border-t border-border/40 text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg",
             collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
@@ -169,7 +172,7 @@ export function Sidebar() {
           ) : (
             <PanelLeftClose size={16} strokeWidth={2} className="shrink-0" />
           )}
-          {!collapsed && "Collapse"}
+          {!collapsed && t("nav.collapse")}
         </button>
       </div>
     </aside>

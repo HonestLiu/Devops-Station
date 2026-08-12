@@ -1,4 +1,6 @@
 import { ssh, monitoring } from "@/lib/api";
+import { tFrom, type TKey } from "@/i18n";
+import { useAppStore } from "@/store/useAppStore";
 import { useAiStore } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
 import { useTerminalSelection } from "./terminalBridge";
@@ -38,8 +40,13 @@ function activeSessionId(): string | null {
   return tab?.sessionId ?? null;
 }
 
+/** Session-title helper (non-React path). */
+function sessionTitle(key: TKey): string {
+  return tFrom(useAppStore.getState().settings.language, key);
+}
+
 /** Analyze arbitrary log/terminal text. */
-export function analyzeLog(text: string, title = "Log analysis") {
+export function analyzeLog(text: string, title = sessionTitle("ai.taskLogAnalysis")) {
   const t = text.trim();
   if (!t) return;
   dispatch(`Analyze the following output:\n\n${t}`, LOG_ANALYSIS_SYSTEM, title, false);
@@ -55,7 +62,7 @@ export function analyzeTerminal(inline = false) {
   dispatch(
     `Analyze the following terminal output:\n\n${source}`,
     LOG_ANALYSIS_SYSTEM,
-    "Log analysis",
+    sessionTitle("ai.taskLogAnalysis"),
     inline,
   );
 }
@@ -67,7 +74,7 @@ export function parseSerialProtocol(inline = false) {
   dispatch(
     `Here is recent serial output. Parse it as a protocol:\n\n${text}`,
     SERIAL_PROTOCOL_SYSTEM,
-    "Serial protocol",
+    sessionTitle("ai.taskSerialProtocol"),
     inline,
   );
 }
@@ -85,7 +92,7 @@ export async function explainFile(sessionId: string, path: string) {
     dispatch(
       `Could not read ${path}: ${String(e)}`,
       SFTP_EXPLAIN_SYSTEM,
-      "Explain file",
+      sessionTitle("ai.taskExplainFile"),
       false,
     );
     return;
@@ -94,7 +101,7 @@ export async function explainFile(sessionId: string, path: string) {
     dispatch(
       `The file ${path} is empty.`,
       SFTP_EXPLAIN_SYSTEM,
-      "Explain file",
+      sessionTitle("ai.taskExplainFile"),
       false,
     );
     return;
@@ -102,7 +109,7 @@ export async function explainFile(sessionId: string, path: string) {
   dispatch(
     `File: ${path}\n\n${content}`,
     SFTP_EXPLAIN_SYSTEM,
-    "Explain file",
+    sessionTitle("ai.taskExplainFile"),
     false,
   );
 }
@@ -122,7 +129,7 @@ export async function diffFiles(
     dispatch(
       `Could not read files for diff: ${String(e)}`,
       SFTP_DIFF_SYSTEM,
-      "Diff files",
+      sessionTitle("ai.taskDiffFiles"),
       false,
     );
     return;
@@ -130,7 +137,7 @@ export async function diffFiles(
   dispatch(
     `File A: ${a}\n\n${ca}\n\n=====\n\nFile B: ${b}\n\n${cb}`,
     SFTP_DIFF_SYSTEM,
-    "Diff files",
+    sessionTitle("ai.taskDiffFiles"),
     false,
   );
 }
@@ -144,7 +151,7 @@ export async function monitoringInsight(sessionId?: string, inline = false) {
     dispatch(
       `Could not sample metrics: ${String(e)}`,
       MONITORING_INSIGHT_SYSTEM,
-      "Monitoring insight",
+      sessionTitle("ai.taskMonitoringInsight"),
       inline,
     );
     return;
@@ -152,7 +159,7 @@ export async function monitoringInsight(sessionId?: string, inline = false) {
   dispatch(
     `Current metrics snapshot:\n\n${JSON.stringify(snap, null, 2)}`,
     MONITORING_INSIGHT_SYSTEM,
-    "Monitoring insight",
+    sessionTitle("ai.taskMonitoringInsight"),
     inline,
   );
 }
