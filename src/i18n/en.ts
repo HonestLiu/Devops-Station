@@ -62,6 +62,7 @@ export const en: Record<keyof typeof zh, string> = {
   "tabs.frpTunnel": "Frp Tunnel",
   "tabs.ble": "BLE",
   "tabs.local": "local",
+  "tabs.jlink": "debug probe",
 
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "Hosts",

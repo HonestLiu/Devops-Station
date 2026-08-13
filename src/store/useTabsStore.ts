@@ -51,6 +51,8 @@ interface TabsState {
   openFrp: (config: FrpLaunchConfig, title?: string) => Promise<string>;
   /** Open a dedicated SFTP tab backed by an SSH session to a saved host. */
   openSftp: (host: Host, title?: string) => Promise<string>;
+  /** Open a J-Link tool tab (persistent panel; GDB server lives in the backend). */
+  openJlink: (title?: string) => Promise<string>;
   openFromHost: (host: Host) => Promise<string>;
 
   /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
@@ -204,6 +206,24 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
+    return id;
+  },
+
+  openJlink: async (title) => {
+    const id = nextId();
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        {
+          id,
+          kind: "jlink",
+          title: title || "J-Link",
+          subtitle: lang("tabs.jlink"),
+          status: "connected",
+        },
+      ],
+      activeId: id,
+    }));
     return id;
   },
 
@@ -416,8 +436,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   splitPane: async (tabId, axis) => {
     const tab = get().tabs.find((t) => t.id === tabId);
-    // Split works for the terminal kinds (serial/ble/sftp excluded).
-    if (!tab || tab.kind === "serial" || tab.kind === "ble" || tab.kind === "sftp") return;
+    // Split works for the terminal kinds (serial/ble/sftp/jlink excluded).
+    if (
+      !tab ||
+      tab.kind === "serial" ||
+      tab.kind === "ble" ||
+      tab.kind === "sftp" ||
+      tab.kind === "jlink"
+    )
+      return;
     if (tab.kind === "ssh" && !tab.sshConfig) return;
     if (tab.kind === "wsl" && !tab.wsl) return;
     if (tab.kind === "frp" && !tab.frp) return;
@@ -539,6 +566,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         if (tab.sftpConfig) return void get().openSsh(tab.sftpConfig, tab.title);
         break;
       }
+      case "jlink":
+        return void get().openJlink(tab.title);
     }
   },
 
@@ -580,6 +609,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           cwd: result.homeDir,
           fingerprint: result.serverKeyFingerprint,
         });
+      } else if (tab.kind === "jlink") {
+        // J-Link tabs are always "connected" (the GDB server / probe state
+        // lives in the backend, not this tab) — nothing to re-establish.
+        get().patch(id, { status: "connected" });
       } else if (tab.kind === "ssh" && tab.sshConfig) {
         // Reconnect the focused pane (or the whole tab when not split).
         const result = await ssh.connect(tab.sshConfig);

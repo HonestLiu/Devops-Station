@@ -6,6 +6,7 @@ import {
   Copy,
   FolderOpen,
   Globe,
+  Microchip,
   MonitorSmartphone,
   RefreshCw,
   Terminal,
@@ -27,6 +28,7 @@ const KIND_ICON: Record<TabKind, typeof Terminal> = {
   frp: Globe,
   local: MonitorSmartphone,
   sftp: FolderOpen,
+  jlink: Microchip,
 };
 
 function statusColor(tab: Tab): string {

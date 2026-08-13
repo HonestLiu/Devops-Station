@@ -49,10 +49,17 @@ export function Sidebar() {
 
   const tabs = useTabsStore((s) => s.tabs);
   const focusPage = useTabsStore((s) => s.focusPage);
+  const openJlink = useTabsStore((s) => s.openJlink);
 
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const go = (id: Page) => {
+    // J-Link opens as a persistent tab (its panel state survives tab
+    // switches) rather than a page that would reset when you navigate away.
+    if (id === "jlink") {
+      void openJlink();
+      return;
+    }
     setPage(id);
     focusPage();
   };

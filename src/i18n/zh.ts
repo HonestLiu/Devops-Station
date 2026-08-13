@@ -71,6 +71,7 @@ export const zh = {
   "tabs.frpTunnel": "Frp 隧道",
   "tabs.ble": "BLE",
   "tabs.local": "本地",
+  "tabs.jlink": "调试探针",
 
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "主机",

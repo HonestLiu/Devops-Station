@@ -216,7 +216,7 @@ export interface TransferProgress {
 
 export type ThemeId = "tokyo-night" | "dark" | "light" | "nord" | "dracula";
 
-export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp";
+export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp" | "jlink";
 
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -255,6 +255,8 @@ export interface Tab {
   frp?: FrpLaunchConfig;
   /** SFTP-only tab — the underlying SSH connect config, kept for Reconnect. */
   sftpConfig?: SshConnectConfig;
+  /** J-Link only — the probe config kept so Reconnect/Duplicate can reopen. */
+  jlink?: JLinkConfig;
   /** SSH only — cached credentials/config so Reconnect and Split can reconnect. */
   sshConfig?: SshConnectConfig;
   /** Split panes (2/4 terminals in one tab). Undefined = single terminal. */

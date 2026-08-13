@@ -28,6 +28,7 @@ import { LocalWorkspace } from "./components/workspace/LocalWorkspace";
 import { WslWorkspace } from "./components/workspace/WslWorkspace";
 import { FrpWorkspace } from "./components/workspace/FrpWorkspace";
 import { SftpWorkspace } from "./components/workspace/SftpWorkspace";
+import { JLinkWorkspace } from "./components/workspace/JLinkWorkspace";
 import { AiPanel } from "./ai/AiPanel";
 import { useAiStore } from "./ai/useAiStore";
 
@@ -63,6 +64,7 @@ function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "wsl") return <WslWorkspace tab={tab} />;
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
   if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
+  if (tab.kind === "jlink") return <JLinkWorkspace tab={tab} />;
   return <LocalWorkspace tab={tab} />;
 }
 
@@ -72,6 +74,7 @@ export default function App() {
   const togglePalette = useAppStore((s) => s.togglePalette);
 
   const openLocal = useTabsStore((s) => s.openLocal);
+  const openJlink = useTabsStore((s) => s.openJlink);
   const setPageCtx = useAppStore((s) => s.setPage);
   const showCtx = useContextMenu((s) => s.show);
   const closeCtx = useContextMenu((s) => s.close);
@@ -161,7 +164,7 @@ export default function App() {
         icon: <Microchip size={14} />,
         onClick: () => {
           closeCtx();
-          setPageCtx("jlink");
+          void openJlink();
         },
       },
       {

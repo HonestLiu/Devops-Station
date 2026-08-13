@@ -77,15 +77,19 @@ function buildCwdSetup(shell: string | undefined): string | null {
     // user's existing prompt via $function:prompt. [Console]::Write keeps the
     // escape sequence on the raw PTY stream (Write-Host can be swallowed).
     //
-    // IMPORTANT: emit this as a SINGLE line terminated by CRLF. Feeding a
-    // multi-line `function {…}` block into the interactive PTY made PSReadLine
-    // treat it as an unterminated code block and left the shell stuck at the
-    // ">>" continuation prompt on startup. A single line + CRLF avoids the
-    // continuation parser entirely and runs cleanly once.
+    // IMPORTANT: emit this as a SINGLE line terminated by a bare CR (`\r`).
+    // Two traps here, both verified against PSReadLine:
+    //   1. A multi-line `function {…}` block is parsed as an unterminated code
+    //      block and leaves the shell stuck at the ">>" continuation prompt.
+    //   2. CRLF is *not* safe either: PSReadLine submits the line on CR, then
+    //      the trailing bare LF lands *inside* the next input line — it
+    //      re-parses the buffer and drops into ">>" again right after the
+    //      prompt. CR is the only byte PSReadLine treats as Enter; LF must not
+    //      be sent at all.
     return (
       "function global:__ds_cwd {$h=[System.Net.Dns]::GetHostName();$p=(Get-Location).Path.Replace('\\','/');[Console]::Write([char]27 + \"]7;file://\" + $h + \"/\" + $p + [char]27 + [char]92)}" +
       ";$__ds_old_prompt=$function:prompt;function prompt{__ds_cwd;& $__ds_old_prompt};__ds_cwd" +
-      "\r\n"
+      "\r"
     );
   }
   if (s === "fish") {
