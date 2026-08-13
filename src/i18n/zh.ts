@@ -51,7 +51,6 @@ export const zh = {
   "nav.about": "关于",
   "nav.collapse": "折叠",
   "nav.expand": "展开",
-  "nav.connections": "{n} 个连接",
 
   "app.newLocalTerminal": "新建本地终端",
   "app.openHosts": "打开主机列表",

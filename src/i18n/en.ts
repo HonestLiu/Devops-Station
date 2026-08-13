@@ -42,7 +42,6 @@ export const en: Record<keyof typeof zh, string> = {
   "nav.about": "About",
   "nav.collapse": "Collapse",
   "nav.expand": "Expand",
-  "nav.connections": "{n} connection{s}",
 
   "app.newLocalTerminal": "New Local Terminal",
   "app.openHosts": "Open Hosts",

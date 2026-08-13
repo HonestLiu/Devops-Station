@@ -47,7 +47,6 @@ export function Sidebar() {
 
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
-  const tabs = useTabsStore((s) => s.tabs);
   const focusPage = useTabsStore((s) => s.focusPage);
   const openJlink = useTabsStore((s) => s.openJlink);
 
@@ -150,20 +149,6 @@ export function Sidebar() {
           <Info size={16} strokeWidth={2} className="shrink-0" />
           {!collapsed && t("nav.about")}
         </button>
-
-        {!collapsed && (
-          <div className="flex items-center gap-2 px-1 pt-1.5 select-none">
-            <span
-              className={cn(
-                "h-1.5 w-1.5 shrink-0 rounded-full",
-                tabs.length > 0 ? "bg-success" : "bg-subtle",
-              )}
-            />
-            <span className="truncate text-[10px] text-subtle">
-              {t("nav.connections", { n: tabs.length, s: tabs.length === 1 ? "" : "s" })}
-            </span>
-          </div>
-        )}
 
         {/* Collapse toggle */}
         <button
