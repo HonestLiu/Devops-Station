@@ -42,33 +42,49 @@ export function getTerminalText(sessionId: string, maxLines = 4000): string {
 }
 
 /**
- * Number of lines currently in the terminal buffer. Snapshot this *before*
- * writing a command so the agent loop can later read only what the command
- * produced (see `getTerminalTail`) — instead of re-feeding the entire scrollback
- * on every step, which is what made the model re-issue the same command.
+ * Number of lines *with real content* currently in the terminal buffer, i.e. the
+ * cursor's absolute line index (`baseY + cursorY`).
+ *
+ * IMPORTANT: we must NOT use `buffer.active.length` here. xterm pre-fills the
+ * buffer with `rows` empty lines, so during the early life of a session (fewer
+ * lines of output than the viewport height) `length` stays pinned at `rows` and
+ * never grows — a snapshot taken before a short command (e.g. `find` printing a
+ * single line) would equal the post-command `length`, and `getTerminalTail`
+ * would return "" → the agent reports "(无输出)" even though the command ran.
+ * The cursor's absolute line is the last line that actually holds content.
+ *
+ * Snapshot this *before* writing a command so the agent loop can later read only
+ * what the command produced (see `getTerminalTail`) — instead of re-feeding the
+ * entire scrollback on every step, which is what made the model re-issue the
+ * same command.
  */
 export function getTerminalLineCount(sessionId: string): number {
   const term = registry.get(sessionId);
   if (!term) return 0;
-  return term.buffer.active.length;
+  const buf = term.buffer.active;
+  return buf.baseY + buf.cursorY;
 }
 
 /**
- * Return only the lines appended to the terminal from `fromLine` onward. Because
- * xterm keeps growing the buffer as output streams in, reading from the line we
- * captured before the command isolates exactly the command's echo + output —
- * the unambiguous "tool result" the agent needs.
+ * Return only the lines appended to the terminal from `fromLine` onward, up to
+ * the cursor's current absolute line (the last content line). Because the cursor
+ * line index is captured before the command and xterm grows the buffer as output
+ * streams in, reading from that snapshot isolates exactly the command's echo +
+ * output — the unambiguous "tool result" the agent needs.
+ *
+ * `fromLine` is the pre-command cursor line; `baseY` is only used to compute the
+ * end so we never walk into xterm's empty filler rows below the cursor.
  */
 export function getTerminalTail(sessionId: string, fromLine: number): string {
   const term = registry.get(sessionId);
   if (!term) return "";
-  const buffer = term.buffer.active;
-  const total = buffer.length;
+  const buf = term.buffer.active;
+  const end = buf.baseY + buf.cursorY + 1; // content ends at the cursor line (inclusive)
   const start = Math.max(0, fromLine);
-  if (start >= total) return "";
+  if (start >= end) return "";
   const lines: string[] = [];
-  for (let i = start; i < total; i += 1) {
-    const line = buffer.getLine(i);
+  for (let i = start; i < end; i += 1) {
+    const line = buf.getLine(i);
     if (line) lines.push(line.translateToString(true));
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();

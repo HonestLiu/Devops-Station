@@ -474,6 +474,7 @@ export const en: Record<keyof typeof zh, string> = {
   "palette.serialPrompt": "Serial port (e.g. COM3 or /dev/ttyUSB0)",
   "palette.explainSelected": "Explain selected command",
   "palette.generateCommand": "Generate command…",
+  "palette.generateCommandPrompt": "Describe the command to generate (e.g. list listening ports):",
   "palette.analyzeTerminalLog": "Analyze terminal log",
   "palette.parseSerialProtocol": "Parse serial protocol",
   "palette.monitoringInsight": "Monitoring insight…",
@@ -566,6 +567,10 @@ export const en: Record<keyof typeof zh, string> = {
   "ai.runInTerminal": "Run in terminal",
   "ai.auto": "auto",
   "ai.requestFailedShort": "Request failed.",
+  "ai.stop": "Stop",
+  "ai.needSetup": "AI is not configured yet. Set a provider, base URL and model first.",
+  "ai.goSettings": "Settings",
+  "ai.kbErrorShort": "KB error",
   "ai.agentPlaceholder": "Describe a task for the agent…  (Enter to run)",
   "ai.askPlaceholder": "Ask this terminal…  (Enter to send)",
 

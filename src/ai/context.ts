@@ -5,13 +5,20 @@ import { useSessionStore } from "@/store/useSessionStore";
  * Build a short, model-friendly description of the user's current environment so the
  * assistant can answer "why is this server's CPU high?" without the user pasting anything.
  *
- * Returns `null` when there is no active terminal session to describe.
+ * When `sessionId` is given (e.g. the terminal an agent run is pinned to), that
+ * session's tab is described instead of the global active tab — otherwise an
+ * agent driving one terminal while the user switched tabs would get context
+ * about the *wrong* host.
+ *
+ * Returns `null` when there is no describable terminal session.
  */
-export function buildContext(): string | null {
+export function buildContext(sessionId?: string): string | null {
   const { tabs, activeId } = useTabsStore.getState();
-  const tab = tabs.find((t) => t.id === activeId);
+  const targetId = sessionId ?? activeId;
+  const tab = tabs.find((t) => t.id === targetId);
   if (!tab || !tab.sessionId) return null;
 
+  // Prefer the live OSC-7 cwd for the session; fall back to the spawn-time cwd.
   const cwd =
     useSessionStore.getState().cwdBySession[tab.sessionId] ?? tab.cwd;
   const lines: string[] = [];

@@ -1,13 +1,11 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-
-import { ai } from "@/lib/api";
 import { tFrom } from "@/i18n";
-import { useAiStore } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
 import { getTargetSession, getTerminalTypeDescription, injectCommandLines, writeToTerminal } from "./terminalAi";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { useAiAgent, type AgentStep } from "./useAiAgent";
+import { useAiStore, currentProvider } from "./useAiStore";
+import { streamChat } from "./client";
 import { AGENT_SYSTEM } from "./prompts";
 
 const MAX_STEPS = 12;
@@ -29,8 +27,7 @@ interface Turn {
  * `TOOL:bash` marker OR — as a fallback for models that forget the marker — any
  * fenced ```bash block in the reply. This keeps commands flowing into the
  * terminal even when a weaker/local model answers in prose instead of the
- * exact convention, which previously made the agent break out after one turn
- * and "just show an AI answer" without injecting anything.
+ * exact convention.
  */
 function extractTool(text: string): string | null {
   const marker = text.search(/TOOL:\s*bash/i);
@@ -74,13 +71,8 @@ const HOST_KEY_PROMPT = /continue connecting \(yes\/no(?:[^)]*)\)\?/i;
  * streaming (builds, pings) or that block on interactive input.
  *
  * When `autoRespond` is set (autonomous run mode), the loop also watches for an
- * SSH host-key confirmation prompt and answers `yes` automatically. Without
- * this, the agent would see the prompt as "stable output", treat it as the
- * command result, and — because it never types `yes` — the SSH client would
- * fail with "Host key verification failed" (and the agent might loop retrying
- * the same command). Only the exact `continue connecting` prompt is answered,
- * and each distinct host is answered at most once (trust-on-first-use, the same
- * a human would do on a first connection).
+ * SSH host-key confirmation prompt and answers `yes` automatically, at most
+ * once per distinct host (trust-on-first-use).
  */
 async function waitForSettle(
   sessionId: string,
@@ -121,42 +113,44 @@ async function waitForSettle(
   }
 }
 
-/** Run one AI completion and stream it into the given assistant message. */
+/** One LLM call in the agent loop. Streams into the transcript, returns text. */
 async function complete(
-  sessionId: string,
+  sid: string,
   msgId: string,
   messages: Turn[],
   context: string | undefined,
 ): Promise<string> {
-  const settings = useAppStore.getState().settings.ai;
-  const provider = {
-    kind: settings.provider,
-    baseUrl: settings.baseUrl,
-    apiKey: settings.apiKey,
-    model: settings.model,
-    temperature: settings.temperature,
-  };
-
-  const reqId = await ai.chat({ provider, messages, context });
+  const appLang = useAppStore.getState().settings.language;
+  const langDir =
+    appLang === "zh" ? "请始终用中文回答用户。" : "Always respond in English.";
 
   let acc = "";
-  const unChunk: UnlistenFn = await listen<{ id: string; delta: string }>(
-    `ai-chunk-${reqId}`,
-    (e) => {
-      acc += e.payload.delta;
-      useAiStore.getState().appendDelta(sessionId, msgId, e.payload.delta);
-    },
-  );
   await new Promise<void>((resolve) => {
-    listen<{ id: string; error: string | null }>(`ai-done-${reqId}`, (e) => {
-      unChunk();
-      useAiStore.getState().updateMessage(sessionId, msgId, {
-        streaming: false,
-        error: e.payload.error ? true : undefined,
-        content: e.payload.error ?? acc,
-      });
-      resolve();
-    });
+    streamChat(
+      {
+        provider: currentProvider(),
+        messages: [
+          { role: "system", content: langDir },
+          ...messages,
+        ],
+        context,
+      },
+      {
+        onDelta: (d) => {
+          acc += d;
+          useAiStore.getState().appendDelta(sid, msgId, d);
+        },
+        onDone: (error) => {
+          useAiStore.getState().updateMessage(sid, msgId, {
+            streaming: false,
+            ...(error
+              ? { error: true, content: error }
+              : { content: acc }),
+          });
+          resolve();
+        },
+      },
+    );
   });
   return acc;
 }
@@ -175,7 +169,8 @@ async function complete(
  * runs every step so the agent can complete a multi-step task on its own.
  *
  * `inline=false` (default) opens the side panel as the display surface;
- * `inline=true` keeps the transcript inside the inline composer's agent block.
+ * `inline=true` keeps the transcript inside the inline composer's agent block
+ * (in a transient session that never pollutes the chat history).
  *
  * `sessionId` pins the commands to a specific terminal (e.g. a focused split
  * pane). When omitted, the active terminal is used.
@@ -187,11 +182,11 @@ export async function runAgent(
   sessionId?: string | null,
 ): Promise<void> {
   const store = useAiStore.getState();
-  // For inline runs we keep the agent transcript in its own session but do NOT
-  // make it the active chat session — otherwise the inline "answer" block would
-  // later surface the agent's raw monologue, and a follow-up task would appear to
-  // vanish behind the stuck agent state. The side panel still opens for non-inline.
-  const sid = inline ? store.ensureAgentSession() : store.newSession();
+  // Inline runs keep the agent transcript in a transient session that is NOT
+  // made the active chat session and is NOT shown in history — otherwise every
+  // agent run would leak a permanent "Agent" session full of raw TOOL RESULT
+  // text. The side panel still opens for non-inline runs.
+  const sid = inline ? store.createTransientSession() : store.newSession();
   if (!inline) {
     store.selectSession(sid);
     store.togglePanel(true);
@@ -204,19 +199,18 @@ export async function runAgent(
     agent.setRunning(true);
   }
 
-  const history: Turn[] = [{ role: "user", content: goal }];
-  store.addUserMessageTo(sid, goal);
-
-  const ctx = useAppStore.getState().settings.ai.terminalContext
-    ? buildContext() ?? undefined
-    : undefined;
-
-  // Describe the terminal the agent will drive (OS / shell / serial) so the model
-  // adapts its commands to the environment. Pinned to the launch session so it
-  // matches the terminal the operator is actually looking at.
-  const typeDesc = getTerminalTypeDescription(sessionId);
-
   try {
+    const history: Turn[] = [{ role: "user", content: goal }];
+    store.addUserMessageTo(sid, goal);
+
+    // Context is built from the PINNED session so the model sees the terminal
+    // the agent actually drives, even if the user switches tabs mid-run.
+    const ctx = useAppStore.getState().settings.ai.terminalContext
+      ? buildContext(sessionId ?? undefined) ?? undefined
+      : undefined;
+
+    const typeDesc = getTerminalTypeDescription(sessionId);
+
     let prevCmd: string | null = null;
     for (let step = 0; step < MAX_STEPS; step += 1) {
       const aid = useAiStore.getState().addAssistantMessageTo(sid);
@@ -225,10 +219,6 @@ export async function runAgent(
         sid,
         aid,
         [
-          {
-            role: "system",
-            content: appLang === "zh" ? "请始终用中文回答用户。" : "Always respond in English.",
-          },
           { role: "system", content: AGENT_SYSTEM },
           { role: "system", content: typeDesc },
           ...history,
@@ -247,10 +237,8 @@ export async function runAgent(
         break;
       }
       if (!cmd) {
-        // The model answered in prose without emitting a tool call. Nudge it once
-        // and retry; if it still does not produce a command, stop. Without this the
-        // agent would just break after one turn and look like it "didn't inject
-        // anything" — only a text answer appears in the dialog.
+        // The model answered in prose without emitting a tool call. Nudge it
+        // once and retry; if it still does not produce a command, stop.
         const nudge = tFrom(appLang, "ai.agentNeedTool");
         store.addUserMessageTo(sid, nudge);
         history.push({ role: "user", content: nudge });
@@ -262,7 +250,6 @@ export async function runAgent(
       }
 
       // Anti-repeat guard: the model must not re-issue the exact same command.
-      // Without this, a command whose result was ambiguous would loop forever.
       if (cmd === prevCmd) {
         const note = tFrom(appLang, "ai.agentRepeatStop");
         if (agent) {
@@ -288,11 +275,9 @@ export async function runAgent(
         break;
       }
 
-      // Snapshot the buffer line count *before* we type, then inject the command(s)
-      // LINE BY LINE. Each line appears and runs individually in the live terminal.
-      // We read everything from `startLine` onward so the result includes both the
-      // command echo and its actual output. Sampling after typing would miss output
-      // that arrived during the per-line injection delay.
+      // Snapshot the buffer line count *before* we type, then inject the
+      // command(s) LINE BY LINE. We read everything from `startLine` onward so
+      // the result includes both the command echo and its actual output.
       const startLine = getTerminalLineCount(target);
       await injectCommandLines(cmd, autoRun, target);
 
@@ -322,10 +307,12 @@ export async function runAgent(
       }
     }
   } catch (e) {
-    if (agent) {
-      agent.setError(String(e));
-      agent.setRunning(false);
-    }
+    if (agent) agent.setError(String(e));
     throw e;
+  } finally {
+    // Reset the running flag on EVERY exit path — including the natural end of
+    // the step loop without a DONE. A stuck `running: true` silently blocks
+    // auto-diagnose (`maybeAutoDiagnose` early-returns on it).
+    if (agent) agent.setRunning(false);
   }
 }

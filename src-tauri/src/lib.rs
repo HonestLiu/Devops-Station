@@ -1,6 +1,6 @@
 #![allow(dependency_on_unit_never_type_fallback)]
 mod ai;
-pub use ai::ai_chat;
+pub use ai::{ai_cancel, ai_chat, ai_clear_inflight};
 mod ble;
 mod error;
 mod fonts;
@@ -805,6 +805,8 @@ pub fn run() {
             usbip_install,
             frp_spawn,
             ai_chat,
+            ai_cancel,
+            ai_clear_inflight,
             notify_show,
             set_approval_notifications,
             fonts::list_fonts,

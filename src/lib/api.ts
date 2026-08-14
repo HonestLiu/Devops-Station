@@ -333,12 +333,22 @@ export interface AIChatRequest {
   provider: AIProviderConfig;
   messages: { role: string; content: string }[];
   context?: string;
+  /**
+   * Caller-generated request id so the frontend can register its event
+   * listeners before invoking (eliminates the lost-`ai-done` race on fast
+   * providers). Omit to let the backend generate one.
+   */
+  id?: string;
 }
 
 export const ai = {
-  /** Starts a (simulated-streaming) chat completion; returns a request id used to
+  /** Starts a streaming chat completion; returns the request id used to
    *  subscribe to `ai-chunk-{id}` / `ai-done-{id}` events. */
   chat: (req: AIChatRequest) => call<string>("ai_chat", { req }),
+  /** Abort an in-flight completion. */
+  cancel: (id: string) => call<void>("ai_cancel", { id }),
+  /** Drop stale in-flight entries (e.g. after a webview reload). */
+  clearInflight: () => call<void>("ai_clear_inflight"),
 };
 
 // --- Knowledge base --------------------------------------------------------

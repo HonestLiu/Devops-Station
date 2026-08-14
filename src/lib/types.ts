@@ -450,6 +450,8 @@ export interface AIChatMessage {
   streaming?: boolean;
   /** True if the assistant turn ended with an error. */
   error?: boolean;
+  /** True when the user manually stopped the generation. */
+  cancelled?: boolean;
 }
 
 export interface AIChatSession {
@@ -457,6 +459,13 @@ export interface AIChatSession {
   title: string;
   messages: AIChatMessage[];
   createdAt: number;
+  /**
+   * Session used by machine-driven flows (inline agent runs, auto-diagnose).
+   * Transient sessions are excluded from the history list and can be purged in
+   * bulk, so agent transcripts and auto-diagnostics never pollute the chat
+   * history the user sees.
+   */
+  transient?: boolean;
 }
 
 /** Provider config sent to the Rust backend (mirrors `ProviderConfig` in ai/provider.rs). */

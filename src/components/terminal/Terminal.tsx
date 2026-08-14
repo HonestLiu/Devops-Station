@@ -16,7 +16,7 @@ import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
-import { isBenignContext, isWaitingForInput, scanForError } from "@/ai/errorScan";
+import { isBenignContext, isWaitingForInput, scanForError, errorFingerprint } from "@/ai/errorScan";
 import { maybeAutoDiagnose } from "@/ai/diagnose";
 import { useAiSuggestion } from "@/ai/useAiSuggestion";
 import { useAiComposer } from "@/ai/useAiComposer";
@@ -39,6 +39,38 @@ const SNIPPET_MENU: MenuItem[] = SNIPPET_GROUPS.map((g) => ({
     onClick: () => writeToTerminal(it.cmd, false),
   })),
 }));
+
+// --- Proactive error-diagnosis deduplication ----------------------------------
+//
+// The terminal data stream re-scans its 2000-char tail on *every* chunk, so a
+// single error line can be re-detected dozens of times as it scrolls, is
+// redrawn, or lingers in the window while other commands run. All deduplication
+// therefore happens HERE, at the only call site that feeds the two downstream
+// channels (auto-diagnose + "let AI fix" hint) — not in each channel's own
+// cooldown (the old approach keyed on `(sessionId, label)` with short windows,
+// so reconnecting to a new session id or the same error printing again after
+// 10s re-triggered everything).
+//
+// The key is an error *fingerprint* (normalised snippet, see errorScan.ts), and
+// the window is global across terminals: "exit and reconnect" within the window
+// produces a new session id but the same error — which must NOT re-trigger.
+/** Any one error fingerprint is surfaced at most once per window, app-wide. */
+const ERROR_DEDUP_WINDOW_MS = 60_000;
+/** Cap before pruning stale entries so the map never grows unbounded. */
+const ERROR_DEDUP_MAX = 128;
+const handledErrors = new Map<string, number>();
+
+function shouldHandleError(fingerprint: string, now: number): boolean {
+  const prev = handledErrors.get(fingerprint) ?? 0;
+  if (now - prev < ERROR_DEDUP_WINDOW_MS) return false;
+  handledErrors.set(fingerprint, now);
+  if (handledErrors.size > ERROR_DEDUP_MAX) {
+    for (const [k, ts] of handledErrors) {
+      if (now - ts >= ERROR_DEDUP_WINDOW_MS) handledErrors.delete(k);
+    }
+  }
+  return true;
+}
 
 export interface TerminalProps {
   sessionId: string;
@@ -420,25 +452,41 @@ export function Terminal(props: TerminalProps) {
           //     the bottom panel (no manual click). autoDiagnose wins when both
           //     are on, so the operator never gets the click prompt *and* an
           //     auto-run for the same error.
+          //
+          // Two hard gates prevent the "keyword → repeated triggers" reports:
+          //   1. Only scan AFTER the attach backlog has been flushed. While
+          //      `flushed` is false we are replaying buffered output from before
+          //      this terminal attached (a shell banner, the tail of a previous
+          //      session, an agent CLI's startup text) — none of it is a fresh
+          //      command error, and on "exit and reconnect" it was the #1 source
+          //      of an immediate duplicate diagnosis.
+          //   2. Deduplicate by error fingerprint with a global window. The
+          //      same error line is re-detected many times while it stays in
+          //      the 2000-char tail; only the first detection per window is
+          //      surfaced (to whichever channel is active).
           const aiSettings = useAppStore.getState().settings.ai;
-          if (aiSettings.errorHints || aiSettings.autoDiagnose) {
+          if (
+            flushed &&
+            (aiSettings.errorHints || aiSettings.autoDiagnose)
+          ) {
             try {
               const hit = scanForError(recentRef.current);
               // High-signal shell errors (mistyped command, permission denied,
               // missing file) always surface, even if an interactive-prompt marker
               // (PSReadLine "did you mean" block, agent confirm dialog) is also on
               // screen — isBenignContext would otherwise silence them and the user
-              // would see nothing, which is exactly the PowerShell "no reaction"
-              // report. Softer/generic errors still respect the benign guard.
+              // would see nothing. Softer/generic errors still respect the guard.
               if (hit && (!isBenignContext(recentRef.current) || hit.highSignal)) {
-                if (aiSettings.autoDiagnose) {
-                  maybeAutoDiagnose(sessionId, hit, recentRef.current);
-                } else {
-                  useAiSuggestion.getState().offer({
-                    sessionId,
-                    label: hit.label,
-                    snippet: hit.snippet,
-                  });
+                if (shouldHandleError(errorFingerprint(hit), Date.now())) {
+                  if (aiSettings.autoDiagnose) {
+                    maybeAutoDiagnose(sessionId, hit, recentRef.current);
+                  } else {
+                    useAiSuggestion.getState().offer({
+                      sessionId,
+                      label: hit.label,
+                      snippet: hit.snippet,
+                    });
+                  }
                 }
               } else if (isBenignContext(recentRef.current)) {
                 // An interactive prompt / agent banner is on screen (e.g.

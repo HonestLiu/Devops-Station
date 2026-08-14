@@ -80,6 +80,9 @@ const KEYWORDS = new Set([
 function highlight(code: string): ReactNode[] {
   const out: ReactNode[] = [];
   // Tokenize: comments, strings, numbers, words, other.
+  // Colours use theme CSS variables (rgb(var(--c-…))) so the highlighting stays
+  // readable in BOTH light and dark themes — the previous hardcoded dark-theme
+  // hex values (#9ece6a etc.) were nearly invisible on light backgrounds.
   const re =
     /(#.*$|\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([^\sA-Za-z0-9_])/gm;
   let m: RegExpExecArray | null;
@@ -88,26 +91,26 @@ function highlight(code: string): ReactNode[] {
     const [tok, comment, str, num, word, ws, punct] = m;
     if (comment !== undefined) {
       out.push(
-        <span key={k++} style={{ color: "var(--muted)" }}>
+        <span key={k++} style={{ color: "rgb(var(--c-subtle))" }}>
           {comment}
         </span>,
       );
     } else if (str !== undefined) {
       out.push(
-        <span key={k++} style={{ color: "#9ece6a" }}>
+        <span key={k++} style={{ color: "rgb(var(--c-success))" }}>
           {str}
         </span>,
       );
     } else if (num !== undefined) {
       out.push(
-        <span key={k++} style={{ color: "#ff9e64" }}>
+        <span key={k++} style={{ color: "rgb(var(--c-warning))" }}>
           {num}
         </span>,
       );
     } else if (word !== undefined) {
       if (KEYWORDS.has(word)) {
         out.push(
-          <span key={k++} style={{ color: "var(--accent)" }}>
+          <span key={k++} style={{ color: "rgb(var(--c-accent))" }}>
             {word}
           </span>,
         );
@@ -118,7 +121,7 @@ function highlight(code: string): ReactNode[] {
       out.push(<span key={k++}>{ws}</span>);
     } else if (punct !== undefined) {
       out.push(
-        <span key={k++} style={{ color: "var(--muted)" }}>
+        <span key={k++} style={{ color: "rgb(var(--c-subtle))" }}>
           {punct}
         </span>,
       );

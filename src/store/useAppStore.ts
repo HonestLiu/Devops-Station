@@ -159,6 +159,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const merged = {
         ...DEFAULT_SETTINGS,
         ...(stored as Partial<AppSettings>),
+        // `ai` is a nested object — a shallow spread would let a persisted `ai`
+        // object from an older build (one that predates fields like
+        // `autoDiagnose`, `knowledgeBase`, …) clobber the whole subtree, leaving
+        // the new keys `undefined` (falsy) and silently disabling features that
+        // the user never turned off. Merge field-by-field so every key falls
+        // back to its default.
+        ai: { ...DEFAULT_SETTINGS.ai, ...((stored as Partial<AppSettings>).ai ?? {}) },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);
       // Persist the repair so it isn't re-detected on every startup.

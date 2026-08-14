@@ -17,6 +17,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Square,
   Stethoscope,
   Terminal,
   Wand2,
@@ -27,7 +28,7 @@ import { cn } from "@/lib/utils";
 import type { Tab } from "@/lib/types";
 import { localFs } from "@/lib/api";
 import { useT } from "@/i18n";
-import { useAiStore } from "./useAiStore";
+import { useAiStore, hasAiConfig } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
 import { useAiSuggestion } from "./useAiSuggestion";
 import { useAiAgent } from "./useAiAgent";
@@ -122,14 +123,25 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
   const agentVisible =
     agentRunning || agentSteps.length > 0 || !!agentError || !!agentSummary;
 
-  const send = useAiStore((s) => s.send);
   const togglePanel = useAiStore((s) => s.togglePanel);
-  const activeId = useAiStore((s) => s.activeId);
-  // The most recent assistant message of the active session — that's the answer
-  // we render inline. Re-renders on every streamed delta.
+  // The session this composer streams its *own* answers into. Created lazily on
+  // first send as a TRANSIENT session — it is never made the active chat
+  // session and never appears in the history list, so terminal inline Q&A and
+  // the side-panel chat no longer leak into each other (the old code reused the
+  // global activeId, mixing both surfaces together).
+  const inlineSessionRef = useRef<string | null>(null);
+  // Auto-diagnose points the inline bar at its transient session via
+  // `displaySessionId`; when set, we show that session's latest assistant
+  // message instead of our own.
+  const displaySessionId = useAiComposer((s) => s.displaySessionId);
+  const [needSetup, setNeedSetup] = useState(false);
+
+  // The latest assistant message to render inline: the diagnose session's
+  // answer when one is active, otherwise our own inline session's answer.
   const answer = useAiStore((s) => {
-    if (!s.activeId) return null;
-    const sess = s.sessions.find((x) => x.id === s.activeId);
+    const sid = displaySessionId ?? inlineSessionRef.current;
+    if (!sid) return null;
+    const sess = s.sessions.find((x) => x.id === sid);
     if (!sess) return null;
     for (let i = sess.messages.length - 1; i >= 0; i--) {
       if (sess.messages[i].role === "assistant") return sess.messages[i];
@@ -216,11 +228,31 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
     (v: string, system?: string) => {
       const t = v.trim();
       if (!t) return;
+      if (!hasAiConfig()) {
+        setNeedSetup(true);
+        return;
+      }
+      setNeedSetup(false);
       setOpen(true);
       setInput("");
-      void send(t, system ? { system } : undefined);
+      // A manual question takes over the inline answer area: release any
+      // auto-diagnose display binding so the answer rendered here is the
+      // response to *this* question, not the previous diagnosis.
+      useAiComposer.getState().setDisplaySessionId(null);
+      // Lazy-create (or re-create after a purge) the per-composer transient
+      // session, then stream into it without touching the global active id.
+      let sid = inlineSessionRef.current;
+      if (!sid || !useAiStore.getState().sessions.some((s) => s.id === sid)) {
+        sid = useAiStore.getState().createTransientSession();
+        inlineSessionRef.current = sid;
+      }
+      void useAiStore.getState().sendToSession(
+        sid,
+        t,
+        system ? { system } : undefined,
+      );
     },
-    [send],
+    [],
   );
 
   // Consume pre-filled prompts pushed from elsewhere (selection "Explain",
@@ -235,6 +267,17 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
     }
     useAiComposer.getState().clear();
   }, [prefill, autoSend, prefillSystem, submitValue]);
+
+  // On unmount: release the auto-diagnose display binding and purge idle
+  // transient sessions (agent transcripts, stale inline chats, diagnoses) so
+  // they never accumulate in localStorage.
+  useEffect(() => {
+    return () => {
+      useAiComposer.getState().setRevealAnswer(false);
+      useAiComposer.getState().setDisplaySessionId(null);
+      useAiStore.getState().purgeTransientSessions();
+    };
+  }, []);
 
   // Close the tools popover on any click outside it.
   useEffect(() => {
@@ -355,6 +398,18 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               AI
             </span>
             <div className="flex items-center gap-1">
+              {answer?.streaming && (
+                <button
+                  onClick={() => {
+                    const sid = displaySessionId ?? inlineSessionRef.current;
+                    if (sid) useAiStore.getState().cancelStream(sid);
+                  }}
+                  className="flex items-center gap-1 rounded bg-danger/10 px-1.5 py-0.5 text-[11px] text-danger transition-colors hover:bg-danger/20"
+                  title={t("ai.stop")}
+                >
+                  <Square size={10} /> {t("ai.stop")}
+                </button>
+              )}
               <button
                 onClick={() => togglePanel(true)}
                 className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
@@ -389,6 +444,32 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           {answer?.streaming && answer?.content && (
             <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
           )}
+        </div>
+      )}
+
+      {/* AI not configured: show a one-line setup hint instead of silently
+          dropping the request. */}
+      {needSetup && (
+        <div className="flex items-center gap-2 border-b border-border/70 bg-warning/10 px-3 py-1.5">
+          <AlertTriangle size={13} className="shrink-0 text-warning" />
+          <span className="truncate text-[12px] text-fg">{t("ai.needSetup")}</span>
+          <button
+            onClick={() => {
+              setNeedSetup(false);
+              useAppStore.getState().setPage("settings");
+            }}
+            className="ml-auto shrink-0 rounded-md bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-fg transition hover:opacity-90"
+          >
+            {t("ai.goSettings")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setNeedSetup(false)}
+            className="shrink-0 rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
+            title={t("ai.dismiss")}
+          >
+            <X size={12} />
+          </button>
         </div>
       )}
 
@@ -436,6 +517,11 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           if (agentMode) {
             const goal = input.trim();
             if (!goal) return;
+            if (!hasAiConfig()) {
+              setNeedSetup(true);
+              return;
+            }
+            setNeedSetup(false);
             setInput("");
             // Keep agent mode ON after a run, so consecutive tasks don't require
             // re-toggling the 🤖 button every time. The operator can still turn it

@@ -88,15 +88,23 @@ const RULES: Rule[] = [
   { re: /\bENOENT\b/i, label: "File not found (ENOENT)" },
   { re: /\bEAI_AGAIN\b/i, label: "Temporary DNS failure" },
   { re: /\bfatal error\b|\bFATAL\b/i, label: "Fatal error" },
+  { re: /\bunhandled exception\b|\bexception in thread\b/i, label: "Unhandled exception" },
   { re: /\[ERROR\]/i, label: "Error" },
-  { re: /^\s*\S*error:\s*.+$/im, label: "Error" },
+  // Generic "error:" line — narrowed to a word/path prefix so ordinary prose
+  // (e.g. "Docker:", "the error is expected") is not flagged. The old `\S*`
+  // matched arbitrary punctuation and produced constant false positives.
+  { re: /^\s*[a-zA-Z0-9_./\\-]+error:\s*.+$/im, label: "Error" },
   { re: /segmentation fault/i, label: "Segmentation fault" },
   { re: /core dumped/i, label: "Process crashed (core dumped)" },
   { re: /\bpanic:/i, label: "Panic" },
   { re: /(?:build|task|job|make|step).*\bFAILED\b/i, label: "Build / job failed" },
   { re: /(?:failed|unable) to (?:connect|listen|bind)/i, label: "Connect / bind failed" },
   { re: /\b(404|410)\b.*not found/i, label: "HTTP 404" },
-  { re: /\b(500|502|503|504)\b/, label: "HTTP server error" },
+  // 5xx requires an HTTP/status context — a bare `500` (a port, a timestamp,
+  // a file size) is not an error. The old rule matched any line containing
+  // 500/502/503/504, which flagged harmless output constantly.
+  { re: /(?:http|status|response|server|proxy)[^a-z0-9]*(?:code\s*)?[:=]?\s*"?\s*(500|502|503|504)\b/i, label: "HTTP server error" },
+  { re: /status[\s:]+(500|502|503|504)\b/i, label: "HTTP server error" },
 ];
 
 export interface ErrorHit {
@@ -104,6 +112,27 @@ export interface ErrorHit {
   snippet: string;
   /** True for unambiguous shell errors that must always surface (see Rule.highSignal). */
   highSignal: boolean;
+}
+
+/**
+ * A stable identity for an error occurrence, used for deduplication.
+ *
+ * Two hits with the same fingerprint are treated as the *same* error. The
+ * snippet is normalised so run-to-run variance (PIDs, timestamps, ports,
+ * quoted paths) collapses to one fingerprint — otherwise "connection refused"
+ * printed five times with different ports would spawn five diagnoses. Keeping
+ * the raw `label` first means two genuinely different errors on the same
+ * terminal never get merged.
+ */
+export function errorFingerprint(hit: ErrorHit): string {
+  const snip = hit.snippet
+    .replace(/\s+/g, " ") // collapse whitespace (ANSI-stripped text often has ragged spacing)
+    .replace(/[0-9]+/g, "#") // PIDs / timestamps / ports / line numbers
+    .replace(/"(?:[^"\\]|\\.)*"/g, '"…"') // quoted values (paths, hosts) vary
+    .replace(/'(?:[^'\\]|\\.)*'/g, "'…'")
+    .trim()
+    .slice(0, 120);
+  return `${hit.label}|${snip}`;
 }
 
 /**

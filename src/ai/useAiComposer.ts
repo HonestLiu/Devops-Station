@@ -20,8 +20,16 @@ interface ComposerState {
   /** When true, the inline answer panel auto-expands to surface an automatic
    *  diagnosis even if the operator never manually opened the composer. */
   revealAnswer: boolean;
+  /**
+   * Session whose latest assistant message the inline bar should surface.
+   * Used by auto-diagnose: the diagnosis is streamed into a transient session,
+   * and the inline bar is pointed at it so the answer appears in the terminal
+   * without polluting the user's chat history.
+   */
+  displaySessionId: string | null;
   setPrefill: (text: string, autoSend?: boolean, system?: string | null) => void;
   setRevealAnswer: (v: boolean) => void;
+  setDisplaySessionId: (id: string | null) => void;
   clear: () => void;
 }
 
@@ -30,8 +38,11 @@ export const useAiComposer = create<ComposerState>((set) => ({
   autoSend: false,
   system: null,
   revealAnswer: false,
+  displaySessionId: null,
   setPrefill: (text: string, autoSend = false, system: string | null = null) =>
     set({ prefill: text, autoSend, system }),
   setRevealAnswer: (v: boolean) => set({ revealAnswer: v }),
-  clear: () => set({ prefill: null, autoSend: false, system: null }),
+  setDisplaySessionId: (id: string | null) => set({ displaySessionId: id }),
+  clear: () =>
+    set({ prefill: null, autoSend: false, system: null, displaySessionId: null }),
 }));

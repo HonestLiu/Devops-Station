@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Activity,
   BookOpen,
@@ -13,6 +13,7 @@ import {
   ScrollText,
   Send,
   Sparkles,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -20,7 +21,7 @@ import {
 import { Button, SideIconButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
-import { useAiStore } from "./useAiStore";
+import { useAiStore, hasAiConfig } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
 import { Markdown } from "./Markdown";
@@ -29,11 +30,16 @@ import { runAgent } from "./agent";
 import { loadKnowledgeBase, kbChunkCount } from "./knowledgeBase";
 import { analyzeTerminal, parseSerialProtocol, monitoringInsight } from "./tasks";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import type { AIChatSession } from "@/lib/types";
 
 function SessionList() {
   const t = useT();
-  const sessions = useAiStore((s) => s.sessions);
+  // Subscribe to the stable array, filter transient sessions at render time
+  // (a filter inside the selector would create a new array every render and
+  // loop forever under zustand v5's Object.is comparison).
+  const sessionsAll = useAiStore((s) => s.sessions);
+  const sessions = sessionsAll.filter((x) => !x.transient);
   const activeId = useAiStore((s) => s.activeId);
   const newSession = useAiStore((s) => s.newSession);
   const selectSession = useAiStore((s) => s.selectSession);
@@ -245,6 +251,7 @@ function Composer({
 }) {
   const t = useT();
   const [text, setText] = useState("");
+  const [needSetup, setNeedSetup] = useState(false);
   const send = useAiStore((s) => s.send);
   const streaming = useAiStore(
     (s) =>
@@ -257,6 +264,11 @@ function Composer({
     if (!text.trim() || streaming) return;
     const value = text;
     setText("");
+    if (!hasAiConfig()) {
+      setNeedSetup(true);
+      return;
+    }
+    setNeedSetup(false);
     if (agentMode) {
       void runAgent(value, agentAuto);
     } else {
@@ -266,6 +278,27 @@ function Composer({
 
   return (
     <div className="shrink-0 border-t border-border/70 bg-surface p-3">
+      {needSetup && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5">
+          <span className="flex-1 truncate text-[11px] text-fg">{t("ai.needSetup")}</span>
+          <button
+            onClick={() => {
+              setNeedSetup(false);
+              useAppStore.getState().setPage("settings");
+            }}
+            className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-fg transition hover:opacity-90"
+          >
+            {t("ai.goSettings")}
+          </button>
+          <button
+            onClick={() => setNeedSetup(false)}
+            className="shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-hover hover:text-fg"
+            title={t("ai.dismiss")}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
       <div className="flex items-end gap-2 rounded-xl border border-border/80 bg-bg p-2 transition-shadow focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/30">
         <textarea
           value={text}
@@ -280,14 +313,24 @@ function Composer({
           placeholder={t("ai.messagePlaceholder")}
           className="flex-1 resize-none bg-transparent text-[13px] text-fg outline-none placeholder:text-subtle"
         />
-        <button
-          onClick={submit}
-          disabled={!text.trim() || streaming}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition hover:brightness-110 disabled:opacity-40"
-          title={t("ai.send")}
-        >
-          <Send size={14} />
-        </button>
+        {streaming ? (
+          <button
+            onClick={() => useAiStore.getState().cancelActive()}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger text-white transition hover:brightness-110"
+            title={t("ai.stop")}
+          >
+            <Square size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={submit}
+            disabled={!text.trim()}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition hover:brightness-110 disabled:opacity-40"
+            title={t("ai.send")}
+          >
+            <Send size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -304,31 +347,44 @@ export function AiPanel() {
   const sessions = useAiStore((s) => s.sessions);
 
   const terminalContext = useAppStore((s) => s.settings.ai.terminalContext);
-  const [contextOn, setContextOn] = useState(false);
   const [agentMode, setAgentMode] = useState(false);
   const [agentAuto, setAgentAuto] = useState(false);
-  const [kbNote, setKbNote] = useState<string | null>(null);
+  // Structured KB load state (never infer status from translated text).
+  type KbState =
+    | { kind: "loading" }
+    | { kind: "ready"; count: number }
+    | { kind: "error"; err: string };
+  const [kbState, setKbState] = useState<KbState | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const loadKb = async () => {
     const s = useAppStore.getState().settings.ai;
     if (!s.useKnowledgeBase || !s.knowledgeBasePath?.trim()) {
-      window.alert(t("ai.enableKb"));
+      setKbState({ kind: "error", err: t("ai.enableKb") });
       return;
     }
-    setKbNote(t("ai.kbLoading"));
+    setKbState({ kind: "loading" });
     try {
       await loadKnowledgeBase();
-      setKbNote(t("ai.kbChunks", { n: kbChunkCount() }));
+      setKbState({ kind: "ready", count: kbChunkCount() });
     } catch (e) {
-      setKbNote(t("ai.kbError", { err: String(e) }));
+      setKbState({ kind: "error", err: String(e) });
     }
   };
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabId = useTabsStore((s) => s.activeId);
+  const cwdMap = useSessionStore((s) => s.cwdBySession);
   const activeTab = tabs.find(
     (t) => t.id === activeTabId && t.sessionId && t.kind !== "sftp",
+  );
+
+  // Reactive "terminal context attached" indicator: recompute only when the
+  // inputs change (tabs / active tab / live cwd), instead of the old 800ms
+  // polling interval which was wasteful and depended on the wrong activeId.
+  const contextOn = useMemo(
+    () => terminalContext && !!buildContext(),
+    [terminalContext, tabs, activeTabId, cwdMap],
   );
 
   const onInsert = useCallback(
@@ -349,15 +405,6 @@ export function AiPanel() {
     [activeTab],
   );
 
-  useEffect(() => {
-    if (!terminalContext) {
-      setContextOn(false);
-      return;
-    }
-    const id = setInterval(() => setContextOn(!!buildContext()), 800);
-    return () => clearInterval(id);
-  }, [terminalContext, activeId]);
-
   // Close on Escape.
   useEffect(() => {
     if (!panelOpen) return;
@@ -368,9 +415,17 @@ export function AiPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [panelOpen, togglePanel]);
 
-  if (!panelOpen) return null;
+  // Plain computation (NOT a hook — must stay stable across the early return
+  // below). Transient sessions (agent runs / auto-diagnose) never become the
+  // visible chat session.
+  const active =
+    (activeId
+      ? sessions.find((x) => x.id === activeId && !x.transient) ?? null
+      : null) ??
+    sessions.find((x) => !x.transient) ??
+    null;
 
-  const active = sessions.find((s) => s.id === activeId) ?? sessions[0];
+  if (!panelOpen) return null;
 
   // Drag-to-resize: a handle on the left edge updates the panel width.
   const startResize = (e: ReactMouseEvent) => {
@@ -455,14 +510,27 @@ export function AiPanel() {
         </button>
         <button
           onClick={() => void loadKb()}
-          className={toolBtn(!!(kbNote && !kbNote.includes("error") && kbNote.startsWith("KB:")))}
+          className={toolBtn(kbState?.kind === "ready")}
           title={t("ai.kbTitle")}
         >
           <BookOpen size={13} /> {t("ai.kb")}
         </button>
-        {kbNote && (
-          <span className="max-w-[120px] truncate text-[10px] text-subtle" title={kbNote}>
-            {kbNote}
+        {kbState && (
+          <span
+            className="max-w-[120px] truncate text-[10px] text-subtle"
+            title={
+              kbState.kind === "ready"
+                ? t("ai.kbChunks", { n: kbState.count })
+                : kbState.kind === "loading"
+                  ? t("ai.kbLoading")
+                  : kbState.err
+            }
+          >
+            {kbState.kind === "ready"
+              ? t("ai.kbChunks", { n: kbState.count })
+              : kbState.kind === "loading"
+                ? t("ai.kbLoading")
+                : t("ai.kbErrorShort")}
           </span>
         )}
         <SideIconButton

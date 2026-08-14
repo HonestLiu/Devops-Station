@@ -20,8 +20,7 @@ import { useT } from "@/i18n";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
-import { useAiStore } from "@/ai/useAiStore";
-import { explainSelection } from "@/ai/terminalAi";
+import { explainSelection, generateCommand } from "@/ai/terminalAi";
 import { analyzeTerminal, parseSerialProtocol, monitoringInsight } from "@/ai/tasks";
 import { runAgent } from "@/ai/agent";
 
@@ -178,7 +177,13 @@ export function CommandPalette() {
         icon: <Sparkles size={15} />,
         run: () => {
           close();
-          useAiStore.getState().togglePanel(true);
+          // Ask for the natural-language description, then stream the generated
+          // command into the AI panel (GENERATE_SYSTEM keeps the reply to a
+          // fenced bash block). Previously this entry only opened the panel,
+          // ignoring the "generate command" semantics entirely.
+          const desc = window.prompt(t("palette.generateCommandPrompt"));
+          if (!desc) return;
+          generateCommand(desc);
         },
       },
       {

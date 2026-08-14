@@ -483,6 +483,7 @@ export const zh = {
   "palette.serialPrompt": "串口（例如 COM3 或 /dev/ttyUSB0）",
   "palette.explainSelected": "解释选中命令",
   "palette.generateCommand": "生成命令…",
+  "palette.generateCommandPrompt": "描述你想生成的命令（例如：列出监听中的端口）：",
   "palette.analyzeTerminalLog": "分析终端日志",
   "palette.parseSerialProtocol": "解析串口协议",
   "palette.monitoringInsight": "监控洞察…",
@@ -575,6 +576,10 @@ export const zh = {
   "ai.runInTerminal": "在终端运行",
   "ai.auto": "自动",
   "ai.requestFailedShort": "请求失败。",
+  "ai.stop": "停止",
+  "ai.needSetup": "AI 尚未配置。请先设置服务商、接口地址和模型。",
+  "ai.goSettings": "去设置",
+  "ai.kbErrorShort": "KB 错误",
   "ai.agentPlaceholder": "描述代理要完成的任务…（Enter 运行）",
   "ai.askPlaceholder": "向此终端提问…（Enter 发送）",
 
