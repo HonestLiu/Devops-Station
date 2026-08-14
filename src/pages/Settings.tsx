@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { Check, Download, RotateCcw, Type, Upload } from "lucide-react";
 
 import { Button, Checkbox, Field, Input, Select } from "@/components/ui";
@@ -12,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
 import { useAppStore, type AppSettings, type Language } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
+import { CheckForUpdatesButton } from "@/components/UpdateDialog";
 import type { AIProviderKind, AISettings, ThemeId } from "@/lib/types";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -90,6 +92,14 @@ export function Settings() {
   const updateSetting = useAppStore((s) => s.updateSetting);
   const resetSettings = useAppStore((s) => s.resetSettings);
   const [fontOpen, setFontOpen] = useState(false);
+
+  // Current app version, shown in the Updates section.
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    void getVersion()
+      .then(setAppVersion)
+      .catch(() => undefined);
+  }, []);
 
   // Keep the Rust-side approval-notification switch in sync with the setting.
   useEffect(() => {
@@ -492,6 +502,40 @@ export function Settings() {
                 void notify.setApprovalNotifications(v).catch(() => undefined);
               }}
             />
+          </Field>
+        </Section>
+
+        {/* Updates */}
+        <Section title={t("settings.updates")}>
+          <Field
+            label={t("settings.autoCheckUpdates")}
+            hint={t("settings.autoCheckUpdatesHint")}
+            className="sm:col-span-2"
+          >
+            <Checkbox
+              label={t("settings.autoCheckUpdates")}
+              checked={settings.autoCheckUpdates}
+              onChange={(v) => set("autoCheckUpdates", v)}
+            />
+          </Field>
+          <Field
+            label={t("settings.autoDownloadUpdates")}
+            hint={t("settings.autoDownloadUpdatesHint")}
+            className="sm:col-span-2"
+          >
+            <Checkbox
+              label={t("settings.autoDownloadUpdates")}
+              checked={settings.autoDownloadUpdates}
+              onChange={(v) => set("autoDownloadUpdates", v)}
+            />
+          </Field>
+          <Field label={t("settings.currentVersion")} className="sm:col-span-2">
+            <div className="flex items-center gap-3">
+              <span className="rounded-md border border-border bg-bg px-2.5 py-1 font-mono text-[12px] text-fg">
+                v{appVersion || "…"}
+              </span>
+              <CheckForUpdatesButton />
+            </div>
           </Field>
         </Section>
 

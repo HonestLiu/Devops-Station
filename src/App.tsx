@@ -265,16 +265,20 @@ export default function App() {
 
   // Auto-check for a newer release a couple of seconds after launch. Silent when
   // there's nothing new (the dialog only opens if an update is found). Guarded so
-  // React StrictMode's double-mount in dev doesn't fire it twice.
+  // React StrictMode's double-mount in dev doesn't fire it twice, and respects the
+  // "Automatically check for updates on startup" setting once settings are loaded.
+  const settingsLoaded = useAppStore((s) => s.settingsLoaded);
+  const autoCheckUpdates = useAppStore((s) => s.settings.autoCheckUpdates);
   const didAutoCheck = useRef(false);
   useEffect(() => {
-    if (didAutoCheck.current) return;
+    if (!settingsLoaded || didAutoCheck.current) return;
+    if (!autoCheckUpdates) return;
     didAutoCheck.current = true;
     const id = window.setTimeout(() => {
-      void checkForUpdate(false);
+      void checkForUpdate(false, true);
     }, 2500);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [settingsLoaded, autoCheckUpdates]);
 
   // Split-pane shortcuts (active SSH tab only), capture phase so the shell never
   // sees them: Ctrl+Shift+D split right · Ctrl+Shift+E split below ·

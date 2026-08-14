@@ -42,6 +42,12 @@ export interface AppSettings {
   approveShortcut: string;
   /** Whether to raise native OS notifications for agent/CLI approval prompts. */
   approvalNotifications: boolean;
+  /** Check GitHub Releases for a newer version a few seconds after launch. */
+  autoCheckUpdates: boolean;
+  /** When a newer version is found during the automatic startup check, download
+   *  and install it without waiting for the user to click "Update now".
+   *  Manual checks always show the release notes first. */
+  autoDownloadUpdates: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -69,6 +75,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: "ctrl+shift+Enter",
   approvalNotifications: true,
+  autoCheckUpdates: true,
+  autoDownloadUpdates: false,
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",

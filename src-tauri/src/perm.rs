@@ -125,13 +125,21 @@ struct AlertStamp {
 
 /// Per session last-alert stamp — used to throttle the alert so a re-rendering
 /// prompt cannot spam the user or the webview thread. Dedup keyed by (session,
-/// prompt-prefix) instead of a bare time window so a *new* approval is never
+/// prompt signature) instead of a bare time window so a *new* approval is never
 /// swallowed inside the window of a previous one, and the *same* approval is
 /// not re-alerted every window expiry while it is still waiting on the user.
 fn last_alert() -> &'static Mutex<HashMap<String, AlertStamp>> {
     static LAST: OnceLock<Mutex<HashMap<String, AlertStamp>>> = OnceLock::new();
     LAST.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+/// Hard backstop: never raise more than one approval notification per session
+/// per this window, *regardless* of how the prompt re-rendered. A coding-agent
+/// TUI that echoes the user's keystrokes into its own prompt box can produce a
+/// genuinely different-looking frame on every keystroke; the signature-based
+/// dedup below catches the common case, and this cooldown guarantees we can
+/// never storm the OS notification centre even in the worst case.
+const ALERT_COOLDOWN: Duration = Duration::from_secs(3);
 
 /// Global switch for native OS notifications triggered by approval prompts.
 /// The frontend toggles this via `set_approval_notifications`.
@@ -152,6 +160,29 @@ const SNIPPET_LEN: usize = 240;
 
 fn cheap_hit(text: &str) -> bool {
     TRIGGERS.iter().any(|t| text.contains(t))
+}
+
+/// Stable dedup signature for an approval prompt.
+///
+/// We take the *exact span the first matching rule captured* — the approval
+/// phrase itself — rather than the head of the whole chunk. That span is what a
+/// coding-agent TUI keeps stable across redraws (cursor movement, option
+/// highlight, spinner, and re-echoed keystrokes all live *outside* the matched
+/// phrase), so two frames of the same pending approval produce the same
+/// signature and collapse to a single notification. The signature is lowercased
+/// and internally whitespace-collapsed so purely cosmetic re-renders (case /
+/// spacing) also dedup. Falls back to the head of the cleaned text if, for some
+/// reason, no rule span is recoverable (it shouldn't happen — we only reach
+/// here after a rule matched).
+fn prompt_signature(cleaned: &str) -> String {
+    let span = rules()
+        .iter()
+        .find_map(|r| r.re.find(cleaned).map(|m| m.as_str().to_string()))
+        .unwrap_or_else(|| cleaned.chars().take(120).collect());
+    span.split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
+        .to_ascii_lowercase()
 }
 
 /// Per session last-attributed specific tool (e.g. "Claude Code"). When the
@@ -287,24 +318,37 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         return;
     }
 
-    // Throttle by (session, prompt-prefix). This is the critical guard that
+    // Throttle by (session, prompt signature). This is the critical guard that
     // prevents the emit + OS-notification storm that previously froze the whole
-    // app when a coding agent re-rendered its prompt on every frame. The prefix
-    // comparison means:
-    //   • same approval re-rendering (TUI redraw, spinner, cursor) → deduped,
-    //   • a genuinely new approval → let through immediately, never swallowed
-    //     inside a previous alert's window, so it doesn't feel slow or silent.
-    let prefix: String = snippet.chars().take(60).collect();
+    // app when a coding agent re-rendered its prompt on every frame — and the
+    // even more common case of the TUI echoing the user's keystrokes (e.g. they
+    // type `npm` while an agent sits at a `(y/n)` prompt) into its own input
+    // box, producing a different-looking chunk on every keystroke.
+    //
+    // The signature is derived from the *exact span the matching rule captured*
+    // (the stable approval phrase), normalised to lowercase + collapsed
+    // whitespace, NOT from the head of the whole chunk. That phrase does not
+    // move when the agent redraws its cursor / option-highlight or re-echoes
+    // typed input, so re-renders collapse to the same signature and are
+    // deduplicated. A hard `ALERT_COOLDOWN` backs this up so we can never storm
+    // the OS notification centre even if a TUI somehow emits a genuinely
+    // different frame every time.
+    let sig = prompt_signature(&cleaned);
     {
         let mut last = last_alert().lock().unwrap();
         let now = Instant::now();
-        let dup = last.get(session_id).map_or(false, |st| {
-            now.saturating_duration_since(st.at) < ALERT_WINDOW && st.prefix == prefix
-        });
-        if dup {
-            return;
+        if let Some(st) = last.get(session_id) {
+            // Backstop: never more than one notification per cooldown, whatever
+            // the frame looks like.
+            if now.saturating_duration_since(st.at) < ALERT_COOLDOWN {
+                return;
+            }
+            // Same approval prompt still on screen (signature unchanged) -> keep quiet.
+            if now.saturating_duration_since(st.at) < ALERT_WINDOW && st.prefix == sig {
+                return;
+            }
         }
-        last.insert(session_id.to_string(), AlertStamp { at: now, prefix });
+        last.insert(session_id.to_string(), AlertStamp { at: now, prefix: sig });
     }
 
     let ts = SystemTime::now()

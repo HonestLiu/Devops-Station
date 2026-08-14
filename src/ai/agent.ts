@@ -5,7 +5,7 @@ import { tFrom } from "@/i18n";
 import { useAiStore } from "./useAiStore";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
-import { getTargetSession, getTerminalTypeDescription, injectCommandLines } from "./terminalAi";
+import { getTargetSession, getTerminalTypeDescription, injectCommandLines, writeToTerminal } from "./terminalAi";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { useAiAgent, type AgentStep } from "./useAiAgent";
 import { AGENT_SYSTEM } from "./prompts";
@@ -60,18 +60,57 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * SSH host-key confirmation prompt, e.g.
+ *   Are you sure you want to continue connecting (yes/no/[fingerprint])?
+ * Matched narrowly so we never accidentally auto-answer a generic (yes/no)
+ * question such as a git branch-deletion confirmation.
+ */
+const HOST_KEY_PROMPT = /continue connecting \(yes\/no(?:[^)]*)\)\?/i;
+
+/**
  * Wait until the terminal's new output (everything from `startLine`) stops
  * changing, so we capture the command's full result rather than a partial
  * mid-stream snapshot. Falls back to `SETTLE_TIMEOUT_MS` for commands that keep
  * streaming (builds, pings) or that block on interactive input.
+ *
+ * When `autoRespond` is set (autonomous run mode), the loop also watches for an
+ * SSH host-key confirmation prompt and answers `yes` automatically. Without
+ * this, the agent would see the prompt as "stable output", treat it as the
+ * command result, and — because it never types `yes` — the SSH client would
+ * fail with "Host key verification failed" (and the agent might loop retrying
+ * the same command). Only the exact `continue connecting` prompt is answered,
+ * and each distinct host is answered at most once (trust-on-first-use, the same
+ * a human would do on a first connection).
  */
-async function waitForSettle(sessionId: string, startLine: number): Promise<void> {
+async function waitForSettle(
+  sessionId: string,
+  startLine: number,
+  autoRespond = false,
+): Promise<void> {
   const deadline = Date.now() + SETTLE_TIMEOUT_MS;
   let last = "";
   let stable = 0;
+  const answeredHostKeys = new Set<string>();
   while (Date.now() < deadline) {
     await sleep(SETTLE_POLL_MS);
     const cur = getTerminalTail(sessionId, startLine);
+
+    if (autoRespond) {
+      const pending = cur
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => HOST_KEY_PROMPT.test(l))
+        .find((l) => !answeredHostKeys.has(l));
+      if (pending) {
+        answeredHostKeys.add(pending);
+        writeToTerminal("yes", true, sessionId);
+        stable = 0;
+        last = cur;
+        await sleep(600);
+        continue;
+      }
+    }
+
     if (cur === last) {
       stable += 1;
       if (stable >= SETTLE_STABLE_POLLS) return;
@@ -270,7 +309,7 @@ export async function runAgent(
         break;
       }
 
-      await waitForSettle(target, startLine);
+      await waitForSettle(target, startLine, autoRun);
 
       const result =
         getTerminalTail(target, startLine) || tFrom(appLang, "ai.agentNoOutput2");
