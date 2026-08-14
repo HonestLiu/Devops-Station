@@ -1,7 +1,9 @@
 pub mod crypto;
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -100,6 +102,49 @@ const PROFILE_FORMAT: &str = "devops-station-profile";
 /// schemaVersion (they need a newer app); older files keep working.
 const PROFILE_SCHEMA_VERSION: u32 = 1;
 
+// -- Imported-font bundle helpers (profile export / import) -----------------
+//
+// User-imported terminal fonts live as files under `<data_dir>/fonts/` with a
+// `manifest.json` mapping `family → file`. They are NOT in the database, so a
+// profile must embed their bytes to be a true full restore.
+
+/// Read the `family → file` manifest that tracks imported fonts.
+fn read_font_manifest(dir: &Path) -> HashMap<String, String> {
+    let p = dir.join("manifest.json");
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Pick a container extension from the file's magic bytes (mirrors `fonts.rs`).
+fn guess_font_ext(bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 4 {
+        match &bytes[0..4] {
+            b"\x00\x01\x00\x00" => return "ttf",
+            b"OTTO" => return "otf",
+            b"wOFF" => return "woff",
+            b"wOF2" => return "woff2",
+            b"true" | b"ttcf" => return "ttf",
+            _ => {}
+        }
+    }
+    "ttf"
+}
+
+/// Make a safe on-disk file name from an arbitrary family string.
+fn sanitize_font_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileExportInfo {
@@ -107,6 +152,7 @@ pub struct ProfileExportInfo {
     pub hosts: usize,
     pub quick_commands: usize,
     pub settings: usize,
+    pub fonts: usize,
     pub include_secrets: bool,
     pub exported_at: String,
 }
@@ -117,12 +163,16 @@ pub struct ProfileImportInfo {
     pub hosts: usize,
     pub quick_commands: usize,
     pub settings: usize,
+    pub fonts: usize,
     pub mode: String,
 }
 
 pub struct Store {
     conn: Mutex<Connection>,
     vault: Vault,
+    /// App data dir (`app_data_dir`). Used to locate the imported-fonts folder
+    /// so the profile exporter can bundle and restore user fonts.
+    data_dir: PathBuf,
 }
 
 impl Store {
@@ -135,6 +185,7 @@ impl Store {
         let store = Self {
             conn: Mutex::new(conn),
             vault,
+            data_dir: data_dir.to_path_buf(),
         };
         store.seed_defaults()?;
         Ok(store)
@@ -437,6 +488,75 @@ impl Store {
     // -- Unified profile (export / import / sync) ---------------------------
 
     /// Build the versioned profile document (settings + hosts + quick
+    /// Read every imported font file and base64-encode it for embedding in the
+    /// profile document. A missing/empty fonts dir yields an empty list.
+    fn collect_fonts(&self) -> AppResult<Vec<serde_json::Value>> {
+        let dir = self.data_dir.join("fonts");
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let manifest = read_font_manifest(&dir);
+        let mut out = Vec::with_capacity(manifest.len());
+        for (family, fname) in manifest {
+            let path = dir.join(&fname);
+            match std::fs::read(&path) {
+                Ok(bytes) => out.push(json!({
+                    "family": family,
+                    "file": fname,
+                    "data": B64.encode(&bytes),
+                })),
+                Err(_) => continue,
+            }
+        }
+        Ok(out)
+    }
+
+    /// Write imported fonts back to `<data_dir>/fonts/` and rebuild the
+    /// manifest. Runs independently of hosts/settings, so it is safe for both
+    /// `merge` and `replace` import modes. Returns the number of fonts restored.
+    fn restore_fonts(&self, fonts: &[serde_json::Value]) -> AppResult<usize> {
+        if fonts.is_empty() {
+            return Ok(0);
+        }
+        let dir = self.data_dir.join("fonts");
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| AppError::Storage(format!("无法创建字体目录: {e}")))?;
+        let mut manifest = read_font_manifest(&dir);
+        let mut restored = 0usize;
+        for f in fonts {
+            let family = f.get("family").and_then(|v| v.as_str());
+            let data = f.get("data").and_then(|v| v.as_str());
+            let (family, data) = match (family, data) {
+                (Some(f), Some(d)) => (f, d),
+                _ => continue,
+            };
+            let bytes = match B64.decode(data) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if bytes.len() < 8 {
+                continue;
+            }
+            let fname = f
+                .get("file")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    format!("{}.{}", sanitize_font_name(family), guess_font_ext(&bytes))
+                });
+            if std::fs::write(dir.join(&fname), &bytes).is_ok() {
+                manifest.insert(family.to_string(), fname);
+                restored += 1;
+            }
+        }
+        let s = serde_json::to_string(&manifest)
+            .map_err(|e| AppError::Storage(format!("字体清单写入失败: {e}")))?;
+        std::fs::write(dir.join("manifest.json"), s)
+            .map_err(|e| AppError::Storage(format!("字体清单写入失败: {e}")))?;
+        Ok(restored)
+    }
+
     /// commands). When `include_secrets` is true, stored passwords/passphrases
     /// are decrypted and embedded as plaintext — the "full backup" mode;
     /// otherwise they are exported as empty strings.
@@ -457,6 +577,7 @@ impl Store {
         }
         let quick_commands = self.list_quick_commands()?;
         let settings = self.get_settings()?;
+        let fonts = self.collect_fonts()?;
         Ok(json!({
             "format": PROFILE_FORMAT,
             "schemaVersion": PROFILE_SCHEMA_VERSION,
@@ -467,6 +588,7 @@ impl Store {
                 "settings": settings,
                 "hosts": hosts,
                 "quickCommands": quick_commands,
+                "fonts": fonts,
             },
         }))
     }
@@ -485,12 +607,14 @@ impl Store {
         let hosts = doc.pointer("/data/hosts").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
         let quick_commands = doc.pointer("/data/quickCommands").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
         let settings = doc.pointer("/data/settings").and_then(|v| v.as_object()).map(|o| o.len()).unwrap_or(0);
+        let fonts = doc.pointer("/data/fonts").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
         let exported_at = doc.get("exportedAt").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         Ok(ProfileExportInfo {
             path: path.display().to_string(),
             hosts,
             quick_commands,
             settings,
+            fonts,
             include_secrets,
             exported_at,
         })
@@ -537,6 +661,10 @@ impl Store {
         )
         .map_err(|e| AppError::Storage(format!("快捷命令解析失败: {e}")))?;
         let settings = data.get("settings").cloned().unwrap_or_else(|| json!({}));
+        let fonts: Vec<serde_json::Value> = serde_json::from_value(
+            data.get("fonts").cloned().unwrap_or_else(|| json!([])),
+        )
+        .map_err(|e| AppError::Storage(format!("字体数据解析失败: {e}")))?;
 
         // Parse everything above before touching any table, so a malformed file
         // can never leave the database half-replaced.
@@ -545,6 +673,9 @@ impl Store {
             conn.execute("DELETE FROM hosts", [])?;
             conn.execute("DELETE FROM quick_commands", [])?;
             conn.execute("DELETE FROM settings", [])?;
+            // Drop the old fonts dir so a "replace" import is a clean restore
+            // (leftover custom fonts from the previous machine won't linger).
+            let _ = std::fs::remove_dir_all(self.data_dir.join("fonts"));
         }
 
         let mut imported_hosts = 0usize;
@@ -577,10 +708,16 @@ impl Store {
             }
         }
 
+        // Restore imported fonts last: they live as files (not DB rows), and
+        // must exist on disk before the frontend re-registers them via
+        // FontFace. Returns 0 when the profile carried no fonts.
+        let imported_fonts = self.restore_fonts(&fonts)?;
+
         Ok(ProfileImportInfo {
             hosts: imported_hosts,
             quick_commands: imported_quick,
             settings: imported_settings,
+            fonts: imported_fonts,
             mode: mode.to_string(),
         })
     }

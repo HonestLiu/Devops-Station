@@ -511,6 +511,7 @@ export interface ProfileExportInfo {
   hosts: number;
   quickCommands: number;
   settings: number;
+  fonts: number;
   includeSecrets: boolean;
   exportedAt: string;
 }
@@ -520,5 +521,6 @@ export interface ProfileImportInfo {
   hosts: number;
   quickCommands: number;
   settings: number;
+  fonts: number;
   mode: string;
 }

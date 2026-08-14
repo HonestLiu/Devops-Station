@@ -118,6 +118,7 @@ export function Settings() {
           hosts: info.hosts,
           cmds: info.quickCommands,
           items: info.settings,
+          fonts: info.fonts,
           path: info.path,
         }) + (info.includeSecrets ? t("settings.exportedSecretsNote") : ""),
       );
@@ -157,6 +158,7 @@ export function Settings() {
           hosts: info.hosts,
           cmds: info.quickCommands,
           items: info.settings,
+          fonts: info.fonts,
         }),
       );
     } catch (err) {

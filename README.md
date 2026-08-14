@@ -94,7 +94,7 @@
 - **11 套主题**：Tokyo Night（默认）/ Dark / Light / Nord / Dracula / One Dark / GitHub Dark / Gruvbox / Monokai / Solarized Light / Catppuccin Latte，终端配色与 UI 同步
 - 侧边栏导航：Dashboard / Hosts / Monitoring / SFTP / Serial / J-Link / Settings，可折叠
 - 右键上下文菜单：随处新建终端、连接主机、打开 SFTP 等
-- 配置**导出 / 导入**（含主机、快捷命令、设置；可选含凭据）
+- **完整配置导出 / 导入（数据迁移）**：一键打包设置、主机、快捷命令**以及导入的自定义字体文件**（base64 内嵌），在新应用导入后完全复原；支持「合并」与「替换」两种模式，可选明文包含密码等凭据
 
 ### 🔐 数据存储
 
