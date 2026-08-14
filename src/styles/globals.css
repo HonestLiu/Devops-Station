@@ -108,6 +108,114 @@
   --c-info: 139 233 253;
 }
 
+/* --- One Dark --- */
+[data-theme="one-dark"] {
+  --c-bg: 40 44 52;
+  --c-surface: 33 37 43;
+  --c-elevated: 46 52 64;
+  --c-border: 54 60 72;
+  --c-hover: 42 48 60;
+  --c-fg: 171 178 191;
+  --c-muted: 148 156 170;
+  --c-subtle: 92 99 112;
+  --c-accent: 97 175 239;
+  --c-accent-fg: 40 44 52;
+  --c-success: 152 195 121;
+  --c-warning: 229 192 123;
+  --c-danger: 224 108 117;
+  --c-info: 86 182 194;
+}
+
+/* --- GitHub Dark --- */
+[data-theme="github-dark"] {
+  --c-bg: 13 17 23;
+  --c-surface: 22 27 34;
+  --c-elevated: 30 36 46;
+  --c-border: 48 54 61;
+  --c-hover: 26 32 41;
+  --c-fg: 230 237 243;
+  --c-muted: 179 186 193;
+  --c-subtle: 110 118 129;
+  --c-accent: 88 166 255;
+  --c-accent-fg: 13 17 23;
+  --c-success: 63 185 80;
+  --c-warning: 210 153 34;
+  --c-danger: 255 123 114;
+  --c-info: 57 197 207;
+}
+
+/* --- Gruvbox --- */
+[data-theme="gruvbox"] {
+  --c-bg: 40 40 40;
+  --c-surface: 46 44 42;
+  --c-elevated: 60 56 54;
+  --c-border: 73 69 66;
+  --c-hover: 52 50 48;
+  --c-fg: 235 219 178;
+  --c-muted: 215 199 158;
+  --c-subtle: 146 131 116;
+  --c-accent: 131 165 152;
+  --c-accent-fg: 40 40 40;
+  --c-success: 184 187 38;
+  --c-warning: 250 189 47;
+  --c-danger: 251 73 52;
+  --c-info: 104 157 106;
+}
+
+/* --- Monokai --- */
+[data-theme="monokai"] {
+  --c-bg: 39 40 34;
+  --c-surface: 32 33 28;
+  --c-elevated: 56 55 45;
+  --c-border: 72 71 58;
+  --c-hover: 46 47 38;
+  --c-fg: 248 248 242;
+  --c-muted: 214 212 202;
+  --c-subtle: 117 113 94;
+  --c-accent: 102 217 239;
+  --c-accent-fg: 39 40 34;
+  --c-success: 166 226 46;
+  --c-warning: 230 219 116;
+  --c-danger: 249 38 114;
+  --c-info: 161 239 228;
+}
+
+/* --- Solarized Light --- */
+[data-theme="solarized-light"] {
+  --c-bg: 253 246 227;
+  --c-surface: 248 240 216;
+  --c-elevated: 255 255 255;
+  --c-border: 235 222 194;
+  --c-hover: 242 233 207;
+  --c-fg: 101 123 131;
+  --c-muted: 88 110 117;
+  --c-subtle: 147 161 161;
+  --c-accent: 38 139 210;
+  --c-accent-fg: 253 246 227;
+  --c-success: 133 153 0;
+  --c-warning: 181 137 0;
+  --c-danger: 220 50 47;
+  --c-info: 42 161 152;
+}
+
+/* --- Catppuccin Latte --- */
+[data-theme="catppuccin-latte"] {
+  --c-bg: 239 241 245;
+  --c-surface: 230 233 239;
+  --c-elevated: 255 255 255;
+  --c-border: 204 208 218;
+  --c-hover: 220 224 232;
+  --c-fg: 76 79 105;
+  --c-muted: 108 111 133;
+  --c-subtle: 140 143 161;
+  --c-accent: 30 102 245;
+  --c-accent-fg: 239 241 245;
+  --c-success: 64 160 43;
+  --c-warning: 223 142 29;
+  --c-danger: 210 15 57;
+  --c-info: 23 146 153;
+}
+
 /* ==========================================================================
    Base
    ========================================================================== */

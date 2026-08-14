@@ -214,7 +214,18 @@ export interface TransferProgress {
 
 // --- UI-only models --------------------------------------------------------
 
-export type ThemeId = "tokyo-night" | "dark" | "light" | "nord" | "dracula";
+export type ThemeId =
+  | "tokyo-night"
+  | "dark"
+  | "light"
+  | "nord"
+  | "dracula"
+  | "one-dark"
+  | "github-dark"
+  | "gruvbox"
+  | "monokai"
+  | "solarized-light"
+  | "catppuccin-latte";
 
 export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp" | "jlink";
 
