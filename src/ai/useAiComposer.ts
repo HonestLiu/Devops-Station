@@ -17,7 +17,11 @@ interface ComposerState {
   autoSend: boolean;
   /** Optional one-off system instruction for the prefilled request. */
   system: string | null;
+  /** When true, the inline answer panel auto-expands to surface an automatic
+   *  diagnosis even if the operator never manually opened the composer. */
+  revealAnswer: boolean;
   setPrefill: (text: string, autoSend?: boolean, system?: string | null) => void;
+  setRevealAnswer: (v: boolean) => void;
   clear: () => void;
 }
 
@@ -25,7 +29,9 @@ export const useAiComposer = create<ComposerState>((set) => ({
   prefill: null,
   autoSend: false,
   system: null,
+  revealAnswer: false,
   setPrefill: (text: string, autoSend = false, system: string | null = null) =>
     set({ prefill: text, autoSend, system }),
+  setRevealAnswer: (v: boolean) => set({ revealAnswer: v }),
   clear: () => set({ prefill: null, autoSend: false, system: null }),
 }));

@@ -17,6 +17,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Stethoscope,
   Terminal,
   Wand2,
   X,
@@ -37,6 +38,7 @@ import { writeToTerminal } from "./terminalAi";
 import { scanLocalDir, formatSize } from "./localFs";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useAppStore } from "@/store/useAppStore";
 
 /**
  * Grouped command snippets for the Wand2 "Snippets" flyout. They are *inserted*
@@ -138,6 +140,9 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
   const prefill = useAiComposer((s) => s.prefill);
   const autoSend = useAiComposer((s) => s.autoSend);
   const prefillSystem = useAiComposer((s) => s.system);
+  // Surface an automatic diagnosis even if the operator never manually opened
+  // the composer (flipped by maybeAutoDiagnose when auto-diagnose is enabled).
+  const revealAnswer = useAiComposer((s) => s.revealAnswer);
   const suggestion = useAiSuggestion((s) => s.current);
   const clearSuggestion = useAiSuggestion((s) => s.clear);
 
@@ -162,6 +167,12 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
     sessionId ? s.cwdBySession[sessionId] : undefined,
   );
   const cwd = liveCwd ?? tab.cwd;
+
+  // "Auto-diagnose command errors" toggle (Settings → AI). Surfaced here as a
+  // button next to the quick-actions button so the operator can flip it per
+  // terminal without opening Settings. Reads/writes the shared AI settings.
+  const autoDiagnose = useAppStore((s) => s.settings.ai.autoDiagnose);
+  const updateSetting = useAppStore((s) => s.updateSetting);
 
   // --- Local-shell only: AI actions that read the directory tree ------------
   const explainDirectory = async () => {
@@ -334,9 +345,10 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
         </div>
       )}
 
-      {/* Inline answer (collapsible) — hidden while the agent runs so we don't
-          duplicate its monologue; the AgentBlock below shows the compact steps. */}
-      {open && answer && !agentActive && (
+      {/* Inline answer (collapsible) — hidden while the agent runs. Also expands
+          automatically on a terminal diagnosis (revealAnswer) so the operator
+          sees the cause without opening the composer. */}
+      {((open && answer) || revealAnswer) && !agentActive && (
         <div className="max-h-56 overflow-y-auto border-b border-border/70 px-3 py-2">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-subtle">
@@ -351,7 +363,10 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
                 <ArrowUpRight size={13} />
               </button>
               <button
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  useAiComposer.getState().setRevealAnswer(false);
+                }}
                 className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
                 title={t("ai.collapse")}
               >
@@ -359,18 +374,19 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
               </button>
             </div>
           </div>
-          {answer.error ? (
+          {answer?.error ? (
             <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-danger">
               {answer.content || t("ai.requestFailedShort")}
             </p>
-          ) : answer.content ? (
+          ) : answer?.content ? (
             <Markdown content={answer.content} onInsert={onInsert} onRun={onRun} />
           ) : (
-            <span className="inline-flex gap-1 text-subtle">
+            <span className="inline-flex items-center gap-1 text-subtle">
               <Dot /> <Dot /> <Dot />
+              <span className="ml-1">{t("ai.diagnosing")}</span>
             </span>
           )}
-          {answer.streaming && answer.content && (
+          {answer?.streaming && answer?.content && (
             <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
           )}
         </div>
@@ -541,6 +557,29 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             </div>
           )}
         </div>
+
+        {/* Auto-diagnose toggle — sits next to the quick-actions button. When
+            on, a terminal error automatically asks the AI for the cause and
+            streams the diagnosis to the bottom panel (see Terminal.tsx). */}
+        <button
+          type="button"
+          onClick={() =>
+            void updateSetting("ai", {
+              ...useAppStore.getState().settings.ai,
+              autoDiagnose: !autoDiagnose,
+            })
+          }
+          aria-pressed={autoDiagnose}
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+            autoDiagnose
+              ? "bg-accent text-accent-fg"
+              : "text-subtle hover:bg-hover hover:text-fg",
+          )}
+          title={t("settings.autoDiagnose")}
+        >
+          <Stethoscope size={14} />
+        </button>
 
         {/* Agent toggle — launches the autonomous loop inline */}
         <button

@@ -433,6 +433,9 @@ export interface AISettings {
   terminalContext: boolean;
   /** Surface a dismissible "let AI fix it?" hint when the output trips a known error. */
   errorHints: boolean;
+  /** When a command error is detected, automatically ask the AI to explain the
+   *  cause and stream the diagnosis to the bottom panel (no manual click). */
+  autoDiagnose: boolean;
   /** Use the local knowledge base (when a path is configured) to augment prompts. */
   useKnowledgeBase: boolean;
   /** Root directory scanned for the local knowledge base. */

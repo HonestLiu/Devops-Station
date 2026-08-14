@@ -85,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     temperature: 0.3,
     terminalContext: true,
     errorHints: true,
+    autoDiagnose: false,
     useKnowledgeBase: false,
     knowledgeBasePath: "",
   },

@@ -55,6 +55,13 @@ interface Rule {
 // Ordered: more specific first so "command not found" wins over a generic match.
 const RULES: Rule[] = [
   { re: /(?:bash|sh|zsh|fish):\s+\S+:\s+command not found/i, label: "Command not found" },
+  // PowerShell / cmd.exe "command not found" variants. PowerShell says the term
+  // "is not recognized as the name of a cmdlet, function, script file, or
+  // executable program"; cmd.exe says "'X' is not recognized as an internal or
+  // external command". These are the most common "I typed a wrong command" cases
+  // on Windows terminals and were previously missed, so auto-diagnose never fired.
+  { re: /(?:is\s+)?not recognized as (?:the name of )?a cmdlet, function, script file, or executable program/i, label: "Command not found" },
+  { re: /not recognized as an internal or external command/i, label: "Command not found" },
   { re: /command not found/i, label: "Command not found" },
   { re: /\bpermission denied\b/i, label: "Permission denied" },
   { re: /no such file or directory/i, label: "File not found" },

@@ -17,6 +17,7 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { isBenignContext, isWaitingForInput, scanForError } from "@/ai/errorScan";
+import { maybeAutoDiagnose } from "@/ai/diagnose";
 import { useAiSuggestion } from "@/ai/useAiSuggestion";
 import { useAiComposer } from "@/ai/useAiComposer";
 import { EXPLAIN_SYSTEM, FIX_SYSTEM, GENERATE_SYSTEM, writeToTerminal } from "@/ai/terminalAi";
@@ -412,17 +413,27 @@ export function Terminal(props: TerminalProps) {
           } catch {
             /* decode/scan must never break the terminal stream */
           }
-          // (B) Proactive error hint: scan decoded output for high-signal errors
-          // and offer a dismissible "let AI fix it?" prompt. Gated by Settings → AI.
-          if (useAppStore.getState().settings.ai.errorHints) {
+          // (B) Proactive error detection: scan decoded output for high-signal
+          // errors. Two modes, both gated by Settings → AI:
+          //   • errorHints  → show a dismissible "let AI fix it?" prompt
+          //   • autoDiagnose → automatically ask the AI and stream the cause to
+          //     the bottom panel (no manual click). autoDiagnose wins when both
+          //     are on, so the operator never gets the click prompt *and* an
+          //     auto-run for the same error.
+          const aiSettings = useAppStore.getState().settings.ai;
+          if (aiSettings.errorHints || aiSettings.autoDiagnose) {
             try {
               const hit = scanForError(recentRef.current);
-              if (hit) {
-                useAiSuggestion.getState().offer({
-                  sessionId,
-                  label: hit.label,
-                  snippet: hit.snippet,
-                });
+              if (hit && !isBenignContext(recentRef.current)) {
+                if (aiSettings.autoDiagnose) {
+                  maybeAutoDiagnose(sessionId, hit, recentRef.current);
+                } else {
+                  useAiSuggestion.getState().offer({
+                    sessionId,
+                    label: hit.label,
+                    snippet: hit.snippet,
+                  });
+                }
               } else if (isBenignContext(recentRef.current)) {
                 // An interactive prompt / agent banner is on screen (e.g.
                 // Claude Code's "trust this folder?" confirm). Drop any
