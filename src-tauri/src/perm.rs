@@ -52,11 +52,19 @@ fn rules() -> &'static [Rule] {
             mk(r"(?i)opencode"),
             mk(r"(?i)windsurf"),
             mk(r"(?i)\bcline\b"),
+            // --- Codex (OpenAI) --- its choices use single-letter shortcuts
+            //     "(y) / (p) / (esc)" rather than the "(y/n)" pattern the
+            //     generic fallback looks for, so it needs explicit rules. ---
+            mk(r"(?i)would you like to (run|execute|perform|make) (the following|this|an?) (command|edit|change|action)"),
+            mk(r"(?i)yes,? proceed \((y|Y)\)|proceed \((y|Y)\)"),
+            mk(r"(?i)tell (codex|the agent) what to do differently"),
             // --- generic fallback: confirmation token within 40 chars of a clear
             //     approval verb (allow/approve/permit/confirm/proceed). Narrower
-            //     than before so ordinary diffs/logs don't trigger it. ---
+            //     than before so ordinary diffs/logs don't trigger it. `(y)` /
+            //     `(Y)` are included because Codex-style single-letter shortcuts
+            //     are common in agent CLIs. ---
             mk(
-                r"(?i)(allow|approve|permit|confirm|proceed) .{0,40}?(\(y/n\)|\(Y/n\)|\(y/N\)|\[y/n\]|\[Y/n\]|\[y/N\]|\byes/no\b|\by/n\b)",
+                r"(?i)(allow|approve|permit|confirm|proceed) .{0,40}?(\(y/n\)|\(Y/n\)|\(y/N\)|\[y/n\]|\[Y/n\]|\[y/N\]|\byes/no\b|\by/n\b|\((y|Y)\))",
             ),
         ]
     })
@@ -66,7 +74,7 @@ fn rules() -> &'static [Rule] {
 const TRIGGERS: &[&str] = &[
     "y/n", "Y/n", "y/N", "yes/no", "approve", "allow", "permission", "proceed",
     "confirm", "claude", "codex", "gemini", "aider", "cursor", "opencode", "windsurf",
-    "cline", "edit the file", "run command", "do you want to",
+    "cline", "edit the file", "run command", "do you want to", "would you like to",
 ];
 
 /// Matches ANSI/console escape sequences so the notification text is clean.
@@ -75,19 +83,28 @@ fn ansi_strip() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]").unwrap())
 }
 
-/// Per session last-alert time — used to throttle the alert so a re-rendering
-/// prompt cannot spam the user or the webview thread. Keyed by *session* alone
-/// (not (session, tool)) so the same approval is deduplicated even when
-/// `attribute_tool` flips between "Claude Code" and the generic "Coding Agent"
-/// as the TUI re-renders partial frames.
-fn last_alert() -> &'static Mutex<HashMap<String, Instant>> {
-    static LAST: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+/// One recorded alert per session: when it fired and the prompt prefix we saw.
+/// The prefix is what lets us tell "same approval, TUI redraw" (dedupe) from
+/// "genuinely new approval" (notify immediately).
+struct AlertStamp {
+    at: Instant,
+    prefix: String,
+}
+
+/// Per session last-alert stamp — used to throttle the alert so a re-rendering
+/// prompt cannot spam the user or the webview thread. Dedup keyed by (session,
+/// prompt-prefix) instead of a bare time window so a *new* approval is never
+/// swallowed inside the window of a previous one, and the *same* approval is
+/// not re-alerted every window expiry while it is still waiting on the user.
+fn last_alert() -> &'static Mutex<HashMap<String, AlertStamp>> {
+    static LAST: OnceLock<Mutex<HashMap<String, AlertStamp>>> = OnceLock::new();
     LAST.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Minimum gap between alerts for the same session. 20s is plenty to pull
-/// the user back; anything shorter just re-floods them as the prompt re-renders.
-const ALERT_WINDOW: Duration = Duration::from_secs(20);
+/// Same-prompt redraws within this window are deduplicated. 300s is long
+/// enough that an ignored approval gets one (quiet) nudge later, while a fresh
+/// approval (different prefix) always passes immediately.
+const ALERT_WINDOW: Duration = Duration::from_secs(300);
 
 /// How much of the (tail of the) text we surface as the notification snippet.
 const SNIPPET_LEN: usize = 240;
@@ -180,22 +197,6 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         raw_tool.to_string()
     };
 
-    // Throttle by session. This is the critical guard that prevents the emit +
-    // OS-notification storm that previously froze the whole app when a coding
-    // agent re-rendered its prompt on every frame. Keying by session (rather
-    // than (session, tool)) also dedupes the case where `attribute_tool` flips
-    // between "Claude Code" and the generic "Coding Agent" across redraws.
-    {
-        let mut last = last_alert().lock().unwrap();
-        let now = Instant::now();
-        if let Some(prev) = last.get(session_id) {
-            if now.saturating_duration_since(*prev) < ALERT_WINDOW {
-                return;
-            }
-        }
-        last.insert(session_id.to_string(), now);
-    }
-
     // Surface the TAIL as the notification snippet — that is where the prompt the
     // user is actually looking at usually lands. Take whole lines (up to 6, capped
     // by SNIPPET_LEN chars) instead of a raw char slice so we never land on a
@@ -225,6 +226,26 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
     };
     if snippet.trim().is_empty() {
         return;
+    }
+
+    // Throttle by (session, prompt-prefix). This is the critical guard that
+    // prevents the emit + OS-notification storm that previously froze the whole
+    // app when a coding agent re-rendered its prompt on every frame. The prefix
+    // comparison means:
+    //   • same approval re-rendering (TUI redraw, spinner, cursor) → deduped,
+    //   • a genuinely new approval → let through immediately, never swallowed
+    //     inside a previous alert's window, so it doesn't feel slow or silent.
+    let prefix: String = snippet.chars().take(60).collect();
+    {
+        let mut last = last_alert().lock().unwrap();
+        let now = Instant::now();
+        let dup = last.get(session_id).map_or(false, |st| {
+            now.saturating_duration_since(st.at) < ALERT_WINDOW && st.prefix == prefix
+        });
+        if dup {
+            return;
+        }
+        last.insert(session_id.to_string(), AlertStamp { at: now, prefix });
     }
 
     let ts = SystemTime::now()
