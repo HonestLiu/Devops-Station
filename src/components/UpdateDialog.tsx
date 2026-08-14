@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Download, Loader2, RefreshCw } from "lucide-react";
 
 import { Bar, Button, Dialog } from "@/components/ui";
+import { Markdown } from "@/components/Markdown";
 import { useT } from "@/i18n";
 import { useUpdaterStore } from "@/store/useUpdaterStore";
 import { installUpdate } from "@/lib/updater";
@@ -63,9 +64,10 @@ export function UpdateDialog() {
           {update.body && (
             <div>
               <div className="mb-1 text-[12px] font-medium text-subtle">{t("update.notes")}</div>
-              <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-bg p-3 text-[12px] leading-relaxed text-muted">
-                {update.body.trim()}
-              </pre>
+              <Markdown
+                source={update.body.trim()}
+                className="max-h-52 overflow-auto rounded-lg border border-border bg-bg p-3 text-[12px] leading-relaxed text-muted"
+              />
             </div>
           )}
 
