@@ -23,8 +23,11 @@ jobs:
           - platform: 'windows-latest'       # Windows (.msi / .exe)
           - platform: 'macos-14'             # macOS Apple Silicon (aarch64)
             args: '--target aarch64-apple-darwin'
-          - platform: 'macos-13'             # macOS Intel (x86_64)
-            args: '--target x86_64-apple-darwin'
+
+    # 注：macos-13 (Intel x86_64) 已从矩阵移除 —— GitHub 正在退役该机型，
+    # 其 runner 长期处于 “Waiting for a runner” 排队、永远拿不到机器。
+    # 如需 Intel Mac 支持，把上面的 args 改为 `--target universal-apple-darwin`
+    # （在 macos-14 上编译出同时含两种架构的通用二进制）即可。
 
     runs-on: ${{ matrix.platform }}
 
@@ -83,7 +86,7 @@ jobs:
 
             ### 下载
             - **Windows**：`.msi`（推荐）或绿色版 `.exe`
-            - **macOS**：`.dmg`（Apple Silicon / Intel 两个架构）
+            - **macOS**：`.dmg`（Apple Silicon）
             - **Linux**：`.deb` / `.AppImage` / `.rpm`
 
             > 当前未配置代码签名：Windows 安装时会有 SmartScreen 提示；macOS 需右键「打开」或在终端执行
