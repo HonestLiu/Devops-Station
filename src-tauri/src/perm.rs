@@ -197,32 +197,32 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         raw_tool.to_string()
     };
 
-    // Surface the TAIL as the notification snippet — that is where the prompt the
-    // user is actually looking at usually lands. Take whole lines (up to 6, capped
-    // by SNIPPET_LEN chars) instead of a raw char slice so we never land on a
-    // truncated word like "…mmand" in the OS toast.
+    // Surface the HEAD of the prompt as the notification snippet — the *head* is
+    // the stable part of an agent-CLI approval prompt (question + command) and
+    // doesn't move when the TUI re-renders cursor/option-highlight on its tail.
+    // Take whole lines (up to 6, capped by SNIPPET_LEN chars) instead of a raw
+    // char slice so we never land on a truncated word like "…mmand" in the OS
+    // toast. We deliberately take from the *front* of the prompt so the snippet
+    // is stable across redraws — a sliding tail would produce a different snippet
+    // every frame and the prefix-based dedup would miss every fire.
     let snippet: String = {
         let lines: Vec<&str> = cleaned
             .lines()
             .map(str::trim_end)
             .filter(|l| !l.trim().is_empty())
             .collect();
-        if lines.is_empty() {
-            String::new()
-        } else {
-            let mut buf = String::new();
-            let max = SNIPPET_LEN;
-            for line in lines.iter().rev().take(6) {
-                if !buf.is_empty() {
-                    buf.insert(0, '\n');
-                }
-                buf.insert_str(0, line);
-                if buf.chars().count() >= max {
-                    break;
-                }
+        let max = SNIPPET_LEN;
+        let mut buf = String::new();
+        for line in lines.iter().take(6) {
+            if !buf.is_empty() {
+                buf.push('\n');
             }
-            buf
+            buf.push_str(line);
+            if buf.chars().count() >= max {
+                break;
+            }
         }
+        buf
     };
     if snippet.trim().is_empty() {
         return;

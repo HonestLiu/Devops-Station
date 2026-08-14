@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellRing, ArrowRight, X, ShieldCheck } from "lucide-react";
+import { ArrowRight, Bell, BellRing, Check, ShieldCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useT, type TKey } from "@/i18n";
 import { usePermStore, type PermItem } from "@/store/usePermStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { approveSession } from "@/lib/quickApprove";
 
 function timeAgo(
   t: (key: TKey, params?: Record<string, string | number>) => string,
@@ -28,6 +29,13 @@ function Row({ item }: { item: PermItem }) {
     dismiss(item.id);
   };
 
+  const approve = () => {
+    // Send Enter to the waiting session (confirms the highlighted "Yes" option),
+    // then drop the entry so the bell reflects it as handled.
+    void approveSession(item.sessionId);
+    dismiss(item.id);
+  };
+
   return (
     <div className="group flex flex-col gap-1 rounded-lg border border-border/70 bg-elevated px-2.5 py-2">
       <div className="flex items-center gap-1.5">
@@ -45,12 +53,21 @@ function Row({ item }: { item: PermItem }) {
       <p className="line-clamp-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-muted">
         {item.snippet}
       </p>
-      <button
-        onClick={jump}
-        className="mt-0.5 flex items-center justify-center gap-1 rounded-md bg-accent/15 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25"
-      >
-        {t("perm.jumpToTerminal")} <ArrowRight size={12} />
-      </button>
+      <div className="mt-0.5 grid grid-cols-2 gap-1.5">
+        <button
+          onClick={approve}
+          title={t("perm.approveHint")}
+          className="flex items-center justify-center gap-1 rounded-md bg-accent/15 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25"
+        >
+          <Check size={12} /> {t("perm.approve")}
+        </button>
+        <button
+          onClick={jump}
+          className="flex items-center justify-center gap-1 rounded-md bg-hover py-1 text-[11px] font-medium text-muted transition-colors hover:bg-border hover:text-fg"
+        >
+          {t("perm.jumpToTerminal")} <ArrowRight size={12} />
+        </button>
+      </div>
     </div>
   );
 }

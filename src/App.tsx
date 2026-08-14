@@ -39,6 +39,8 @@ import { usePermStore } from "./store/usePermStore";
 import { useContextMenu, type MenuItem } from "./store/useContextMenu";
 import { useT } from "./i18n";
 import { cn } from "./lib/utils";
+import { approveWaitingNow } from "./lib/quickApprove";
+import { matchesShortcut } from "./lib/shortcut";
 import type { PermRequest, Tab } from "./lib/types";
 
 function PageContent({ page }: { page: Page }) {
@@ -223,6 +225,24 @@ export default function App() {
       void un.then((fn) => fn());
     };
   }, []);
+
+  // Quick approval shortcut (configurable in Settings → Shortcuts): sends Enter
+  // to the session that is currently waiting on an agent CLI approval prompt
+  // (Claude Code, Codex, …), confirming the highlighted "Yes" option without
+  // leaving the current view. Capture phase + stopPropagation so the keystroke
+  // never reaches the terminal.
+  const approveShortcut = useAppStore((s) => s.settings.approveShortcut);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (matchesShortcut(e, approveShortcut)) {
+        e.preventDefault();
+        e.stopPropagation();
+        void approveWaitingNow();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [approveShortcut]);
 
   // Global command palette shortcut: Cmd+K on macOS, Ctrl+K on Windows/Linux.
   // Registered in the CAPTURE phase and stopPropagation'd so the keystroke never

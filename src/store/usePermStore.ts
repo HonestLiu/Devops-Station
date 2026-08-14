@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { isWaitingForInput } from "@/ai/errorScan";
+
 export interface PermItem {
   id: string;
   sessionId: string;
@@ -29,6 +31,17 @@ export const usePermStore = create<PermState>((set, get) => ({
   unseen: 0,
 
   push: (p) => {
+    // Frontend gate: drop anything that doesn't look like a real interactive
+    // approval prompt. The Rust `perm` scanner is intentionally broad (so it
+    // catches Claude Code, Codex, Aider, … alike), which means it can also
+    // match Claude Code's startup release-notes / changelog banner ("|" table
+    // rows, `Documented `claude remote-control`` etc.) and produce noisy
+    // "Approval needed" toasts. The INTERACTIVE_RE test here is the *strict*
+    // signal of "the program is blocked on the user" — apply it so release
+    // notes never reach the bell or the OS toast.
+    if (!isWaitingForInput(p.snippet)) {
+      return;
+    }
     const now = Date.now();
     const live = get().items.filter((i) => now - i.ts < EXPIRE_MS);
 

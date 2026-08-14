@@ -63,6 +63,25 @@ pub fn register_aumid() {
     }
 }
 
+/// Strip C0 control characters before handing the text to the WinRT toast
+/// pipeline. notify-rust 4.x *already* XML-escapes the text internally when
+/// building the toast XML payload, so doing `&`/`<`/`>` escaping here would
+/// double-escape and surface `&amp;apos;` literally in the toast. We therefore
+/// only strip the C0 control codes that are illegal in XML 1.0 (BEL, backspace,
+/// stray nulls, …) and leave the printable characters — including `&`, `<`,
+/// `>` and `'` — for notify-rust to handle.
+///
+/// Why this exists at all: raw terminal output can carry BEL/`\x07`/BS/`\x08`
+/// that survive `stripAnsi` in `perm.rs`; the WinRT toast builder raises
+/// HRESULT 0xC00CE508 ("invalid characters in text") when it sees them,
+/// causing every approval notification to fall back to the slower Tauri
+/// plugin path. Filtering here keeps the attributed toast working.
+fn sanitize_text(s: &str) -> String {
+    s.chars()
+        .filter(|&c| (c as u32) >= 0x20 || c == '\n' || c == '\r')
+        .collect()
+}
+
 /// Raise an OS notification, attributed to this app when our AUMID is registered.
 ///
 /// If the AUMID isn't ready we still send the toast without a custom app_id so it
@@ -70,6 +89,8 @@ pub fn register_aumid() {
 /// WinRT call errors for any reason we fall back to the Tauri plugin. We never
 /// want a permission prompt to go completely unnoticed.
 pub fn show(app: &tauri::AppHandle, title: &str, body: &str) {
+    let title = sanitize_text(title);
+    let body = sanitize_text(body);
     #[cfg(windows)]
     {
         if AUMID_READY.load(Ordering::SeqCst) {
@@ -77,10 +98,10 @@ pub fn show(app: &tauri::AppHandle, title: &str, body: &str) {
             // Action Center). With a valid AUMID, WinRT failures are real
             // errors, so fall back to the plugin on Err.
             let mut n = notify_rust::Notification::new();
-            n.summary(title).body(body).app_id(APP_AUMID);
+            n.summary(&title).body(&body).app_id(APP_AUMID);
             if let Err(e) = n.show() {
                 eprintln!("[notify] attributed toast failed: {e:?}; falling back to plugin");
-                try_plugin(app, title, body);
+                try_plugin(app, &title, &body);
             }
         } else {
             // No Start Menu shortcut carrying our AUMID → a WinRT toast without
@@ -89,12 +110,12 @@ pub fn show(app: &tauri::AppHandle, title: &str, body: &str) {
             // plugin, whose WinRT path may still surface, and at least errors
             // loudly instead of dropping.
             eprintln!("[notify] AUMID not ready (no Start Menu shortcut); routing toast to Tauri plugin");
-            try_plugin(app, title, body);
+            try_plugin(app, &title, &body);
         }
     }
     #[cfg(not(windows))]
     {
-        try_plugin(app, title, body);
+        try_plugin(app, &title, &body);
     }
 }
 

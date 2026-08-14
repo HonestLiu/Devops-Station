@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { Check, Download, RotateCcw, Type, Upload } from "lucide-react";
 
@@ -6,6 +6,7 @@ import { Button, Checkbox, Field, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { profile } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
+import { formatShortcut } from "@/lib/shortcut";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
@@ -22,6 +23,63 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Click-to-record shortcut input: while recording, captures the next modifier
+ * combination the user presses and reports it as "ctrl+alt+shift+meta+Code".
+ * Requires at least one modifier so a bare key can never be bound.
+ */
+function ShortcutRecorder({
+  value,
+  onChange,
+  recordHint,
+  pressHint,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  recordHint: string;
+  pressHint: string;
+}) {
+  const [recording, setRecording] = useState(false);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === "Escape") {
+        setRecording(false);
+        return;
+      }
+      if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) return;
+      const mods: string[] = [];
+      if (e.ctrlKey) mods.push("ctrl");
+      if (e.altKey) mods.push("alt");
+      if (e.shiftKey) mods.push("shift");
+      if (e.metaKey) mods.push("meta");
+      onChange([...mods, e.code].join("+"));
+      setRecording(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording, onChange]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setRecording((v) => !v)}
+      title={recording ? undefined : recordHint}
+      className={cn(
+        "no-drag flex h-9 w-60 items-center justify-center rounded-lg border font-mono text-[12px] transition-colors",
+        recording
+          ? "border-accent bg-accent/10 text-accent"
+          : "border-border bg-bg text-fg hover:bg-hover",
+      )}
+    >
+      {recording ? pressHint : formatShortcut(value)}
+    </button>
   );
 }
 
@@ -391,6 +449,22 @@ export function Settings() {
                 {t("settings.browse")}
               </Button>
             </div>
+          </Field>
+        </Section>
+
+        {/* Shortcuts */}
+        <Section title={t("settings.shortcuts")}>
+          <Field
+            label={t("settings.approveShortcut")}
+            hint={t("settings.approveShortcutHint")}
+            className="sm:col-span-2"
+          >
+            <ShortcutRecorder
+              value={settings.approveShortcut}
+              onChange={(v) => set("approveShortcut", v)}
+              recordHint={t("settings.shortcutRecordHint")}
+              pressHint={t("settings.shortcutPress")}
+            />
           </Field>
         </Section>
 

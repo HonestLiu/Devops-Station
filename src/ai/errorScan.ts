@@ -26,7 +26,7 @@ export function stripAnsi(s: string): string {
  * still surface normally once the prompt scrolls out of the tail.
  */
 const INTERACTIVE_RE =
-  /(quick\s+safety\s+check|is\s+this\s+a\s+project\s+you\s+(?:created|trust)|accessing\s+workspace|security\s+guide|requires\s+approval|do\s+you\s+want\s+to\s+proceed|enter\s+to\s+confirm[\s\S]{0,40}cancel|to\s+confirm\b|press\s+(?:any\s+)?key|^\s*\u276F\s*\d+\.|\[Y\/n\]|\(y\/N\)|\[y\/N\]|do\s+you\s+(?:want|trust|wish)|are\s+you\s+sure)/im;
+  /(quick\s+safety\s+check|is\s+this\s+a\s+project\s+you\s+(?:created|trust)|accessing\s+workspace|security\s+guide|requires\s+approval|do\s+you\s+want\s+to\s+proceed|enter\s+to\s+confirm[\s\S]{0,40}cancel|to\s+confirm\b|press\s+(?:any\s+)?key|^\s*\u276F\s*\d+\.|\[Y\/n\]|\(y\/N\)|\[y\/N\]|do\s+you\s+(?:want|trust|wish)|are\s+you\s+sure|would\s+you\s+like\s+to\s+(?:run|execute|perform|make)|yes,?\s+proceed\s*\(\s*y\s*\)|tell\s+(?:codex|the\s+agent)\s+what\s+to\s+do\s+differently)/im;
 
 /** True when the text tail looks like an interactive prompt / agent banner. */
 export function isBenignContext(text: string): boolean {

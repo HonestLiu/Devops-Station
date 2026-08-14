@@ -38,6 +38,8 @@ export interface AppSettings {
   ai: AISettings;
   /** Families of user-imported fonts, re-registered at startup. */
   importedFonts: string[];
+  /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
+  approveShortcut: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -62,6 +64,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   jlinkPath: "",
   sidebarCollapsed: false,
   importedFonts: [],
+  /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
+  approveShortcut: "ctrl+shift+Enter",
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",

@@ -391,38 +391,40 @@ export function Terminal(props: TerminalProps) {
           } else {
             term.write(bytes);
           }
-          // Proactive error hint: scan decoded output for high-signal errors and
-          // offer a dismissible "let AI fix it?" prompt. Gated by Settings → AI.
+          // (A) Waiting-for-input detection — ALWAYS on (not gated by the AI
+          // error-hint setting): it drives the tab "waiting" badge, the bell
+          // panel and the Ctrl+Shift+Enter quick-approval shortcut, all of
+          // which must work even when the user disabled AI error hints.
+          try {
+            const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+            if (text) {
+              recentRef.current = (recentRef.current + text).slice(-2000);
+              const waiting = isWaitingForInput(recentRef.current);
+              if (waiting !== waitingRef.current) {
+                waitingRef.current = waiting;
+                useSessionStore.getState().setWaiting(sessionId, waiting);
+              }
+            }
+          } catch {
+            /* decode/scan must never break the terminal stream */
+          }
+          // (B) Proactive error hint: scan decoded output for high-signal errors
+          // and offer a dismissible "let AI fix it?" prompt. Gated by Settings → AI.
           if (useAppStore.getState().settings.ai.errorHints) {
             try {
-              const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-              if (text) {
-                recentRef.current = (recentRef.current + text).slice(-2000);
-                const hit = scanForError(recentRef.current);
-                if (hit) {
-                  useAiSuggestion.getState().offer({
-                    sessionId,
-                    label: hit.label,
-                    snippet: hit.snippet,
-                  });
-                } else if (isBenignContext(recentRef.current)) {
-                  // An interactive prompt / agent banner is on screen (e.g.
-                  // Claude Code's "trust this folder?" confirm). Drop any
-                  // sticky "let AI fix" hint so a transient false positive from
-                  // the startup text can never linger over the dialog.
-                  useAiSuggestion.getState().clear();
-                }
-                // Surface a "waiting for input" hint when an agent CLI (or any
-                // interactive prompt) is blocked on the user — so a Claude Code
-                // approval request doesn't go unnoticed. Only act on transitions
-                // to avoid thrashing the shared store on every output chunk.
-                // The OS toast is fired by the Rust `perm` scanner (which has its
-                // own dedup); firing again here would duplicate that notification.
-                const waiting = isWaitingForInput(recentRef.current);
-                if (waiting !== waitingRef.current) {
-                  waitingRef.current = waiting;
-                  useSessionStore.getState().setWaiting(sessionId, waiting);
-                }
+              const hit = scanForError(recentRef.current);
+              if (hit) {
+                useAiSuggestion.getState().offer({
+                  sessionId,
+                  label: hit.label,
+                  snippet: hit.snippet,
+                });
+              } else if (isBenignContext(recentRef.current)) {
+                // An interactive prompt / agent banner is on screen (e.g.
+                // Claude Code's "trust this folder?" confirm). Drop any
+                // sticky "let AI fix" hint so a transient false positive from
+                // the startup text can never linger over the dialog.
+                useAiSuggestion.getState().clear();
               }
             } catch {
               /* decode/scan must never break the terminal stream */
