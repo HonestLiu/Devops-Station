@@ -369,6 +369,7 @@ export const en: Record<keyof typeof zh, string> = {
   // --- serial page + BLE panel ----------------------------------------------
   "serialPage.title": "Serial Terminal",
   "serialPage.subtitle": "Pick a serial or Bluetooth device to open a quick debug session",
+  "serialPage.openDevices": "Open devices",
   "serialPage.serialTab": "Serial",
   "serialPage.bleTab": "Bluetooth",
   "serialPage.serialSettings": "Serial settings",

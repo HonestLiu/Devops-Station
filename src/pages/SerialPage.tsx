@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Cable, Usb, Bluetooth, Scan } from "lucide-react";
+import { Cable, Usb, Bluetooth, Scan, X } from "lucide-react";
 
 import { Button, Field, Select } from "@/components/ui";
 import { PortPicker } from "@/components/serial/PortPicker";
@@ -50,6 +50,16 @@ export function SerialPage() {
   const [flowControl, setFlowControl] = useState<SerialOpenConfig["flowControl"]>("none");
   const [opening, setOpening] = useState(false);
 
+  // Open serial/BLE sessions — the launcher doubles as a multi-device manager so
+  // you can jump back to a connected port or close it without leaving the page.
+  const tabs = useTabsStore((s) => s.tabs);
+  const openDevices = useMemo(
+    () => tabs.filter((tab) => tab.kind === "serial" || tab.kind === "ble"),
+    [tabs],
+  );
+  const setActive = useTabsStore((s) => s.setActive);
+  const closeTab = useTabsStore((s) => s.closeTab);
+
   useEffect(() => {
     let alive = true;
     serial
@@ -98,6 +108,35 @@ export function SerialPage() {
       </div>
 
       <div className="mx-auto flex max-w-4xl flex-col gap-5">
+        {/* Open-device chips: jump to or close a connected serial/BLE session. */}
+        {openDevices.length > 0 && (
+          <div className="card flex flex-wrap items-center gap-2 p-3">
+            <span className="text-[12px] font-medium text-subtle">{t("serialPage.openDevices")}</span>
+            {openDevices.map((dev) => (
+              <span
+                key={dev.id}
+                className="flex items-center gap-1 rounded-full bg-accent/15 py-0.5 pl-2.5 pr-1 text-[12px] text-fg ring-1 ring-inset ring-accent/25"
+              >
+                <button
+                  onClick={() => setActive(dev.id)}
+                  className="flex items-center gap-1.5"
+                  title={dev.title}
+                >
+                  <Cable size={12} className="shrink-0 text-accent" />
+                  <span className="max-w-[160px] truncate">{dev.title}</span>
+                </button>
+                <button
+                  onClick={() => void closeTab(dev.id)}
+                  className="rounded-full p-0.5 text-subtle transition-colors hover:bg-border hover:text-fg"
+                  aria-label={t("tabs.close")}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Transport tabs */}
         <div className="card p-1">
           <div className="flex items-center gap-1">

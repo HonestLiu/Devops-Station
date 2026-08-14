@@ -38,6 +38,48 @@ const NAV: NavItem[] = [
   { id: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
+/**
+ * Map a connection-tab kind to the sidebar nav item it belongs to. This is
+ * what keeps the sidebar highlight in sync with whichever tab is currently
+ * active: an SFTP tab lights up "SFTP", a serial/BLE tab "Serial", a J-Link tab
+ * "J-Link", and any host-backed terminal (ssh/local/wsl/frp) highlights "Hosts".
+ * Page-only navs (dashboard/monitoring/settings) never own a tab, so they map to
+ * nothing.
+ */
+function navForTab(kind: string): Page | undefined {
+  switch (kind) {
+    case "sftp":
+      return "sftp";
+    case "serial":
+    case "ble":
+      return "serial";
+    case "jlink":
+      return "jlink";
+    case "ssh":
+    case "local":
+    case "wsl":
+    case "frp":
+      return "hosts";
+    default:
+      return undefined;
+  }
+}
+
+/** Find an already-open tab that belongs to the given sidebar nav item. */
+function findTabForNav(navId: Page): string | undefined {
+  const tabs = useTabsStore.getState().tabs;
+  switch (navId) {
+    case "sftp":
+      return tabs.find((t) => t.kind === "sftp")?.id;
+    case "serial":
+      return tabs.find((t) => t.kind === "serial" || t.kind === "ble")?.id;
+    case "jlink":
+      return tabs.find((t) => t.kind === "jlink")?.id;
+    default:
+      return undefined;
+  }
+}
+
 export function Sidebar() {
   const t = useT();
   const page = useAppStore((s) => s.page);
@@ -50,16 +92,52 @@ export function Sidebar() {
 
   const focusPage = useTabsStore((s) => s.focusPage);
   const openJlink = useTabsStore((s) => s.openJlink);
+  const setActive = useTabsStore((s) => s.setActive);
+  // The active tab drives the sidebar highlight: when a connection tab is open
+  // the matching nav item lights up, so the sidebar and the current tab stay
+  // in lock-step. `activeId` is the only thing that changes `navPage` (a tab's
+  // kind is fixed once created), so subscribing to it is enough — and it avoids
+  // re-rendering the sidebar on every tab status/title update.
+  const activeId = useTabsStore((s) => s.activeId);
+  const activeTabKind = activeId
+    ? useTabsStore.getState().tabs.find((t) => t.id === activeId)?.kind
+    : undefined;
+  const navPage: Page | undefined = activeTabKind ? navForTab(activeTabKind) : page;
 
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const go = (id: Page) => {
-    // J-Link opens as a persistent tab (its panel state survives tab
-    // switches) rather than a page that would reset when you navigate away.
+    // J-Link is a single persistent tool tab — reuse it if already open.
     if (id === "jlink") {
+      const existing = findTabForNav("jlink");
+      if (existing) {
+        setActive(existing);
+        return;
+      }
       void openJlink();
       return;
     }
+    // SFTP tabs are per-host and individually listed in the TabBar; from the
+    // sidebar, jump to the first open one so the click still does something.
+    if (id === "sftp") {
+      const existing = findTabForNav("sftp");
+      if (existing) {
+        setActive(existing);
+        return;
+      }
+    }
+    // Serial: the launcher page IS the "add another device" entry point. Always
+    // open it instead of refocusing the first tab, so after connecting one port
+    // you can still go back and connect a second/third. Open serial/BLE sessions
+    // stay listed in the TabBar (and in the launcher's device strip) and are
+    // clickable there.
+    if (id === "serial") {
+      setPage("serial");
+      focusPage();
+      return;
+    }
+    // Page-only navs (and the launcher pages for sftp/serial when no tab is open
+    // yet) switch back to the page view and drop any active tab.
     setPage(id);
     focusPage();
   };
@@ -93,7 +171,7 @@ export function Sidebar() {
           </p>
         )}
         {NAV.map((item) => {
-          const active = page === item.id;
+          const active = navPage === item.id;
           const Icon = item.icon;
           const label = t(item.labelKey);
           return (

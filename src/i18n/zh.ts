@@ -378,6 +378,7 @@ export const zh = {
   // --- serial page + BLE panel ----------------------------------------------
   "serialPage.title": "串口终端",
   "serialPage.subtitle": "选择串口或蓝牙设备，打开一个临时调试会话",
+  "serialPage.openDevices": "已打开的设备",
   "serialPage.serialTab": "串口",
   "serialPage.bleTab": "蓝牙",
   "serialPage.serialSettings": "串口设置",
