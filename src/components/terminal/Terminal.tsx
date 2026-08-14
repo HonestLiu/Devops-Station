@@ -424,7 +424,13 @@ export function Terminal(props: TerminalProps) {
           if (aiSettings.errorHints || aiSettings.autoDiagnose) {
             try {
               const hit = scanForError(recentRef.current);
-              if (hit && !isBenignContext(recentRef.current)) {
+              // High-signal shell errors (mistyped command, permission denied,
+              // missing file) always surface, even if an interactive-prompt marker
+              // (PSReadLine "did you mean" block, agent confirm dialog) is also on
+              // screen — isBenignContext would otherwise silence them and the user
+              // would see nothing, which is exactly the PowerShell "no reaction"
+              // report. Softer/generic errors still respect the benign guard.
+              if (hit && (!isBenignContext(recentRef.current) || hit.highSignal)) {
                 if (aiSettings.autoDiagnose) {
                   maybeAutoDiagnose(sessionId, hit, recentRef.current);
                 } else {

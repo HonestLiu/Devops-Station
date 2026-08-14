@@ -553,6 +553,13 @@ export function Settings() {
                 label={t("settings.errorHints")}
               />
             </Row>
+            <Row title={t("settings.autoDiagnose")} desc={t("settings.autoDiagnoseHint")}>
+              <Switch
+                checked={settings.ai.autoDiagnose}
+                onChange={(v) => setAi("autoDiagnose", v)}
+                label={t("settings.autoDiagnose")}
+              />
+            </Row>
             <Row title={t("settings.useKb")}>
               <Switch
                 checked={settings.ai.useKnowledgeBase}

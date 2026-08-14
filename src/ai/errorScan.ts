@@ -8,8 +8,14 @@
  * cheap even on a busy terminal.
  */
 
+// Matches two classes of terminal control bytes:
+//  1. CSI sequences  ESC[ … <final byte>   (SGR colours, cursor moves, …)
+//  2. OSC sequences  ESC] … BEL|ST          (Windows Terminal / PowerShell 7
+//     "shell integration" markers like ESC]633;A…ESC\, which our old regex left
+//     behind and which then broke the error-text match on real PowerShell)
+//  3. standalone ST (ESC\) leftovers.
 const ANSI_RE =
-  /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-PRZcf-ntqry=><~]/g;
+  /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-PRZcf-ntqry=><~]|\u001b\][^\u001b\u0007]*(?:\u001b\\|\u0007)/g;
 
 export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, "");
@@ -50,21 +56,29 @@ export function isWaitingForInput(text: string): boolean {
 interface Rule {
   re: RegExp;
   label: string;
+  /**
+   * High-signal, unambiguous shell errors (mistyped command, permission denied,
+   * missing file). These MUST surface a diagnosis even when an interactive prompt
+   * marker (e.g. PowerShell's PSReadLine "did you mean" suggestion block, an
+   * agent CLI's confirm dialog) is also on screen — such markers would otherwise
+   * silence the hint via isBenignContext and the operator would see nothing.
+   */
+  highSignal?: boolean;
 }
 
 // Ordered: more specific first so "command not found" wins over a generic match.
 const RULES: Rule[] = [
-  { re: /(?:bash|sh|zsh|fish):\s+\S+:\s+command not found/i, label: "Command not found" },
+  { re: /(?:bash|sh|zsh|fish):\s+\S+:\s+command not found/i, label: "Command not found", highSignal: true },
   // PowerShell / cmd.exe "command not found" variants. PowerShell says the term
   // "is not recognized as the name of a cmdlet, function, script file, or
   // executable program"; cmd.exe says "'X' is not recognized as an internal or
   // external command". These are the most common "I typed a wrong command" cases
   // on Windows terminals and were previously missed, so auto-diagnose never fired.
-  { re: /(?:is\s+)?not recognized as (?:the name of )?a cmdlet, function, script file, or executable program/i, label: "Command not found" },
-  { re: /not recognized as an internal or external command/i, label: "Command not found" },
-  { re: /command not found/i, label: "Command not found" },
-  { re: /\bpermission denied\b/i, label: "Permission denied" },
-  { re: /no such file or directory/i, label: "File not found" },
+  { re: /(?:is\s+)?not recognized as (?:the name of )?a cmdlet, function, script file, or executable program/i, label: "Command not found", highSignal: true },
+  { re: /not recognized as an internal or external command/i, label: "Command not found", highSignal: true },
+  { re: /command not found/i, label: "Command not found", highSignal: true },
+  { re: /\bpermission denied\b/i, label: "Permission denied", highSignal: true },
+  { re: /no such file or directory/i, label: "File not found", highSignal: true },
   { re: /(?:connection|connect) refused/i, label: "Connection refused" },
   { re: /no route to host/i, label: "No route to host" },
   { re: /(?:connection )?timed out/i, label: "Connection timed out" },
@@ -88,6 +102,8 @@ const RULES: Rule[] = [
 export interface ErrorHit {
   label: string;
   snippet: string;
+  /** True for unambiguous shell errors that must always surface (see Rule.highSignal). */
+  highSignal: boolean;
 }
 
 /**
@@ -95,7 +111,11 @@ export interface ErrorHit {
  * matching line (trimmed, capped) with a short human label, or null.
  */
 export function scanForError(text: string): ErrorHit | null {
-  const clean = stripAnsi(text);
+  // Strip ANSI/OSC control bytes, then drop bare carriage returns: PSReadLine
+  // re-renders the error line with "\r" cursor-returns, which would otherwise
+  // split "not recognized as a cmdlet" into "not recognized\r as a cmdlet" and
+  // defeat the substring regex on real Windows PowerShell output.
+  const clean = stripAnsi(text).replace(/\r/g, "");
   // Only inspect the tail — errors appear at the end of the stream and this
   // keeps the per-chunk cost bounded.
   const tail = clean.length > 800 ? clean.slice(-800) : clean;
@@ -103,9 +123,9 @@ export function scanForError(text: string): ErrorHit | null {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    for (const { re, label } of RULES) {
+    for (const { re, label, highSignal } of RULES) {
       if (re.test(line)) {
-        return { label, snippet: line.slice(0, 200) };
+        return { label, snippet: line.slice(0, 200), highSignal: !!highSignal };
       }
     }
   }
