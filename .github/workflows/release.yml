@@ -61,7 +61,8 @@ jobs:
             librsvg2-dev \
             patchelf \
             libgtk-3-dev \
-            libssl-dev
+            libssl-dev \
+            libudev-dev
 
       - name: Install frontend dependencies
         run: npm ci
