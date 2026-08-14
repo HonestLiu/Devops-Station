@@ -6,6 +6,7 @@ import {
   Copy,
   FolderOpen,
   Globe,
+  Hourglass,
   Microchip,
   MonitorSmartphone,
   RefreshCw,
@@ -17,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import type { Tab, TabKind } from "@/lib/types";
 
@@ -52,6 +54,12 @@ export function TabBar() {
   const closeTab = useTabsStore((s) => s.closeTab);
   const duplicateTab = useTabsStore((s) => s.duplicateTab);
   const reconnect = useTabsStore((s) => s.reconnect);
+  const waitingBySession = useSessionStore((s) => s.waitingBySession);
+
+  const isTabWaiting = (tab: Tab): boolean => {
+    if (tab.sessionId && waitingBySession[tab.sessionId]) return true;
+    return !!tab.panes?.some((p) => p.sessionId && waitingBySession[p.sessionId]);
+  };
 
   const showCtx = useContextMenu((s) => s.show);
   const closeCtx = useContextMenu((s) => s.close);
@@ -135,6 +143,11 @@ export function TabBar() {
               className={cn("shrink-0", active ? "text-accent" : "text-subtle")}
             />
             <span className="flex-1 truncate">{tab.title}</span>
+            {isTabWaiting(tab) && (
+              <span title={t("tabs.waitingInput")} className="flex shrink-0 items-center">
+                <Hourglass size={12} className="animate-pulse text-warning" />
+              </span>
+            )}
             <span
               className={cn(
                 "h-1.5 w-1.5 shrink-0 rounded-full",

@@ -18,6 +18,7 @@ import { isMac } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { NotificationBell } from "./NotificationBell";
 import { AboutDialog } from "./AboutDialog";
 
 interface NavItem {
@@ -66,8 +67,8 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex shrink-0 flex-col overflow-hidden border-r border-border/70 bg-surface transition-[width] duration-200",
-        collapsed ? "w-14" : "w-56",
+        "flex shrink-0 flex-col border-r border-border/70 bg-surface transition-[width] duration-200",
+        collapsed ? "w-14 overflow-hidden" : "w-56 overflow-visible",
       )}
     >
       {/* Brand / drag region */}
@@ -117,8 +118,8 @@ export function Sidebar() {
 
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
-      {/* Bottom cluster: utility actions + connection status + collapse toggle */}
-      <div className="flex flex-col gap-0.5 border-t border-border/70 px-2 py-2">
+      {/* Bottom cluster: command palette + grouped icon toolbar */}
+      <div className="flex flex-col gap-1.5 border-t border-border/70 px-2 py-2">
         <button
           onClick={() => togglePalette()}
           title={collapsed ? t("nav.commandPalette") : undefined}
@@ -138,34 +139,33 @@ export function Sidebar() {
           )}
         </button>
 
-        <button
-          onClick={() => setAboutOpen(true)}
-          title={collapsed ? t("nav.about") : undefined}
+        {/* Grouped icon toolbar: collapse · about · approval bell */}
+        <div
           className={cn(
-            "no-drag flex items-center rounded-lg text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg",
-            collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
+            "grid select-none rounded-lg bg-bg/50 p-1",
+            collapsed ? "grid-cols-1" : "grid-cols-3 justify-items-center",
           )}
         >
-          <Info size={16} strokeWidth={2} className="shrink-0" />
-          {!collapsed && t("nav.about")}
-        </button>
-
-        {/* Collapse toggle */}
-        <button
-          onClick={() => void updateSetting("sidebarCollapsed", !collapsed)}
-          title={collapsed ? t("nav.expand") : t("nav.collapse")}
-          className={cn(
-            "no-drag mt-1 flex items-center rounded-lg border-t border-border/40 text-[13px] text-muted transition-colors hover:bg-hover hover:text-fg",
-            collapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-2",
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen size={16} strokeWidth={2} className="shrink-0" />
-          ) : (
-            <PanelLeftClose size={16} strokeWidth={2} className="shrink-0" />
-          )}
-          {!collapsed && t("nav.collapse")}
-        </button>
+          <button
+            onClick={() => void updateSetting("sidebarCollapsed", !collapsed)}
+            title={collapsed ? t("nav.expand") : t("nav.collapse")}
+            className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-subtle transition-colors hover:bg-hover hover:text-fg"
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={15} strokeWidth={2} />
+            ) : (
+              <PanelLeftClose size={15} strokeWidth={2} />
+            )}
+          </button>
+          <button
+            onClick={() => setAboutOpen(true)}
+            title={t("nav.about")}
+            className="no-drag flex h-7 w-7 items-center justify-center rounded-md text-subtle transition-colors hover:bg-hover hover:text-fg"
+          >
+            <Info size={15} strokeWidth={2} />
+          </button>
+          <NotificationBell />
+        </div>
       </div>
     </aside>
   );

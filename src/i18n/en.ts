@@ -57,11 +57,22 @@ export const en: Record<keyof typeof zh, string> = {
   "tabs.closeRight": "Close to the Right",
   "tabs.reconnect": "Reconnect",
   "tabs.closeAria": "Close tab",
+  "tabs.waitingInput": "Waiting for input",
   "tabs.defaultDistro": "default distro",
   "tabs.frpTunnel": "Frp Tunnel",
   "tabs.ble": "BLE",
   "tabs.local": "local",
   "tabs.jlink": "debug probe",
+
+  "perm.title": "Approval requests",
+  "perm.clearAll": "Clear all",
+  "perm.dismiss": "Dismiss",
+  "perm.jumpToTerminal": "Jump to terminal",
+  "perm.justNow": "just now",
+  "perm.secsAgo": "{n}s ago",
+  "perm.minsAgo": "{n}m ago",
+  "perm.hoursAgo": "{n}h ago",
+  "perm.empty": "No pending approvals. We'll notify you here (and with a system notification) when a coding agent waits for your OK.",
 
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "Hosts",

@@ -66,11 +66,22 @@ export const zh = {
   "tabs.closeRight": "关闭右侧",
   "tabs.reconnect": "重新连接",
   "tabs.closeAria": "关闭标签页",
+  "tabs.waitingInput": "等待输入",
   "tabs.defaultDistro": "默认发行版",
   "tabs.frpTunnel": "Frp 隧道",
   "tabs.ble": "BLE",
   "tabs.local": "本地",
   "tabs.jlink": "调试探针",
+
+  "perm.title": "审批请求",
+  "perm.clearAll": "全部清除",
+  "perm.dismiss": "关闭",
+  "perm.jumpToTerminal": "跳转到终端",
+  "perm.justNow": "刚刚",
+  "perm.secsAgo": "{n} 秒前",
+  "perm.minsAgo": "{n} 分钟前",
+  "perm.hoursAgo": "{n} 小时前",
+  "perm.empty": "暂无待审批请求。当编码代理（Claude Code 等）等待你确认时，会在这里（以及系统通知）提醒你。",
 
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "主机",

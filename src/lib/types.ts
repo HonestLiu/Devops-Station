@@ -464,6 +464,18 @@ export interface AIDonePayload {
   error: string | null;
 }
 
+/** Fired by the backend when a vibecoding CLI (Claude Code, Codex, …) appears to
+ *  be waiting for the user to approve an action. Mirrors `PermRequest` in Rust. */
+export interface PermRequest {
+  sessionId: string;
+  /** e.g. "Claude Code", "Codex", "Coding Agent". */
+  tool: string;
+  /** ANSI-stripped, truncated prompt text. */
+  snippet: string;
+  /** Unix epoch millis when detected. */
+  ts: number;
+}
+
 // --- J-Link (SEGGER debug probe) ---------------------------------------------
 
 /** Target connection settings for J-Link operations. */

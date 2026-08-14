@@ -15,6 +15,38 @@ export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, "");
 }
 
+/**
+ * Signatures of an *interactive prompt* or agent-CLI banner. When the scanned
+ * tail contains one of these we stay silent: agent CLIs (Claude Code, Codex,
+ * Aider, …) print safety checks and selection menus ("❯ 1. Yes … Enter to
+ * confirm · Esc to cancel") whose wording ("Accessing workspace", "File not
+ * found", …) would otherwise trip a generic error rule and pop a nonsensical
+ * "let AI fix it?" hint over a confirmation dialog. These markers only appear
+ * while the program is *waiting for input*, so real errors emitted afterwards
+ * still surface normally once the prompt scrolls out of the tail.
+ */
+const INTERACTIVE_RE =
+  /(quick\s+safety\s+check|is\s+this\s+a\s+project\s+you\s+(?:created|trust)|accessing\s+workspace|security\s+guide|requires\s+approval|do\s+you\s+want\s+to\s+proceed|enter\s+to\s+confirm[\s\S]{0,40}cancel|to\s+confirm\b|press\s+(?:any\s+)?key|^\s*\u276F\s*\d+\.|\[Y\/n\]|\(y\/N\)|\[y\/N\]|do\s+you\s+(?:want|trust|wish)|are\s+you\s+sure)/im;
+
+/** True when the text tail looks like an interactive prompt / agent banner. */
+export function isBenignContext(text: string): boolean {
+  const clean = stripAnsi(text);
+  const tail = clean.length > 800 ? clean.slice(-800) : clean;
+  return INTERACTIVE_RE.test(tail);
+}
+
+/**
+ * True when the program is *blocked waiting for user input* — e.g. Claude Code's
+ * "This command requires approval / Do you want to proceed?" menu, a git/npm
+ * `[Y/n]` prompt, or any `❯ N.` selection. Used to surface a "waiting for input"
+ * hint so the operator notices an agent CLI has paused for them.
+ */
+export function isWaitingForInput(text: string): boolean {
+  const clean = stripAnsi(text);
+  const tail = clean.length > 800 ? clean.slice(-800) : clean;
+  return INTERACTIVE_RE.test(tail);
+}
+
 interface Rule {
   re: RegExp;
   label: string;

@@ -63,6 +63,50 @@ pub fn register_aumid() {
     }
 }
 
+/// Raise an OS notification, attributed to this app when our AUMID is registered.
+///
+/// If the AUMID isn't ready we still send the toast without a custom app_id so it
+/// shows under "Windows PowerShell" rather than being silently dropped. And if the
+/// WinRT call errors for any reason we fall back to the Tauri plugin. We never
+/// want a permission prompt to go completely unnoticed.
+pub fn show(app: &tauri::AppHandle, title: &str, body: &str) {
+    #[cfg(windows)]
+    {
+        if AUMID_READY.load(Ordering::SeqCst) {
+            // Appropriately attributed toast (shows under "DevOps Station" in
+            // Action Center). With a valid AUMID, WinRT failures are real
+            // errors, so fall back to the plugin on Err.
+            let mut n = notify_rust::Notification::new();
+            n.summary(title).body(body).app_id(APP_AUMID);
+            if let Err(e) = n.show() {
+                eprintln!("[notify] attributed toast failed: {e:?}; falling back to plugin");
+                try_plugin(app, title, body);
+            }
+        } else {
+            // No Start Menu shortcut carrying our AUMID → a WinRT toast without
+            // an AUMID is *silently dropped* by Windows (show() returns Ok, so
+            // we'd never notice). Skip notify_rust entirely and use the Tauri
+            // plugin, whose WinRT path may still surface, and at least errors
+            // loudly instead of dropping.
+            eprintln!("[notify] AUMID not ready (no Start Menu shortcut); routing toast to Tauri plugin");
+            try_plugin(app, title, body);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        try_plugin(app, title, body);
+    }
+}
+
+/// Last-resort toast via `tauri-plugin-notification`. Logs (never panics) on
+/// failure so a broken notification can't take down the caller.
+fn try_plugin(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
+        eprintln!("[notify] Tauri plugin toast failed: {e:?}");
+    }
+}
+
 #[cfg(windows)]
 fn shortcut_path() -> Option<std::path::PathBuf> {
     let appdata = std::env::var("APPDATA").ok()?;

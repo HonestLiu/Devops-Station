@@ -9,6 +9,7 @@ mod jlink;
 mod kb;
 mod local_fs;
 mod notify;
+mod perm;
 mod pty;
 mod serial;
 mod ssh;
@@ -590,6 +591,14 @@ async fn frp_spawn(
     )
 }
 
+/// Raise a native OS notification attributed to this app. Used by the frontend
+/// to alert the user that a terminal session is waiting for input (e.g. when an
+/// agent CLI is blocked on an approval/confirmation prompt).
+#[tauri::command]
+fn notify_show(app: AppHandle, title: String, body: String) {
+    crate::notify::show(&app, &title, &body);
+}
+
 // ===========================================================================
 // Storage
 // ===========================================================================
@@ -692,6 +701,7 @@ async fn sync_pull(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
             .setup(|app| {
             // Ensure OS notifications are attributed to this app (not
             // "Windows PowerShell") by registering our Start Menu shortcut +
@@ -787,6 +797,7 @@ pub fn run() {
             usbip_install,
             frp_spawn,
             ai_chat,
+            notify_show,
             fonts::list_fonts,
             fonts::import_font,
             fonts::list_imported_fonts,

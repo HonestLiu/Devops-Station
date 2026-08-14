@@ -7,7 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ITheme } from "@xterm/xterm";
 import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "lucide-react";
 
-import { ssh, pty, localFs } from "@/lib/api";
+import { ssh, pty, localFs, notify } from "@/lib/api";
 import { dataLink } from "@/lib/dataLink";
 import { useT } from "@/i18n";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -16,7 +16,7 @@ import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
-import { scanForError } from "@/ai/errorScan";
+import { isBenignContext, isWaitingForInput, scanForError } from "@/ai/errorScan";
 import { useAiSuggestion } from "@/ai/useAiSuggestion";
 import { useAiComposer } from "@/ai/useAiComposer";
 import { EXPLAIN_SYSTEM, FIX_SYSTEM, GENERATE_SYSTEM, writeToTerminal } from "@/ai/terminalAi";
@@ -173,6 +173,9 @@ export function Terminal(props: TerminalProps) {
   // Recent decoded output for the lightweight proactive-error scan. We keep a
   // small tail so cross-chunk errors are still caught without scanning forever.
   const recentRef = useRef("");
+  // Whether the current tail looks like a "waiting for input" prompt. Tracked in
+  // a ref so we only act on transitions (avoid thrashing the shared store).
+  const waitingRef = useRef(false);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
   // Kept in a ref so a changing callback never re-runs the session effect.
@@ -402,6 +405,23 @@ export function Terminal(props: TerminalProps) {
                     label: hit.label,
                     snippet: hit.snippet,
                   });
+                } else if (isBenignContext(recentRef.current)) {
+                  // An interactive prompt / agent banner is on screen (e.g.
+                  // Claude Code's "trust this folder?" confirm). Drop any
+                  // sticky "let AI fix" hint so a transient false positive from
+                  // the startup text can never linger over the dialog.
+                  useAiSuggestion.getState().clear();
+                }
+                // Surface a "waiting for input" hint when an agent CLI (or any
+                // interactive prompt) is blocked on the user — so a Claude Code
+                // approval request doesn't go unnoticed. Only act on transitions
+                // to avoid thrashing the shared store on every output chunk.
+                // The OS toast is fired by the Rust `perm` scanner (which has its
+                // own dedup); firing again here would duplicate that notification.
+                const waiting = isWaitingForInput(recentRef.current);
+                if (waiting !== waitingRef.current) {
+                  waitingRef.current = waiting;
+                  useSessionStore.getState().setWaiting(sessionId, waiting);
                 }
               }
             } catch {

@@ -403,3 +403,11 @@ export const profile = {
   import: (path: string, mode: "merge" | "replace") =>
     call<ProfileImportInfo>("profile_import", { path, mode }),
 };
+
+// --- Native notifications ---------------------------------------------------
+
+export const notify = {
+  /** Raise a native OS notification attributed to DevOps Station. Used to alert
+   *  the user even when the window is backgrounded/minimized. */
+  show: (title: string, body: string) => call<void>("notify_show", { title, body }),
+};

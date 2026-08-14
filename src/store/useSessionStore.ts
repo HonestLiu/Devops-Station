@@ -7,6 +7,13 @@ interface SessionState {
   setCwd: (sessionId: string, cwd: string) => void;
   /** Drop a session's cached directory (e.g. on disconnect). */
   clearCwd: (sessionId: string) => void;
+  /** Sessions currently blocked waiting for the user's input (e.g. an agent
+   *  CLI's approval prompt). Drives the "waiting for input" tab badge + hint. */
+  waitingBySession: Record<string, boolean>;
+  /** Mark/unmark a session as waiting for input. */
+  setWaiting: (sessionId: string, waiting: boolean) => void;
+  /** Clear the waiting flag for a session (e.g. on disconnect). */
+  clearWaiting: (sessionId: string) => void;
 }
 
 /**
@@ -27,5 +34,22 @@ export const useSessionStore = create<SessionState>((set) => ({
       const next = { ...s.cwdBySession };
       delete next[sessionId];
       return { cwdBySession: next };
+    }),
+  waitingBySession: {},
+  setWaiting: (sessionId, waiting) =>
+    set((s) => {
+      const cur = s.waitingBySession[sessionId] ?? false;
+      if (cur === waiting) return s;
+      const next = { ...s.waitingBySession };
+      if (waiting) next[sessionId] = true;
+      else delete next[sessionId];
+      return { waitingBySession: next };
+    }),
+  clearWaiting: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.waitingBySession)) return s;
+      const next = { ...s.waitingBySession };
+      delete next[sessionId];
+      return { waitingBySession: next };
     }),
 }));
