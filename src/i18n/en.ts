@@ -559,4 +559,14 @@ export const en: Record<keyof typeof zh, string> = {
   "ai.requestFailedShort": "Request failed.",
   "ai.agentPlaceholder": "Describe a task for the agent…  (Enter to run)",
   "ai.askPlaceholder": "Ask this terminal…  (Enter to send)",
+
+  "update.title": "Software Update",
+  "update.checking": "Checking for updates…",
+  "update.checkButton": "Check for updates",
+  "update.upToDate": "You're up to date.",
+  "update.current": "Current",
+  "update.notes": "Release notes",
+  "update.downloading": "Downloading update",
+  "update.install": "Update now",
+  "update.later": "Later",
 };

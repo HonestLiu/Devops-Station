@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, Github } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 
 import { Badge, Button, Dialog } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { CheckForUpdatesButton } from "./UpdateDialog";
 
 /**
  * Software introduction shown at the top of the About dialog.
@@ -30,6 +32,19 @@ export function AboutDialog({
 }) {
   const [showOss, setShowOss] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [version, setVersion] = useState<string>("");
+
+  useEffect(() => {
+    let alive = true;
+    getVersion()
+      .then((v) => {
+        if (alive) setVersion(v);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const copy = async (url: string) => {
     try {
@@ -53,13 +68,14 @@ export function AboutDialog({
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent font-mono text-[16px] font-bold text-accent-fg shadow-sm">
           {">_"}
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[15px] font-semibold text-fg">DevOps Station</span>
-            <Badge tone="accent">v1.0</Badge>
+            <Badge tone="accent">{version ? `v${version}` : "…"}</Badge>
           </div>
           <p className="text-[12px] text-subtle">All-in-one DevOps terminal workstation</p>
         </div>
+        <CheckForUpdatesButton />
       </div>
 
       {/* Introduction */}

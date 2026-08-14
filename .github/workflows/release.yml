@@ -74,6 +74,13 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing key (ed25519). The public half lives in
+          # src-tauri/tauri.conf.json (plugins.updater.pubkey); the private half
+          # must be added as a repo secret (Settings → Secrets → Actions):
+          #   TAURI_SIGNING_PRIVATE_KEY  = contents of .tauri/devops-station.key
+          #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (only if the key is passworded)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: >-
             ${{ github.ref_type == 'tag' && github.ref_name
@@ -91,6 +98,13 @@ jobs:
 
             > 当前未配置代码签名：Windows 安装时会有 SmartScreen 提示；macOS 需右键「打开」或在终端执行
             > `xattr -cr "/Applications/DevOps Station.app"` 后启动。
-          releaseDraft: true
+          # Generate + upload the updater artifacts: `latest.json` (aggregated
+          # across the matrix), per-platform `.sig` signatures and update packages.
+          # Requires `bundle.createUpdaterArtifacts: true` in tauri.conf.json.
+          includeUpdater: true
+          # Published (not draft) so `releases/latest/download/latest.json` resolves
+          # and in-app auto-update works. Change to `true` if you prefer to review
+          # each release before publishing.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

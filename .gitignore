@@ -56,6 +56,8 @@ src-tauri/*.app
 # Tauri 临时文件
 src-tauri/.cargo-ok
 src-tauri/.env
+# 更新签名私钥（*.key 已在上方忽略；此目录可能含密钥轮换残留）
+.tauri/
 
 # ==============
 # 环境变量及敏感信息

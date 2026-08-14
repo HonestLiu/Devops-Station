@@ -1,4 +1,4 @@
-import { useEffect, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Cable,
@@ -39,6 +39,8 @@ import { usePermStore } from "./store/usePermStore";
 import { useContextMenu, type MenuItem } from "./store/useContextMenu";
 import { useT } from "./i18n";
 import { cn } from "./lib/utils";
+import { checkForUpdate } from "./lib/updater";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { approveWaitingNow } from "./lib/quickApprove";
 import { matchesShortcut } from "./lib/shortcut";
 import type { PermRequest, Tab } from "./lib/types";
@@ -261,6 +263,19 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [togglePalette]);
 
+  // Auto-check for a newer release a couple of seconds after launch. Silent when
+  // there's nothing new (the dialog only opens if an update is found). Guarded so
+  // React StrictMode's double-mount in dev doesn't fire it twice.
+  const didAutoCheck = useRef(false);
+  useEffect(() => {
+    if (didAutoCheck.current) return;
+    didAutoCheck.current = true;
+    const id = window.setTimeout(() => {
+      void checkForUpdate(false);
+    }, 2500);
+    return () => window.clearTimeout(id);
+  }, []);
+
   // Split-pane shortcuts (active SSH tab only), capture phase so the shell never
   // sees them: Ctrl+Shift+D split right · Ctrl+Shift+E split below ·
   // Ctrl+Shift+W close focused pane · Ctrl+Shift+←/→/↑/↓ focus move.
@@ -348,6 +363,7 @@ export default function App() {
       <AiPanel />
       <CommandPalette />
       <ContextMenu />
+      <UpdateDialog />
     </div>
   );
 }

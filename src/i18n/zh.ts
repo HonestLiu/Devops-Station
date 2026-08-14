@@ -568,4 +568,14 @@ export const zh = {
   "ai.requestFailedShort": "请求失败。",
   "ai.agentPlaceholder": "描述代理要完成的任务…（Enter 运行）",
   "ai.askPlaceholder": "向此终端提问…（Enter 发送）",
+
+  "update.title": "软件更新",
+  "update.checking": "正在检查更新…",
+  "update.checkButton": "检查更新",
+  "update.upToDate": "已是最新版本。",
+  "update.current": "当前版本",
+  "update.notes": "更新内容",
+  "update.downloading": "正在下载更新",
+  "update.install": "立即更新",
+  "update.later": "稍后",
 } as const;
