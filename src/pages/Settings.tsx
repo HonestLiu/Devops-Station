@@ -433,7 +433,6 @@ export function Settings() {
               />
               <Button
                 variant="secondary"
-                size="sm"
                 onClick={async () => {
                   const picked = await open({
                     multiple: false,
@@ -445,6 +444,7 @@ export function Settings() {
                     set("jlinkPath", picked);
                   }
                 }}
+                className="h-8 shrink-0 whitespace-nowrap"
               >
                 {t("settings.browse")}
               </Button>

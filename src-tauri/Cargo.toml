@@ -58,6 +58,9 @@ font-kit = "0.13"
 encoding_rs = "0.8"
 chacha20poly1305 = "0.10"
 getrandom = "0.2"
+# Cross-platform "open with default app" helper. Replaces the fragile
+# `cmd /c start` / `xdg-open` / `open` invocations in local_fs::open_url.
+opener = "0.7"
 
 # Used by crate::notify to register our Start Menu shortcut + AUMID on Windows.
 # Windows-only: windows 0.61 pulls in windows-future 0.2.1 UNCONDITIONALLY, and

@@ -181,36 +181,20 @@ pub fn open_path(path: String) -> Result<(), String> {
 /// links. Only `http://` / `https://` is accepted — the OS "open" verbs would
 /// otherwise hand arbitrary URIs (and their embedded arguments) straight to
 /// the shell.
+///
+/// Uses the `opener` crate instead of raw `cmd /c start` / `xdg-open` / `open`
+/// so quoting and trailing punctuation (e.g. a terminal-printed `http://x/\`)
+/// are handled correctly.
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
-    let lower = url.trim().to_ascii_lowercase();
+    // Terminal emulators sometimes include a trailing backslash or carriage
+    // return as part of the linkified text. Strip those before handing the
+    // URL to the OS so it is not mistaken for a local file path.
+    let url = url.trim().trim_end_matches(&['\\', '\r', '\n'][..]);
+    let lower = url.to_ascii_lowercase();
     if !(lower.starts_with("http://") || lower.starts_with("https://")) {
         return Err("only http/https URLs can be opened externally".to_string());
     }
 
-    let status = {
-        #[cfg(target_os = "windows")]
-        {
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/c", "start", "", &format!("\"{}\"", url)]);
-            #[cfg(windows)]
-            c.creation_flags(CREATE_NO_WINDOW);
-            c.status()
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(url).status()
-        }
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open").arg(url).status()
-        }
-    }
-    .map_err(|e| format!("failed to open URL: {e}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("failed to open URL (exit status {status})"))
-    }
+    opener::open_browser(url).map_err(|e| format!("failed to open URL: {e}"))
 }

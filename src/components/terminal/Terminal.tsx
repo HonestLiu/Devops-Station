@@ -320,7 +320,11 @@ export function Terminal(props: TerminalProps) {
     term.loadAddon(
       new WebLinksAddon((event, uri) => {
         if (event.ctrlKey || event.metaKey) {
-          void localFs.openUrl(uri).catch(() => undefined);
+          // xterm.js may include a trailing backslash or CR as part of the
+          // linkified text (common when a URL is printed before a line break).
+          // Strip those so the OS does not treat the URL as a local path.
+          const clean = uri.trim().replace(/[\\\r\n]+$/g, "");
+          if (clean) void localFs.openUrl(clean).catch(() => undefined);
         }
       }),
     );
