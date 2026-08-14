@@ -48,6 +48,17 @@ interface AIState {
   addUserMessage: (text: string) => string;
   /** Append a streaming assistant placeholder to the active session; returns its id. */
   addAssistantMessage: () => string;
+  /**
+   * Create a session for an *inline* agent run WITHOUT making it the active chat
+   * session. This keeps the inline "answer" block showing the user's chat replies
+   * instead of the agent's raw monologue, and prevents a follow-up task from
+   * appearing to vanish behind the stuck agent state.
+   */
+  ensureAgentSession: () => string;
+  /** Append a user message to a *specific* session (used by the agent loop). */
+  addUserMessageTo: (sessionId: string, text: string) => string;
+  /** Append a streaming assistant placeholder to a *specific* session; returns id. */
+  addAssistantMessageTo: (sessionId: string) => string;
   /** Append a streamed delta to a specific message. */
   appendDelta: (sessionId: string, msgId: string, delta: string) => void;
   /** Patch a message's fields (e.g. mark streaming done, set error). */
@@ -169,6 +180,45 @@ export const useAiStore = create<AIState>((set, get) => {
         s.id === aid
           ? { ...s, messages: [...s.messages, msg] }
           : s,
+      );
+      set({ sessions });
+      saveSessions(sessions);
+      return msg.id;
+    },
+
+    ensureAgentSession: () => {
+      const id = uid();
+      const session: AIChatSession = {
+        id,
+        title: tFrom(useAppStore.getState().settings.language, "ai.agent"),
+        messages: [],
+        createdAt: Date.now(),
+      };
+      const sessions = [session, ...get().sessions];
+      set({ sessions });
+      saveSessions(sessions);
+      return id;
+    },
+
+    addUserMessageTo: (sessionId, text) => {
+      const msg: AIChatMessage = { id: uid(), role: "user", content: text };
+      const sessions = get().sessions.map((s) =>
+        s.id === sessionId ? { ...s, messages: [...s.messages, msg] } : s,
+      );
+      set({ sessions });
+      saveSessions(sessions);
+      return msg.id;
+    },
+
+    addAssistantMessageTo: (sessionId) => {
+      const msg: AIChatMessage = {
+        id: uid(),
+        role: "assistant",
+        content: "",
+        streaming: true,
+      };
+      const sessions = get().sessions.map((s) =>
+        s.id === sessionId ? { ...s, messages: [...s.messages, msg] } : s,
       );
       set({ sessions });
       saveSessions(sessions);

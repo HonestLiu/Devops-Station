@@ -599,6 +599,12 @@ fn notify_show(app: AppHandle, title: String, body: String) {
     crate::notify::show(&app, &title, &body);
 }
 
+/// Enable or disable native OS notifications for agent/CLI approval prompts.
+#[tauri::command]
+fn set_approval_notifications(enabled: bool) {
+    crate::perm::set_approval_notifications(enabled);
+}
+
 // ===========================================================================
 // Storage
 // ===========================================================================
@@ -798,6 +804,7 @@ pub fn run() {
             frp_spawn,
             ai_chat,
             notify_show,
+            set_approval_notifications,
             fonts::list_fonts,
             fonts::import_font,
             fonts::list_imported_fonts,

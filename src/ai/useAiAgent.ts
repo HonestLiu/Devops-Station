@@ -20,10 +20,13 @@ interface AiAgentState {
   goal: string;
   steps: AgentStep[];
   error: string | null;
+  /** The model's final natural-language conclusion (text after `DONE:`). */
+  summary: string | null;
   setRunning: (v: boolean) => void;
   setGoal: (g: string) => void;
   pushStep: (s: AgentStep) => void;
   setError: (e: string | null) => void;
+  setSummary: (s: string | null) => void;
   reset: () => void;
 }
 
@@ -32,9 +35,11 @@ export const useAiAgent = create<AiAgentState>((set) => ({
   goal: "",
   steps: [],
   error: null,
+  summary: null,
   setRunning: (v) => set({ running: v }),
   setGoal: (g) => set({ goal: g }),
   pushStep: (s) => set((st) => ({ steps: [...st.steps, s] })),
   setError: (e) => set({ error: e }),
-  reset: () => set({ running: false, goal: "", steps: [], error: null }),
+  setSummary: (s) => set({ summary: s }),
+  reset: () => set({ running: false, goal: "", steps: [], error: null, summary: null }),
 }));

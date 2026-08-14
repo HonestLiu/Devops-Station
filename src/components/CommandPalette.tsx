@@ -223,7 +223,7 @@ export function CommandPalette() {
         run: () => {
           close();
           const goal = window.prompt(t("palette.agentGoal"));
-          if (goal && goal.trim()) void runAgent(goal, false);
+          if (goal && goal.trim()) void runAgent(goal, true);
         },
       },
     ];

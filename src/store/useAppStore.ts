@@ -40,6 +40,8 @@ export interface AppSettings {
   importedFonts: string[];
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: string;
+  /** Whether to raise native OS notifications for agent/CLI approval prompts. */
+  approvalNotifications: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   importedFonts: [],
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: "ctrl+shift+Enter",
+  approvalNotifications: true,
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",

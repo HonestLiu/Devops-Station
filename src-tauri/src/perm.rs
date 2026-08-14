@@ -19,6 +19,7 @@
 //! or blocking `show()` can never stall the terminal output thread.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -40,41 +41,72 @@ fn rules() -> &'static [Rule] {
         let mk = |pat: &str| Rule {
             re: Regex::new(pat).expect("perm rule regex must compile"),
         };
+        // Confirmation tokens an agent CLI shows next to an approval prompt.
+        // Covers every `(y/n)` / `[Y/N]` / `yes/no` / single-letter `(y)` shape
+        // we have seen across tools, so a prompt is caught regardless of which
+        // specific character the tool uses for its shortcut.
+        const TOKEN: &str = r"(?:\(y/n\)|\(Y/n\)|\(y/N\)|\(Y/N\)|\(y\)|\(Y\)|\(yes/no\)|\(Yes/No\)|\[y/n\]|\[Y/n\]|\[y/N\]|\[Y/N\]|\[yes/no\]|\[Yes/No\]|\byes/no\b|\bYes/No\b|\by/n\b|\bY/N\b|\by\|n\b)";
+        // Verbs that introduce an approval / confirmation request. `permission`
+        // is included so prompts like "Permission required (y/n)" match even
+        // though they do not use the verb "allow".
+        const VERB: &str = r"(?:allow|approve|permit|confirm|proceed|authorize|authorization|accept|grant|permission)";
+        // Approval context that a tool name may appear next to (no token needed).
+        const CTX: &str = r"(?:permission|approval|wants|needs|is requesting|requests|would like|to (?:run|execute|edit|read|write|modify|create|delete|access|open|install|update|make|use))";
+        // Known agent-CLI brands (matched case-insensitively). Word boundaries on
+        // the short ones (`\broo\b`, `\bkilo\b`) stop "kilobytes" / "borrowed"
+        // from being treated as Roo / Kilo. A bare mention still never triggers —
+        // every rule below requires the name *with* a verb/token/context.
+        const TOOLS: &str = r"(?:claude|codex|gemini|aider|cursor|opencode|windsurf|cline|goose|\broo\b|\bkilo\b|qwen|copilot|amazon\s+q|q\s*developer|qwen\s*code)";
         vec![
-            // --- specific tools (checked first) ---
-            mk(
-                r"(?i)(claude (needs|wants|is requesting|requests|would like)( your)? (permission|to (run|execute|edit|read|write|modify|create|delete|access|open|install|update|make|use))|allow (once|always)|do you want to proceed\?|allow .{1,80} to (run|execute|edit|read|write|modify|create|delete|access|open|install|update|make|use)\b)",
-            ),
-            mk(r"(?i)>?\s*approve\?|run command\?|perform this action\?|exec \d+ command"),
-            mk(r"(?i)approve \(y/n\)|allow gemini|gemini needs your"),
-            mk(r"(?i)apply edit\?|edit the file\?|commit\?|aider.*approve"),
-            mk(r"(?i)cursor agent|approve this action|allow this (action|tool)"),
-            mk(r"(?i)opencode"),
-            mk(r"(?i)windsurf"),
-            mk(r"(?i)\bcline\b"),
-            // --- Codex (OpenAI) --- its choices use single-letter shortcuts
-            //     "(y) / (p) / (esc)" rather than the "(y/n)" pattern the
-            //     generic fallback looks for, so it needs explicit rules. ---
-            mk(r"(?i)would you like to (run|execute|perform|make) (the following|this|an?) (command|edit|change|action)"),
-            mk(r"(?i)yes,? proceed \((y|Y)\)|proceed \((y|Y)\)"),
-            mk(r"(?i)tell (codex|the agent) what to do differently"),
-            // --- generic fallback: confirmation token within 40 chars of a clear
-            //     approval verb (allow/approve/permit/confirm/proceed). Narrower
-            //     than before so ordinary diffs/logs don't trigger it. `(y)` /
-            //     `(Y)` are included because Codex-style single-letter shortcuts
-            //     are common in agent CLIs. ---
-            mk(
-                r"(?i)(allow|approve|permit|confirm|proceed) .{0,40}?(\(y/n\)|\(Y/n\)|\(y/N\)|\[y/n\]|\[Y/n\]|\[y/N\]|\byes/no\b|\by/n\b|\((y|Y)\))",
-            ),
+            // --- Claude Code (expanded) ---
+            mk(r"(?i)(claude (needs|wants|is requesting|requests|would like|may|is about to|is trying to)( your)? (permission|approval|to (run|execute|edit|read|write|modify|create|delete|access|open|install|update|make|use))|allow (claude|once|always)|claude (wants|needs) (your )?(go|ok|okay))"),
+            // --- Codex (OpenAI) ---
+            mk(r"(?i)(codex|would you like to (run|execute|perform|make) (the following|this|an?)|tell (codex|the agent) what to do differently)"),
+            mk(r"(?i)proceed \((y|Y)\)|yes,? proceed \((y|Y)\)"),
+            // --- Gemini CLI ---
+            mk(r"(?i)(approve \(y/n\)|allow gemini|gemini (needs|wants)( your)? (permission|to)|do you want gemini)"),
+            // --- Aider ---
+            mk(r"(?i)(apply edit\?|edit the file\?|commit\?|aider.*approve|allow aider)"),
+            // --- Cursor ---
+            mk(r"(?i)(cursor agent|approve this action|allow this (action|tool)|cursor (wants|needs)( your)? (permission|to))"),
+            // --- Continue (the AI tool): matched only by its own phrasing, never
+            //     by the English word "continue" used elsewhere, so installer
+            //     "Press enter to continue" prompts stay silent. ---
+            mk(r"(?i)continue (wants|needs|is requesting|would like)( your)? (permission|approval|to (run|execute|read|write|edit|create|delete|access))"),
+            // --- Goose / Roo / Kilo / Qwen / Copilot / Amazon Q / OpenCode /
+            //     Windsurf / Cline: brand name *together with* either an approval
+            //     context or a confirmation token. A bare mention (path/URL/install
+            //     command) never triggers. ---
+            mk(&format!(r"(?i)({TOOLS}).{{0,80}}?({CTX})")),
+            mk(&format!(r"(?i)({TOOLS}).{{0,60}}?({TOKEN})")),
+            // --- generic fallback (tight): only agent-style confirmations, NOT
+            //     arbitrary `Allow X? (y/n)` (e.g. a cookie banner). We require
+            //     either "permission/authorization" next to a token, or an approval
+            //     verb followed by a determiner (this/the/these/that/it) then a
+            //     token — phrasing typical of agent CLIs. ---
+            mk(&format!(r"(?i)(permission|authorization) (required|needed|requested).{{0,30}}?({TOKEN})")),
+            mk(&format!(r"(?i)({VERB}) (this|the|these|that|it) .{{0,30}}?({TOKEN})")),
+            // --- question-style approvals that may show NO visible token ---
+            mk(r"(?i)do you want to (allow|proceed|approve|run|execute|continue|accept)"),
+            mk(r"(?i)would you like to (allow|proceed|approve|continue|accept)"),
+            mk(r"(?i)(accept|confirm) (the )?(change|edit|command|action|operation)\?"),
+            mk(r"(?i)are you sure you want to (run|execute|delete|remove|overwrite|proceed|apply)"),
+            mk(r"(?i)press .{0,30}?to (accept|proceed|confirm|approve|allow|run|execute)"),
         ]
     })
 }
 
 /// Substrings that, if present, make running the (cheaper) regex worthwhile.
+/// Only the *distinctive* tool names live here; ordinary English words that an
+/// agent banner would not uniquely own (e.g. "continue") are deliberately kept
+/// out so a pager like `less --MORE--` or an installer "press enter to continue"
+/// never reaches the (still precise) regex stage.
 const TRIGGERS: &[&str] = &[
     "y/n", "Y/n", "y/N", "yes/no", "approve", "allow", "permission", "proceed",
-    "confirm", "claude", "codex", "gemini", "aider", "cursor", "opencode", "windsurf",
-    "cline", "edit the file", "run command", "do you want to", "would you like to",
+    "confirm", "accept", "sure", "claude", "codex", "gemini", "aider", "cursor",
+    "opencode", "windsurf", "cline", "goose", "roo", "kilo", "qwen", "copilot",
+    "amazon q", "q developer", "edit the file", "run command", "do you want to",
+    "would you like to",
 ];
 
 /// Matches ANSI/console escape sequences so the notification text is clean.
@@ -99,6 +131,15 @@ struct AlertStamp {
 fn last_alert() -> &'static Mutex<HashMap<String, AlertStamp>> {
     static LAST: OnceLock<Mutex<HashMap<String, AlertStamp>>> = OnceLock::new();
     LAST.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Global switch for native OS notifications triggered by approval prompts.
+/// The frontend toggles this via `set_approval_notifications`.
+static APPROVAL_NOTIFICATIONS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Enable or disable native OS notifications for agent/CLI approval prompts.
+pub fn set_approval_notifications(enabled: bool) {
+    APPROVAL_NOTIFICATIONS_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
 /// Same-prompt redraws within this window are deduplicated. 300s is long
@@ -132,6 +173,10 @@ fn last_attributed_tool() -> &'static Mutex<HashMap<String, String>> {
 fn attribute_tool(text: &str) -> &'static str {
     // Lowercased once; only reached when a real prompt was just detected.
     let t = text.to_ascii_lowercase();
+    // Order matters: more specific / distinctive brands first. "amazon q" and
+    // "q developer" are checked before the bare "qwen" family so the label is
+    // precise; "continue" is last so it can only label a prompt that actually
+    // tripped the Continue-specific rule above (not ordinary "continue" text).
     if t.contains("claude") {
         "Claude Code"
     } else if t.contains("codex") {
@@ -148,6 +193,20 @@ fn attribute_tool(text: &str) -> &'static str {
         "Windsurf"
     } else if t.contains("cline") {
         "Cline"
+    } else if t.contains("goose") {
+        "Goose"
+    } else if t.contains("roo") {
+        "Roo Code"
+    } else if t.contains("kilo") {
+        "Kilo Code"
+    } else if t.contains("qwen") {
+        "Qwen Code"
+    } else if t.contains("copilot") {
+        "GitHub Copilot"
+    } else if t.contains("amazon q") || t.contains("q developer") {
+        "Amazon Q"
+    } else if t.contains("continue") {
+        "Continue"
     } else {
         "Coding Agent"
     }
@@ -268,19 +327,21 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
     // spawned onto the async runtime (not run inline) so a slow or blocking
     // `show()` can never stall the terminal output thread, which was part of
     // what made the app feel frozen.
-    let app2 = app.clone();
-    let snippet2 = snippet;
-    tauri::async_runtime::spawn(async move {
-        let title = format!("Approval needed · {tool}");
-        // Cap the toast body at 3 whole lines so a long prompt never lands on
-        // a truncated word in the OS notification centre.
-        let lines: Vec<&str> = snippet2.lines().collect();
-        let body = if lines.len() > 3 {
-            format!("{}\n…", lines[..3].join("\n"))
-        } else {
-            snippet2
-        };
-        // Attribute the OS notification to this app (see crate::notify).
-        crate::notify::show(&app2, &title, &body);
-    });
+    if APPROVAL_NOTIFICATIONS_ENABLED.load(Ordering::Relaxed) {
+        let app2 = app.clone();
+        let snippet2 = snippet;
+        tauri::async_runtime::spawn(async move {
+            let title = format!("Approval needed · {tool}");
+            // Cap the toast body at 3 whole lines so a long prompt never lands on
+            // a truncated word in the OS notification centre.
+            let lines: Vec<&str> = snippet2.lines().collect();
+            let body = if lines.len() > 3 {
+                format!("{}\n…", lines[..3].join("\n"))
+            } else {
+                snippet2
+            };
+            // Attribute the OS notification to this app (see crate::notify).
+            crate::notify::show(&app2, &title, &body);
+        });
+    }
 }

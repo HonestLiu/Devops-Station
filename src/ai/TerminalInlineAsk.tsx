@@ -97,7 +97,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [agentMode, setAgentMode] = useState(false);
-  const [agentAuto, setAgentAuto] = useState(false);
+  const [agentAuto, setAgentAuto] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsBtnRef = useRef<HTMLButtonElement>(null);
   const [toolsMenuStyle, setToolsMenuStyle] = useState<React.CSSProperties>({});
@@ -111,8 +111,14 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
   const agentGoal = useAiAgent((s) => s.goal);
   const agentSteps = useAiAgent((s) => s.steps);
   const agentError = useAiAgent((s) => s.error);
-  const agentActive = agentRunning || agentSteps.length > 0;
-  const agentVisible = agentActive || !!agentError;
+  const agentSummary = useAiAgent((s) => s.summary);
+  // Only hide the inline chat answer *while the agent is actively running*; once
+  // it finishes the user's chat replies become visible again. (Previously this
+  // also depended on `agentSteps.length`, which is never cleared after a run, so
+  // every follow-up reply was hidden — making the next task "disappear".)
+  const agentActive = agentRunning;
+  const agentVisible =
+    agentRunning || agentSteps.length > 0 || !!agentError || !!agentSummary;
 
   const send = useAiStore((s) => s.send);
   const togglePanel = useAiStore((s) => s.togglePanel);
@@ -258,16 +264,19 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
     return () => window.removeEventListener("resize", place);
   }, [toolsOpen]);
 
-  const onInsert = useCallback((cmd: string) => writeToTerminal(cmd, false), []);
+  const onInsert = useCallback(
+    (cmd: string) => writeToTerminal(cmd, false, sessionId),
+    [sessionId],
+  );
   const onRun = useCallback(
     (cmd: string) => {
       const c = cmd.trim();
       if (!c) return;
       if (window.confirm(`Run this command in “${tab.title}”?\n\n${c}`)) {
-        writeToTerminal(c, true);
+        writeToTerminal(c, true, sessionId);
       }
     },
-    [tab.title],
+    [tab.title, sessionId],
   );
 
   const showSuggestion =
@@ -374,6 +383,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           running={agentRunning}
           steps={agentSteps}
           error={agentError}
+          summary={agentSummary}
           onClear={() => useAiAgent.getState().reset()}
           onInsert={onInsert}
           onRun={onRun}
@@ -411,8 +421,11 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
             const goal = input.trim();
             if (!goal) return;
             setInput("");
-            setAgentMode(false);
-            void runAgent(goal, agentAuto, true);
+            // Keep agent mode ON after a run, so consecutive tasks don't require
+            // re-toggling the 🤖 button every time. The operator can still turn it
+            // off manually via the button.
+            requestAnimationFrame(() => inputRef.current?.focus());
+            void runAgent(goal, agentAuto, true, sessionId);
           } else {
             submitValue(input);
           }
@@ -603,6 +616,7 @@ function AgentBlock({
   running,
   steps,
   error,
+  summary,
   onClear,
   onInsert,
   onRun,
@@ -611,6 +625,7 @@ function AgentBlock({
   running: boolean;
   steps: { cmd: string; result: string; status: string }[];
   error: string | null;
+  summary: string | null;
   onClear: () => void;
   onInsert: (c: string) => void;
   onRun: (c: string) => void;
@@ -678,6 +693,16 @@ function AgentBlock({
               </pre>
             </div>
           ))}
+          {summary && !running && (
+            <div className="rounded-md border border-accent/30 bg-accent/5 p-2">
+              <div className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">
+                <Bot size={11} /> {t("ai.agentSummary")}
+              </div>
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-fg">
+                {summary}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -4,7 +4,7 @@ import { Check, Download, RotateCcw, Type, Upload } from "lucide-react";
 
 import { Button, Checkbox, Field, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
-import { profile } from "@/lib/api";
+import { notify, profile } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
 import { formatShortcut } from "@/lib/shortcut";
 import { useT } from "@/i18n";
@@ -86,9 +86,16 @@ function ShortcutRecorder({
 export function Settings() {
   const t = useT();
   const settings = useAppStore((s) => s.settings);
+  const settingsLoaded = useAppStore((s) => s.settingsLoaded);
   const updateSetting = useAppStore((s) => s.updateSetting);
   const resetSettings = useAppStore((s) => s.resetSettings);
   const [fontOpen, setFontOpen] = useState(false);
+
+  // Keep the Rust-side approval-notification switch in sync with the setting.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    void notify.setApprovalNotifications(settings.approvalNotifications).catch(() => undefined);
+  }, [settingsLoaded, settings.approvalNotifications]);
 
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) =>
     void updateSetting(k, v);
@@ -470,6 +477,24 @@ export function Settings() {
           </Field>
         </Section>
 
+        {/* Notifications */}
+        <Section title={t("settings.notifications")}>
+          <Field
+            label={t("settings.approvalNotifications")}
+            hint={t("settings.approvalNotificationsHint")}
+            className="sm:col-span-2"
+          >
+            <Checkbox
+              label={t("settings.approvalNotifications")}
+              checked={settings.approvalNotifications}
+              onChange={(v) => {
+                void updateSetting("approvalNotifications", v);
+                void notify.setApprovalNotifications(v).catch(() => undefined);
+              }}
+            />
+          </Field>
+        </Section>
+
         {/* Data */}
         <Section title={t("settings.data")}>
           <Field label={t("settings.exportLabel")} hint={t("settings.exportHint")} className="sm:col-span-2">
@@ -485,7 +510,7 @@ export function Settings() {
                 disabled={dataBusy}
                 onClick={() => void doExport()}
               >
-                <Download size={14} /> {t("settings.exportData")}
+                <Upload size={14} /> {t("settings.exportData")}
               </Button>
             </div>
           </Field>
@@ -497,7 +522,7 @@ export function Settings() {
                 disabled={dataBusy}
                 onClick={() => void doImport("merge")}
               >
-                <Upload size={14} /> {t("settings.mergeImport")}
+                <Download size={14} /> {t("settings.mergeImport")}
               </Button>
               <Button
                 variant="danger"
@@ -505,7 +530,7 @@ export function Settings() {
                 disabled={dataBusy}
                 onClick={() => void doImport("replace")}
               >
-                <Upload size={14} /> {t("settings.replaceImport")}
+                <Download size={14} /> {t("settings.replaceImport")}
               </Button>
             </div>
           </Field>

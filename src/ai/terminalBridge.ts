@@ -41,6 +41,39 @@ export function getTerminalText(sessionId: string, maxLines = 4000): string {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Number of lines currently in the terminal buffer. Snapshot this *before*
+ * writing a command so the agent loop can later read only what the command
+ * produced (see `getTerminalTail`) — instead of re-feeding the entire scrollback
+ * on every step, which is what made the model re-issue the same command.
+ */
+export function getTerminalLineCount(sessionId: string): number {
+  const term = registry.get(sessionId);
+  if (!term) return 0;
+  return term.buffer.active.length;
+}
+
+/**
+ * Return only the lines appended to the terminal from `fromLine` onward. Because
+ * xterm keeps growing the buffer as output streams in, reading from the line we
+ * captured before the command isolates exactly the command's echo + output —
+ * the unambiguous "tool result" the agent needs.
+ */
+export function getTerminalTail(sessionId: string, fromLine: number): string {
+  const term = registry.get(sessionId);
+  if (!term) return "";
+  const buffer = term.buffer.active;
+  const total = buffer.length;
+  const start = Math.max(0, fromLine);
+  if (start >= total) return "";
+  const lines: string[] = [];
+  for (let i = start; i < total; i += 1) {
+    const line = buffer.getLine(i);
+    if (line) lines.push(line.translateToString(true));
+  }
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 interface SelectionState {
   text: string;
   sessionId: string | null;

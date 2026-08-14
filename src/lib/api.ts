@@ -410,4 +410,7 @@ export const notify = {
   /** Raise a native OS notification attributed to DevOps Station. Used to alert
    *  the user even when the window is backgrounded/minimized. */
   show: (title: string, body: string) => call<void>("notify_show", { title, body }),
+  /** Enable or disable native OS notifications for agent/CLI approval prompts. */
+  setApprovalNotifications: (enabled: boolean) =>
+    call<void>("set_approval_notifications", { enabled }),
 };
