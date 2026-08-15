@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
-import type { AISettings, ApprovalSettings, ThemeId } from "@/lib/types";
+import type { AccountSettings, AISettings, ApprovalSettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink";
 
@@ -24,6 +24,11 @@ export interface AppSettings {
   lineHeight: number;
   cursorBlink: boolean;
   cursorStyle: "block" | "underline" | "bar";
+  /** Custom terminal cursor color (hex). Empty = follow the active theme. */
+  cursorColor: string;
+  /** Cursor shape when the terminal is unfocused (xterm supports "outline"
+   *  only here — a fun extra shape not available for the focused cursor). */
+  cursorInactiveStyle: "block" | "outline" | "bar";
   scrollback: number;
   copyOnSelect: boolean;
   /** Poll interval for the Monitoring page, in milliseconds. */
@@ -50,6 +55,8 @@ export interface AppSettings {
    *  and install it without waiting for the user to click "Update now".
    *  Manual checks always show the release notes first. */
   autoDownloadUpdates: boolean;
+  /** Multi-device sync account (server URL + auth token + profile). */
+  account: AccountSettings;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -66,6 +73,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lineHeight: 1.25,
   cursorBlink: true,
   cursorStyle: "block",
+  cursorColor: "",
+  cursorInactiveStyle: "block",
   scrollback: 10000,
   copyOnSelect: true,
   metricsInterval: 2000,
@@ -85,6 +94,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   autoCheckUpdates: true,
   autoDownloadUpdates: false,
+  account: {
+    serverUrl: "",
+    username: "",
+    token: "",
+    nickname: "",
+    avatar: "",
+    lastSyncAt: 0,
+  },
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",

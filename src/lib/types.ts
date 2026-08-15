@@ -455,9 +455,28 @@ export interface ApprovalSettings {
   scanFallback: boolean;
 }
 
+/**
+ * Account / sync configuration. The server address, username and auth token
+ * are local-only (they must NOT be synced); nickname & avatar are managed by
+ * the sync server and mirrored here for the Settings page.
+ */
+export interface AccountSettings {
+  /** Sync server base URL, e.g. `http://127.0.0.1:8765`. */
+  serverUrl: string;
+  /** Logged-in username (empty = logged out). */
+  username: string;
+  /** Bearer token from the sync server (not persisted in the synced data). */
+  token: string;
+  /** Display nickname (synced via the server profile). */
+  nickname: string;
+  /** Avatar as a data: URL (synced via the server profile). */
+  avatar: string;
+  /** Epoch ms of the last successful sync. */
+  lastSyncAt: number;
+}
+
 /** Persisted AI configuration (stored under the `ai` key of AppSettings). */
-export interface AISettings {
-  provider: AIProviderKind;
+export interface AISettings {  provider: AIProviderKind;
   /** Base URL, e.g. `https://api.openai.com/v1` or `http://localhost:11434`. */
   baseUrl: string;
   apiKey: string;

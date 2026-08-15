@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -77,6 +77,10 @@ export interface TerminalProps {
   sessionId: string;
   transport: "ssh" | "pty" | "serial" | "ble";
   theme: ITheme;
+  /** Custom cursor color (hex); empty = use the theme's own cursor color. */
+  cursorColor?: string;
+  /** Cursor shape while the terminal is unfocused ("outline" = hollow block). */
+  cursorInactiveStyle?: "block" | "outline" | "bar";
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
@@ -188,6 +192,8 @@ export function Terminal(props: TerminalProps) {
     sessionId,
     transport,
     theme,
+    cursorColor,
+    cursorInactiveStyle,
     fontFamily,
     fontSize,
     lineHeight,
@@ -199,6 +205,13 @@ export function Terminal(props: TerminalProps) {
     trackCwd = false,
     shell,
   } = props;
+
+  // Custom cursor color overrides the theme default (empty = theme's own).
+  // Memoized so the live-options effect doesn't re-run on every render.
+  const resolvedTheme: ITheme = useMemo(
+    () => (cursorColor ? { ...theme, cursor: cursorColor } : theme),
+    [theme, cursorColor],
+  );
 
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -356,7 +369,8 @@ export function Terminal(props: TerminalProps) {
       cursorBlink,
       cursorStyle,
       scrollback,
-      theme,
+      theme: resolvedTheme,
+      cursorInactiveStyle,
       allowProposedApi: true,
     });
     const fit = new FitAddon();
@@ -629,7 +643,8 @@ export function Terminal(props: TerminalProps) {
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = theme;
+    term.options.theme = resolvedTheme;
+    term.options.cursorInactiveStyle = cursorInactiveStyle;
     term.options.fontFamily = fontFamily;
     term.options.fontSize = fontSize;
     term.options.lineHeight = lineHeight;
@@ -641,7 +656,7 @@ export function Terminal(props: TerminalProps) {
     } catch {
       /* ignore */
     }
-  }, [theme, fontFamily, fontSize, lineHeight, cursorBlink, cursorStyle, scrollback]);
+  }, [resolvedTheme, cursorInactiveStyle, fontFamily, fontSize, lineHeight, cursorBlink, cursorStyle, scrollback]);
 
   // Show the "Explain" affordance only when this terminal owns a non-empty selection.
   const selText = useTerminalSelection((s) =>

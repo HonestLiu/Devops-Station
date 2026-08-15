@@ -70,13 +70,29 @@ interface Rule {
 const RULES: Rule[] = [
   { re: /(?:bash|sh|zsh|fish):\s+\S+:\s+command not found/i, label: "Command not found", highSignal: true },
   // PowerShell / cmd.exe "command not found" variants. PowerShell says the term
-  // "is not recognized as the name of a cmdlet, function, script file, or
-  // executable program"; cmd.exe says "'X' is not recognized as an internal or
-  // external command". These are the most common "I typed a wrong command" cases
-  // on Windows terminals and were previously missed, so auto-diagnose never fired.
-  { re: /(?:is\s+)?not recognized as (?:the name of )?a cmdlet, function, script file, or executable program/i, label: "Command not found", highSignal: true },
+  // "is not recognized as the name of a cmdlet…" (older) or "as a name of a
+  // cmdlet…" (PowerShell 7.4+ — the article/word order changed); cmd.exe says
+  // "'X' is not recognized as an internal or external command". The regex
+  // tolerates both wordings plus the bare "as a cmdlet" short form.
+  { re: /(?:is\s+)?not recognized as (?:a |the )?(?:name of )?(?:a |the )?cmdlet, function, script file/i, label: "Command not found", highSignal: true },
   { re: /not recognized as an internal or external command/i, label: "Command not found", highSignal: true },
   { re: /command not found/i, label: "Command not found", highSignal: true },
+  // --- Simplified-Chinese localised shells (zh-CN Windows PowerShell / cmd).
+  // Localised error text shares no words with the English rules above, so
+  // auto-diagnose silently never fired for zh-CN local terminals — the exact
+  // "本地终端不支持自动诊断" symptom. Each mirrors an English rule.
+  { re: /无法将[“"'].{1,40}?[”"']?(?:项)?识别为\s*(?:cmdlet|命令|函数|脚本|可运行)/i, label: "Command not found", highSignal: true },
+  { re: /不是内部或外部命令/i, label: "Command not found", highSignal: true },
+  { re: /不是可运行的程序(?:或批处理文件)?/i, label: "Command not found", highSignal: true },
+  { re: /未找到命令/i, label: "Command not found", highSignal: true },
+  { re: /系统找不到指定的(?:文件|路径)/i, label: "File not found", highSignal: true },
+  { re: /找不到(?:指定的)?(?:文件|路径)/i, label: "File not found", highSignal: true },
+  { re: /拒绝访问/i, label: "Permission denied", highSignal: true },
+  { re: /(?:由于目标计算机积极拒绝|连接被(?:拒绝|终止)|无法连接到(?:远程)?服务器|无法访问)/i, label: "Connection refused" },
+  { re: /(?:磁盘|存储)空间不足|内存不足/i, label: "Insufficient resources" },
+  { re: /参数(?:无效|错误)|语法(?:不正确|无效)/i, label: "Invalid arguments" },
+  { re: /不是有效的|无效的(?:选项|参数)/i, label: "Invalid input" },
+  { re: /\bnpm\s+err[!:]|npm\s+error/i, label: "npm error" },
   { re: /\bpermission denied\b/i, label: "Permission denied", highSignal: true },
   { re: /no such file or directory/i, label: "File not found", highSignal: true },
   { re: /(?:connection|connect) refused/i, label: "Connection refused" },

@@ -42,6 +42,7 @@ import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import { checkForUpdate } from "./lib/updater";
 import { permHook } from "./lib/api";
+import { pullSyncData } from "./lib/sync";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { approveWaitingNow } from "./lib/quickApprove";
 import { focusActiveTerminal } from "./ai/terminalBridge";
@@ -266,6 +267,16 @@ export default function App() {
       void permHook.stop().catch(() => undefined);
     }
   }, [settingsLoaded, approval.enabled, approval.port, approval.scanFallback]);
+
+  // Auto-pull cloud config on startup when logged in (silent — failures just
+  // leave the local state as-is; the user can sync manually in Settings).
+  const account = useAppStore((s) => s.settings.account);
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (account.token) {
+      void pullSyncData(account.serverUrl, account.token).catch(() => undefined);
+    }
+  }, [settingsLoaded, account.token, account.serverUrl]);
 
   // Quick approval shortcut (configurable in Settings → Shortcuts): sends Enter
   // to the session that is currently waiting on an agent CLI approval prompt

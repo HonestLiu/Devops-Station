@@ -126,6 +126,8 @@ export function SplitView({ tab }: { tab: Tab }) {
                   trackCwd={trackCwd}
                   shell={shell}
                   theme={t.theme}
+                  cursorColor={t.cursorColor}
+                  cursorInactiveStyle={t.cursorInactiveStyle}
                   fontFamily={t.fontFamily}
                   fontSize={t.fontSize}
                   lineHeight={t.lineHeight}

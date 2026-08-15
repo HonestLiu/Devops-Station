@@ -6,6 +6,7 @@ import {
   Bell,
   Bot,
   CheckCircle2,
+  Cloud,
   Cpu,
   Database,
   Download,
@@ -15,6 +16,7 @@ import {
   Palette,
   RefreshCw,
   RotateCcw,
+  Search,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -28,6 +30,14 @@ import { FontDialog } from "@/components/FontDialog";
 import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
 import { formatShortcut, setShortcutRecording } from "@/lib/shortcut";
+import {
+  loginAccount,
+  logoutAccount,
+  pullSyncData,
+  registerAccount,
+  saveProfile,
+  syncNow,
+} from "@/lib/sync";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
@@ -41,6 +51,19 @@ import type {
   ApprovalSettings,
   ThemeId,
 } from "@/lib/types";
+
+/** Terminal cursor color palette (first entry "" = follow the active theme). */
+const CURSOR_COLORS = [
+  "",
+  "#c0caf5",
+  "#ffffff",
+  "#ff4d4f",
+  "#52c41a",
+  "#1890ff",
+  "#faad14",
+  "#fa8c16",
+  "#eb2f96",
+];
 
 /** Tools with installable permission hooks, shown in Settings → 审批通知. */
 const HOOK_TOOLS: { id: keyof ApprovalHookTools; label: string; config: string }[] = [
@@ -129,20 +152,28 @@ function Section({
   id,
   icon,
   title,
+  hidden,
   children,
 }: {
   id: string;
   icon: ReactNode;
   title: string;
+  hidden?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="card scroll-mt-4">
-      <div className="mb-1 flex items-center gap-2.5">
+    <section
+      id={id}
+      className={cn(
+        "card scroll-mt-4 rounded-xl",
+        hidden && "hidden",
+      )}
+    >
+      <div className="mb-3 flex items-center gap-2.5 border-b border-border/60 pb-3">
         <span className="icon-chip">{icon}</span>
         <h2 className="text-[14px] font-semibold text-fg">{title}</h2>
       </div>
-      <div className="mt-1 divide-y divide-border/60">{children}</div>
+      <div className="divide-y divide-border/60">{children}</div>
     </section>
   );
 }
@@ -241,19 +272,44 @@ export function Settings() {
   }, [settingsLoaded, settings.approvalNotifications]);
 
   // --- Section navigation ----------------------------------------------------
-  const SECTION_META: { id: string; icon: ReactNode; titleKey: Parameters<typeof t>[0] }[] = [
-    { id: "appearance", icon: <Palette size={15} />, titleKey: "settings.appearance" },
-    { id: "terminal", icon: <Terminal size={15} />, titleKey: "settings.terminal" },
-    { id: "monitoring", icon: <Activity size={15} />, titleKey: "settings.monitoring" },
-    { id: "ai", icon: <Bot size={15} />, titleKey: "settings.aiAssistant" },
-    { id: "shell", icon: <Monitor size={15} />, titleKey: "settings.localShell" },
-    { id: "jlink", icon: <Cpu size={15} />, titleKey: "settings.jlink" },
-    { id: "shortcuts", icon: <Keyboard size={15} />, titleKey: "settings.shortcuts" },
-    { id: "notifications", icon: <Bell size={15} />, titleKey: "settings.notifications" },
-    { id: "updates", icon: <RefreshCw size={15} />, titleKey: "settings.updates" },
-    { id: "data", icon: <Database size={15} />, titleKey: "settings.data" },
+  const SECTION_GROUPS: {
+    id: string;
+    titleKey: Parameters<typeof t>[0];
+    sections: { id: string; icon: ReactNode; titleKey: Parameters<typeof t>[0] }[];
+  }[] = [
+    {
+      id: "general",
+      titleKey: "settings.groupGeneral",
+      sections: [
+        { id: "account", icon: <Cloud size={15} />, titleKey: "settings.account" },
+        { id: "appearance", icon: <Palette size={15} />, titleKey: "settings.appearance" },
+        { id: "terminal", icon: <Terminal size={15} />, titleKey: "settings.terminal" },
+        { id: "monitoring", icon: <Activity size={15} />, titleKey: "settings.monitoring" },
+      ],
+    },
+    {
+      id: "features",
+      titleKey: "settings.groupFeatures",
+      sections: [
+        { id: "ai", icon: <Bot size={15} />, titleKey: "settings.aiAssistant" },
+        { id: "shell", icon: <Monitor size={15} />, titleKey: "settings.localShell" },
+        { id: "jlink", icon: <Cpu size={15} />, titleKey: "settings.jlink" },
+      ],
+    },
+    {
+      id: "system",
+      titleKey: "settings.groupSystem",
+      sections: [
+        { id: "shortcuts", icon: <Keyboard size={15} />, titleKey: "settings.shortcuts" },
+        { id: "notifications", icon: <Bell size={15} />, titleKey: "settings.notifications" },
+        { id: "updates", icon: <RefreshCw size={15} />, titleKey: "settings.updates" },
+        { id: "data", icon: <Database size={15} />, titleKey: "settings.data" },
+      ],
+    },
   ];
-  const [activeSection, setActiveSection] = useState("appearance");
+  const SECTION_META = SECTION_GROUPS.flatMap((g) => g.sections);
+  const [activeSection, setActiveSection] = useState("account");
+  const [query, setQuery] = useState("");
   useEffect(() => {
     const els = SECTION_META.map((s) => document.getElementById(s.id)).filter(
       (el): el is HTMLElement => !!el,
@@ -275,6 +331,119 @@ export function Settings() {
 
   const setAi = <K extends keyof AISettings>(k: K, v: AISettings[K]) =>
     void updateSetting("ai", { ...settings.ai, [k]: v });
+
+  // --- Account / sync ------------------------------------------------------
+  const account = settings.account;
+  const [serverUrl, setServerUrl] = useState(account.serverUrl);
+  const [accUser, setAccUser] = useState("");
+  const [accPass, setAccPass] = useState("");
+  const [nickname, setNickname] = useState(account.nickname);
+  const [accBusy, setAccBusy] = useState(false);
+  const [accMsg, setAccMsg] = useState<string | null>(null);
+
+  const doAuth = async (mode: "login" | "register") => {
+    setAccBusy(true);
+    setAccMsg(null);
+    try {
+      const url = serverUrl.trim().replace(/\/+$/, "");
+      if (!url) throw new Error(t("settings.accNeedServer"));
+      if (!accUser.trim() || !accPass) throw new Error(t("settings.accNeedCred"));
+      const r =
+        mode === "login"
+          ? await loginAccount(url, accUser.trim(), accPass)
+          : await registerAccount(url, accUser.trim(), accPass);
+      await updateSetting("account", {
+        ...useAppStore.getState().settings.account,
+        serverUrl: url,
+        username: accUser.trim(),
+        token: r.token,
+        nickname: r.nickname,
+        avatar: r.avatar,
+        lastSyncAt: Date.now(),
+      });
+      setNickname(r.nickname);
+      // First sync right after login: pull the remote state onto this device.
+      try {
+        await pullSyncData(url, r.token);
+      } catch {
+        /* server data may be empty / unreachable — login itself succeeded */
+      }
+      setAccMsg(t("settings.accLoggedIn"));
+    } catch (e) {
+      setAccMsg(String(e));
+    } finally {
+      setAccBusy(false);
+    }
+  };
+
+  const doSync = async () => {
+    setAccBusy(true);
+    setAccMsg(null);
+    try {
+      await syncNow();
+      setAccMsg(t("settings.accSynced"));
+    } catch (e) {
+      setAccMsg(String(e));
+    } finally {
+      setAccBusy(false);
+    }
+  };
+
+  const doSaveNickname = async () => {
+    setAccBusy(true);
+    setAccMsg(null);
+    try {
+      const a = useAppStore.getState().settings.account;
+      await saveProfile(a.serverUrl, a.token, nickname.trim(), a.avatar);
+      setAccMsg(t("settings.accSaved"));
+    } catch (e) {
+      setAccMsg(String(e));
+    } finally {
+      setAccBusy(false);
+    }
+  };
+
+  const pickAvatar = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = String(reader.result ?? "");
+        if (dataUrl.length > 1_400_000) {
+          setAccMsg(t("settings.accAvatarTooBig"));
+          return;
+        }
+        setAccBusy(true);
+        setAccMsg(null);
+        try {
+          const a = useAppStore.getState().settings.account;
+          await saveProfile(a.serverUrl, a.token, a.nickname, dataUrl);
+          setAccMsg(t("settings.accSaved"));
+        } catch (e) {
+          setAccMsg(String(e));
+        } finally {
+          setAccBusy(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
+
+  const doLogout = () => {
+    logoutAccount();
+    setAccMsg(null);
+    setNickname("");
+  };
+
+  // Section cards matching the current search query (empty query = all).
+  const q = query.trim().toLowerCase();
+  const secVisible = (titleKey: Parameters<typeof t>[0]) =>
+    !q || t(titleKey).toLowerCase().includes(q);
 
   const setApproval = <K extends keyof ApprovalSettings>(k: K, v: ApprovalSettings[K]) =>
     void updateSetting("approval", {
@@ -432,46 +601,184 @@ export function Settings() {
           <h1 className="page-title">{t("settings.title")}</h1>
           <p className="page-subtitle">{t("settings.subtitle")}</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void resetSettings()}>
-          <RotateCcw size={14} /> {t("settings.reset")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("settings.searchPh")}
+              className="h-8 w-52 pl-8"
+            />
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => void resetSettings()}>
+            <RotateCcw size={14} /> {t("settings.reset")}
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-6">
-        {/* Left navigation rail */}
-        <nav className="sticky top-0 hidden h-[calc(100vh-120px)] w-44 shrink-0 flex-col lg:flex">
-          <ul className="space-y-0.5">
-            {SECTION_META.map((s) => {
-              const active = activeSection === s.id;
-              return (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      document
-                        .getElementById(s.id)
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                    }
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors",
-                      active
-                        ? "bg-accent/10 text-accent"
-                        : "text-muted hover:bg-hover hover:text-fg",
-                    )}
-                  >
-                    <span className="shrink-0">{s.icon}</span>
-                    <span className="truncate">{t(s.titleKey)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+        {/* Left navigation rail, grouped */}
+        <nav className="sticky top-0 hidden h-[calc(100vh-150px)] w-48 shrink-0 flex-col gap-5 overflow-y-auto pr-1 lg:flex">
+          {SECTION_GROUPS.map((g) => (
+            <div key={g.id}>
+              <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                {t(g.titleKey)}
+              </div>
+              <ul className="space-y-0.5">
+                {g.sections.map((s) => {
+                  const active = activeSection === s.id;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          document
+                            .getElementById(s.id)
+                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                        }
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                          active
+                            ? "border-accent bg-accent/10 text-accent"
+                            : "border-transparent text-muted hover:bg-hover hover:text-fg",
+                        )}
+                      >
+                        <span className="shrink-0">{s.icon}</span>
+                        <span className="truncate">{t(s.titleKey)}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
 
         {/* Content */}
         <div className="min-w-0 flex-1 space-y-6 pb-6">
+          {/* Account */}
+          <Section id="account" hidden={!secVisible("settings.account")} icon={<Cloud size={15} />} title={t("settings.account")}>
+            {!account.token ? (
+              <>
+                <Row title={t("settings.accServerUrl")} desc={t("settings.accServerHint")}>
+                  <Input
+                    value={serverUrl}
+                    onChange={(e) => setServerUrl(e.target.value)}
+                    className="font-mono text-[12px]"
+                    placeholder="http://127.0.0.1:8765"
+                  />
+                </Row>
+                <Row title={t("settings.accUsername")}>
+                  <Input
+                    value={accUser}
+                    onChange={(e) => setAccUser(e.target.value)}
+                    className="font-mono text-[12px]"
+                    autoComplete="username"
+                  />
+                </Row>
+                <Row title={t("settings.accPassword")}>
+                  <Input
+                    type="password"
+                    value={accPass}
+                    onChange={(e) => setAccPass(e.target.value)}
+                    className="font-mono text-[12px]"
+                    autoComplete="current-password"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void doAuth("login");
+                    }}
+                  />
+                </Row>
+                <Row title={t("settings.accActions")} full>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={accBusy}
+                      onClick={() => void doAuth("login")}
+                    >
+                      {accBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                      {t("settings.accLogin")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={accBusy}
+                      onClick={() => void doAuth("register")}
+                    >
+                      {t("settings.accRegister")}
+                    </Button>
+                  </div>
+                </Row>
+              </>
+            ) : (
+              <>
+                <Row title={t("settings.accIdentity")} full>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={pickAvatar}
+                      title={t("settings.accChangeAvatar")}
+                      className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-hover text-[10px] text-muted transition-colors hover:border-accent"
+                    >
+                      {account.avatar ? (
+                        <img src={account.avatar} alt="avatar" className="h-full w-full object-cover" />
+                      ) : (
+                        <Cloud size={20} />
+                      )}
+                    </button>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={nickname}
+                          onChange={(e) => setNickname(e.target.value)}
+                          className="h-8 w-44 font-mono text-[12px]"
+                          placeholder={t("settings.accNicknamePh")}
+                        />
+                        <Button size="sm" variant="ghost" disabled={accBusy} onClick={() => void doSaveNickname()}>
+                          {t("settings.accSave")}
+                        </Button>
+                      </div>
+                      <span className="truncate text-[11px] text-subtle">
+                        {account.username} · {account.serverUrl}
+                      </span>
+                    </div>
+                  </div>
+                </Row>
+                <Row title={t("settings.accSync")} desc={t("settings.accSyncHint")}>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" disabled={accBusy} onClick={() => void doSync()}>
+                      {accBusy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                      {t("settings.accSyncNow")}
+                    </Button>
+                    {account.lastSyncAt > 0 && (
+                      <span className="text-[11px] text-subtle">
+                        {t("settings.accLastSync")}{" "}
+                        {new Date(account.lastSyncAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </Row>
+                <Row title={t("settings.accActions")} full>
+                  <Button variant="danger" size="sm" disabled={accBusy} onClick={doLogout}>
+                    {t("settings.accLogout")}
+                  </Button>
+                </Row>
+              </>
+            )}
+            {accMsg && (
+              <Row title={t("settings.accResult")} full>
+                <span className="break-all font-mono text-[11px] leading-relaxed text-muted">
+                  {accMsg}
+                </span>
+              </Row>
+            )}
+          </Section>
+
           {/* Theme */}
-          <Section id="appearance" icon={<Palette size={15} />} title={t("settings.appearance")}>
+          <Section id="appearance" hidden={!secVisible("settings.appearance")} icon={<Palette size={15} />} title={t("settings.appearance")}>
             <Row title={t("settings.language")} htmlFor="set-language">
               <Select
                 id="set-language"
@@ -511,7 +818,7 @@ export function Settings() {
           </Section>
 
           {/* Terminal */}
-          <Section id="terminal" icon={<Terminal size={15} />} title={t("settings.terminal")}>
+          <Section id="terminal" hidden={!secVisible("settings.terminal")} icon={<Terminal size={15} />} title={t("settings.terminal")}>
             <Row title={t("settings.fontFamily")} desc={t("settings.fontHint")} full>
               <div className="flex flex-col gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setFontOpen(true)}>
@@ -555,17 +862,84 @@ export function Settings() {
                 onChange={(e) => set("scrollback", Number(e.target.value) || 10000)}
               />
             </Row>
-            <Row title={t("settings.cursorStyle")}>
-              <Select
-                value={settings.cursorStyle}
-                onChange={(e) =>
-                  set("cursorStyle", e.target.value as AppSettings["cursorStyle"])
-                }
-              >
-                <option value="block">{t("settings.optBlock")}</option>
-                <option value="underline">{t("settings.optUnderline")}</option>
-                <option value="bar">{t("settings.optBar")}</option>
-              </Select>
+            <Row title={t("settings.cursorStyle")} full>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { value: "block", label: t("settings.optBlock"), icon: <span className="h-3 w-2.5 rounded-[2px] bg-current" /> },
+                    { value: "underline", label: t("settings.optUnderline"), icon: <span className="h-[3px] w-2.5 rounded-full bg-current" /> },
+                    { value: "bar", label: t("settings.optBar"), icon: <span className="h-3 w-[2px] rounded-full bg-current" /> },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => set("cursorStyle", opt.value)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] transition-colors",
+                      settings.cursorStyle === opt.value
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-border bg-bg text-muted hover:bg-hover hover:text-fg",
+                    )}
+                  >
+                    <span className="text-current">{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row title={t("settings.cursorColor")} desc={t("settings.cursorColorHint")} full>
+              <div className="flex flex-wrap items-center gap-2">
+                {CURSOR_COLORS.map((c) => (
+                  <button
+                    key={c || "default"}
+                    onClick={() => set("cursorColor", c)}
+                    title={c || t("settings.optCursorDefault")}
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-full border transition-transform",
+                      settings.cursorColor === c
+                        ? "scale-110 border-accent ring-2 ring-accent/30"
+                        : "border-border hover:scale-105",
+                    )}
+                    style={
+                      c
+                        ? { backgroundColor: c }
+                        : {
+                            background:
+                              "conic-gradient(#f55,#ff5,#5f5,#5ff,#55f,#f5f,#f55)",
+                          }
+                    }
+                  >
+                    {settings.cursorColor === c && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-bg" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row title={t("settings.cursorInactiveStyle")} desc={t("settings.cursorInactiveHint")} full>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { value: "block", label: t("settings.optBlock"), icon: <span className="h-3 w-2.5 rounded-[2px] bg-current" /> },
+                    { value: "outline", label: t("settings.optOutline"), icon: <span className="h-3 w-2.5 rounded-[2px] border-2 border-current" /> },
+                    { value: "bar", label: t("settings.optBar"), icon: <span className="h-3 w-[2px] rounded-full bg-current" /> },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => set("cursorInactiveStyle", opt.value)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] transition-colors",
+                      settings.cursorInactiveStyle === opt.value
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-border bg-bg text-muted hover:bg-hover hover:text-fg",
+                    )}
+                  >
+                    <span className="text-current">{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </Row>
             <Row title={t("settings.cursorBlink")}>
               <Switch
@@ -591,7 +965,7 @@ export function Settings() {
           </Section>
 
           {/* Monitoring */}
-          <Section id="monitoring" icon={<Activity size={15} />} title={t("settings.monitoring")}>
+          <Section id="monitoring" hidden={!secVisible("settings.monitoring")} icon={<Activity size={15} />} title={t("settings.monitoring")}>
             <Row title={t("settings.metricsInterval")}>
               <Select
                 value={settings.metricsInterval}
@@ -605,7 +979,7 @@ export function Settings() {
           </Section>
 
           {/* AI Assistant */}
-          <Section id="ai" icon={<Bot size={15} />} title={t("settings.aiAssistant")}>
+          <Section id="ai" hidden={!secVisible("settings.aiAssistant")} icon={<Bot size={15} />} title={t("settings.aiAssistant")}>
             <Row title={t("settings.provider")}>
               <Select
                 value={settings.ai.provider}
@@ -694,7 +1068,7 @@ export function Settings() {
           </Section>
 
           {/* Local Shell */}
-          <Section id="shell" icon={<Monitor size={15} />} title={t("settings.localShell")}>
+          <Section id="shell" hidden={!secVisible("settings.localShell")} icon={<Monitor size={15} />} title={t("settings.localShell")}>
             <Row title={t("settings.defaultShell")} desc={t("settings.shellHint")}>
               <Select
                 value={settings.localShell}
@@ -722,7 +1096,7 @@ export function Settings() {
           </Section>
 
           {/* J-Link */}
-          <Section id="jlink" icon={<Cpu size={15} />} title={t("settings.jlink")}>
+          <Section id="jlink" hidden={!secVisible("settings.jlink")} icon={<Cpu size={15} />} title={t("settings.jlink")}>
             <Row
               title={t("settings.jlinkPath")}
               desc={t("settings.jlinkHint")}
@@ -757,7 +1131,7 @@ export function Settings() {
           </Section>
 
           {/* Shortcuts */}
-          <Section id="shortcuts" icon={<Keyboard size={15} />} title={t("settings.shortcuts")}>
+          <Section id="shortcuts" hidden={!secVisible("settings.shortcuts")} icon={<Keyboard size={15} />} title={t("settings.shortcuts")}>
             <Row
               title={t("settings.approveShortcut")}
               desc={t("settings.approveShortcutHint")}
@@ -773,7 +1147,7 @@ export function Settings() {
           </Section>
 
           {/* Notifications */}
-          <Section id="notifications" icon={<Bell size={15} />} title={t("settings.notifications")}>
+          <Section id="notifications" hidden={!secVisible("settings.notifications")} icon={<Bell size={15} />} title={t("settings.notifications")}>
             <Row
               title={t("settings.approvalNotifications")}
               desc={t("settings.approvalNotificationsHint")}
@@ -921,7 +1295,7 @@ export function Settings() {
           </Section>
 
           {/* Updates */}
-          <Section id="updates" icon={<RefreshCw size={15} />} title={t("settings.updates")}>
+          <Section id="updates" hidden={!secVisible("settings.updates")} icon={<RefreshCw size={15} />} title={t("settings.updates")}>
             <Row title={t("settings.autoCheckUpdates")} desc={t("settings.autoCheckUpdatesHint")}>
               <Switch
                 checked={settings.autoCheckUpdates}
@@ -950,7 +1324,7 @@ export function Settings() {
           </Section>
 
           {/* Data */}
-          <Section id="data" icon={<Database size={15} />} title={t("settings.data")}>
+          <Section id="data" hidden={!secVisible("settings.data")} icon={<Database size={15} />} title={t("settings.data")}>
             <Row title={t("settings.exportLabel")} desc={t("settings.exportHint")} full>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2 text-[13px] text-fg">

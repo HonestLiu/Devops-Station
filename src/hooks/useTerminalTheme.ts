@@ -22,6 +22,8 @@ export function useTerminalTheme() {
     : settings.fontFamily + CJK_FALLBACK;
   return {
     theme: THEMES[settings.theme].terminal,
+    cursorColor: settings.cursorColor,
+    cursorInactiveStyle: settings.cursorInactiveStyle,
     fontFamily,
     fontSize: settings.fontSize,
     lineHeight: settings.lineHeight,
