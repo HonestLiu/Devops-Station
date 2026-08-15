@@ -11,7 +11,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::types::{Host, HostKind, QuickCommand};
+use crate::types::{Host, HostKind, MqttConnection, QuickCommand};
 use crypto::Vault;
 
 const SCHEMA: &str = r#"
@@ -52,6 +52,26 @@ CREATE TABLE IF NOT EXISTS quick_commands (
     scope       TEXT NOT NULL DEFAULT 'both',
     is_hex      INTEGER NOT NULL DEFAULT 0,
     sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS mqtt_connections (
+    id                   TEXT PRIMARY KEY,
+    name                 TEXT NOT NULL,
+    protocol             TEXT NOT NULL,
+    host                 TEXT NOT NULL,
+    port                 INTEGER NOT NULL,
+    client_id            TEXT NOT NULL DEFAULT '',
+    username             TEXT,
+    password             TEXT,
+    save_password        INTEGER NOT NULL DEFAULT 0,
+    clean                INTEGER NOT NULL DEFAULT 1,
+    keep_alive           INTEGER NOT NULL DEFAULT 60,
+    connect_timeout      INTEGER NOT NULL DEFAULT 30,
+    reconnect            INTEGER NOT NULL DEFAULT 1,
+    path                 TEXT NOT NULL DEFAULT '',
+    insecure_skip_verify INTEGER NOT NULL DEFAULT 0,
+    created_at           INTEGER NOT NULL,
+    updated_at           INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -415,6 +435,115 @@ impl Store {
             params![chrono::Utc::now().timestamp(), id],
         )?;
         Ok(())
+    }
+
+    // -- MQTT connections ---------------------------------------------------
+
+    pub fn list_mqtt_connections(&self) -> AppResult<Vec<MqttConnection>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, protocol, host, port, client_id, username, password,
+                    save_password, clean, keep_alive, connect_timeout, reconnect,
+                    path, insecure_skip_verify, created_at, updated_at
+             FROM mqtt_connections ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let password_raw: Option<String> = row.get(7)?;
+            let password = password_raw
+                .filter(|s| !s.is_empty())
+                .map(|_| "__saved__".to_string());
+            Ok(MqttConnection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                protocol: row.get(2)?,
+                host: row.get(3)?,
+                port: row.get::<_, i64>(4)? as u16,
+                client_id: row.get(5)?,
+                username: row.get(6)?,
+                password,
+                save_password: row.get::<_, i64>(8)? != 0,
+                clean: row.get::<_, i64>(9)? != 0,
+                keep_alive: row.get::<_, i64>(10)? as u16,
+                connect_timeout: row.get::<_, i64>(11)? as u16,
+                reconnect: row.get::<_, i64>(12)? != 0,
+                path: row.get(13)?,
+                insecure_skip_verify: row.get::<_, i64>(14)? != 0,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn save_mqtt_connection(&self, mut conn: MqttConnection) -> AppResult<MqttConnection> {
+        if conn.id.is_empty() {
+            conn.id = Uuid::new_v4().to_string();
+        }
+        let now = chrono::Utc::now().timestamp();
+        conn.created_at = Some(conn.created_at.unwrap_or(now));
+        conn.updated_at = Some(now);
+
+        // Sentinel means "leave the stored secret alone".
+        let existing_password = self.raw_mqtt_password(&conn.id)?;
+        let password_col = match conn.password.as_deref() {
+            None | Some("") => String::new(),
+            Some("__saved__") => existing_password,
+            Some(plain) if conn.save_password => self.vault.seal(plain)?,
+            Some(_) => String::new(),
+        };
+
+        self.conn.lock().execute(
+            "INSERT INTO mqtt_connections (id, name, protocol, host, port, client_id, username,
+                                           password, save_password, clean, keep_alive,
+                                           connect_timeout, reconnect, path, insecure_skip_verify,
+                                           created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, protocol=excluded.protocol, host=excluded.host,
+                port=excluded.port, client_id=excluded.client_id, username=excluded.username,
+                password=excluded.password, save_password=excluded.save_password,
+                clean=excluded.clean, keep_alive=excluded.keep_alive,
+                connect_timeout=excluded.connect_timeout, reconnect=excluded.reconnect,
+                path=excluded.path, insecure_skip_verify=excluded.insecure_skip_verify,
+                updated_at=excluded.updated_at",
+            params![
+                conn.id, conn.name, conn.protocol, conn.host, conn.port as i64, conn.client_id,
+                conn.username, password_col, conn.save_password as i64, conn.clean as i64,
+                conn.keep_alive as i64, conn.connect_timeout as i64, conn.reconnect as i64,
+                conn.path, conn.insecure_skip_verify as i64, conn.created_at, conn.updated_at,
+            ],
+        )?;
+
+        conn.password = (!password_col.is_empty()).then(|| "__saved__".to_string());
+        Ok(conn)
+    }
+
+    pub fn delete_mqtt_connection(&self, id: &str) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM mqtt_connections WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Decrypt a stored MQTT password for establishing a connection.
+    pub fn reveal_mqtt_secret(&self, id: &str) -> AppResult<Option<String>> {
+        let raw = self.raw_mqtt_password(id)?;
+        if raw.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(self.vault.open(&raw)?))
+    }
+
+    fn raw_mqtt_password(&self, id: &str) -> AppResult<String> {
+        let conn = self.conn.lock();
+        let value: Option<Option<String>> = conn
+            .query_row(
+                "SELECT password FROM mqtt_connections WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(value.flatten().unwrap_or_default())
     }
 
     // -- Quick commands -----------------------------------------------------

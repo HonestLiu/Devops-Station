@@ -18,6 +18,9 @@ pub enum AppError {
     #[error("Bluetooth error: {0}")]
     Ble(String),
 
+    #[error("MQTT error: {0}")]
+    Mqtt(String),
+
     #[error("Storage error: {0}")]
     Storage(String),
 

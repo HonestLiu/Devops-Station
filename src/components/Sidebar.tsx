@@ -6,6 +6,7 @@ import {
   Info,
   LayoutDashboard,
   Microchip,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Server,
@@ -35,6 +36,7 @@ const NAV: NavItem[] = [
   { id: "sftp", labelKey: "nav.sftp", icon: FolderOpen },
   { id: "serial", labelKey: "nav.serial", icon: Cable },
   { id: "jlink", labelKey: "nav.jlink", icon: Microchip },
+  { id: "mqtt", labelKey: "nav.mqtt", icon: MessageSquare },
   { id: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
@@ -60,6 +62,8 @@ function navForTab(kind: string): Page | undefined {
     case "wsl":
     case "frp":
       return "hosts";
+    case "mqtt":
+      return "mqtt";
     default:
       return undefined;
   }
@@ -75,6 +79,8 @@ function findTabForNav(navId: Page): string | undefined {
       return tabs.find((t) => t.kind === "serial" || t.kind === "ble")?.id;
     case "jlink":
       return tabs.find((t) => t.kind === "jlink")?.id;
+    case "mqtt":
+      return tabs.find((t) => t.kind === "mqtt")?.id;
     default:
       return undefined;
   }
@@ -121,6 +127,13 @@ export function Sidebar() {
     // sidebar, jump to the first open one so the click still does something.
     if (id === "sftp") {
       const existing = findTabForNav("sftp");
+      if (existing) {
+        setActive(existing);
+        return;
+      }
+    }
+    if (id === "mqtt") {
+      const existing = findTabForNav("mqtt");
       if (existing) {
         setActive(existing);
         return;

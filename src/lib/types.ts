@@ -227,7 +227,7 @@ export type ThemeId =
   | "solarized-light"
   | "catppuccin-latte";
 
-export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp" | "jlink";
+export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp" | "jlink" | "mqtt";
 
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
@@ -270,6 +270,8 @@ export interface Tab {
   jlink?: JLinkConfig;
   /** SSH only — cached credentials/config so Reconnect and Split can reconnect. */
   sshConfig?: SshConnectConfig;
+  /** MQTT only — the saved connection profile backing this live session. */
+  mqtt?: MqttConnection;
   /** Split panes (2/4 terminals in one tab). Undefined = single terminal. */
   panes?: TermPane[];
   /** Which pane is focused (used for split keyboard nav + shared sessionId). */
@@ -283,6 +285,70 @@ export interface Tab {
    * so "closing" a split member just un-groups it.
    */
   group?: string;
+}
+
+// --- MQTT (ported MQTTX-style functionality) --------------------------------
+
+export type MqttProtocol = "mqtt" | "mqtts" | "ws" | "wss";
+
+/** A persisted MQTT connection profile (mirrors MQTTX's connection model). */
+export interface MqttConnection {
+  id: string;
+  name: string;
+  protocol: MqttProtocol;
+  host: string;
+  port: number;
+  clientId: string;
+  username?: string | null;
+  /** "__saved__" means a credential exists in the encrypted store. */
+  password?: string | null;
+  savePassword: boolean;
+  clean: boolean;
+  keepAlive: number;
+  connectTimeout: number;
+  reconnect: boolean;
+  path: string;
+  insecureSkipVerify: boolean;
+  createdAt?: number | null;
+  updatedAt?: number | null;
+}
+
+/** Parameters for opening a live MQTT session. */
+export interface MqttConnectConfig {
+  name: string;
+  protocol: MqttProtocol;
+  host: string;
+  port: number;
+  clientId: string;
+  username?: string | null;
+  password?: string | null;
+  /** Saved-connection id, used to reveal a sealed password. */
+  hostId?: string | null;
+  clean: boolean;
+  keepAlive: number;
+  connectTimeout: number;
+  reconnect: boolean;
+  path: string;
+  insecureSkipVerify: boolean;
+}
+
+/** A single inbound or outbound MQTT packet, streamed from the backend. */
+export interface MqttMessage {
+  id: string;
+  topic: string;
+  /** Raw payload as base64 (binary-safe; decode to utf8/hex on display). */
+  payloadBase64: string;
+  qos: number;
+  retain: boolean;
+  direction: "in" | "out";
+  timestamp: number;
+}
+
+/** Connection lifecycle event streamed from the backend. */
+export interface MqttStatus {
+  id: string;
+  status: "connecting" | "connected" | "reconnecting" | "error" | "disconnected";
+  detail?: string | null;
 }
 
 /** One installed WSL distribution, from `wsl -l -v`. */

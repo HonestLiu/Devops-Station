@@ -386,3 +386,84 @@ pub struct PermRequest {
     ///   - `"scan"` — legacy terminal-output regex scan (opt-in compatibility).
     pub source: String,
 }
+
+// ---------------------------------------------------------------------------
+// MQTT (ported MQTTX-style functionality)
+// ---------------------------------------------------------------------------
+
+/// Connection parameters for opening a live MQTT session. `hostId` links back to
+/// a saved connection so the backend can resolve a sealed password (`__saved__`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttConnectConfig {
+    pub name: String,
+    /// "mqtt" | "mqtts" | "ws" | "wss".
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    pub client_id: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    /// Saved-connection id, used to reveal a sealed password when `password`
+    /// is the `__saved__` sentinel.
+    pub host_id: Option<String>,
+    pub clean: bool,
+    /// Seconds between keep-alive pings.
+    pub keep_alive: u16,
+    pub connect_timeout: u16,
+    pub reconnect: bool,
+    /// WebSocket request path (e.g. "/mqtt"); only used for ws/wss.
+    pub path: String,
+    /// Skip TLS certificate / hostname verification (self-signed brokers).
+    pub insecure_skip_verify: bool,
+}
+
+/// A persisted MQTT connection profile. Mirrors MQTTX's connection model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttConnection {
+    pub id: String,
+    pub name: String,
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    pub client_id: String,
+    pub username: Option<String>,
+    /// `"__saved__"` means a credential exists in the encrypted vault.
+    pub password: Option<String>,
+    pub save_password: bool,
+    pub clean: bool,
+    pub keep_alive: u16,
+    pub connect_timeout: u16,
+    pub reconnect: bool,
+    pub path: String,
+    pub insecure_skip_verify: bool,
+    pub created_at: Option<i64>,
+    pub updated_at: Option<i64>,
+}
+
+/// A single inbound or outbound MQTT packet, streamed to the frontend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttMessage {
+    /// Backend session id (event suffix), not the MQTT client id.
+    pub id: String,
+    pub topic: String,
+    /// Raw payload as base64 (binary-safe; frontend decodes to utf8/hex).
+    pub payload_base64: String,
+    pub qos: u8,
+    pub retain: bool,
+    /// "in" (received) or "out" (published by us).
+    pub direction: String,
+    pub timestamp: i64,
+}
+
+/// Connection lifecycle event streamed to the frontend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttStatus {
+    pub id: String,
+    /// "connecting" | "connected" | "reconnecting" | "error" | "disconnected".
+    pub status: String,
+    pub detail: Option<String>,
+}

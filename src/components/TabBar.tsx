@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Globe,
   Hourglass,
+  MessageSquare,
   Microchip,
   MonitorSmartphone,
   RefreshCw,
@@ -32,6 +33,7 @@ const KIND_ICON: Record<TabKind, typeof Terminal> = {
   local: MonitorSmartphone,
   sftp: FolderOpen,
   jlink: Microchip,
+  mqtt: MessageSquare,
 };
 
 function statusColor(tab: Tab): string {

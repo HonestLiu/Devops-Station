@@ -60,6 +60,21 @@ chrono = "0.4"
 # HTTP stack (rust-s3 pulls reqwest 0.12, we're on 0.13).
 hmac = "0.12"
 sha2 = "0.10"
+
+# MQTT client (ported MQTTX-style functionality). Uses rumqttc's `use-rustls`
+# backend (tokio-rustls + ring crypto — same `ring` provider the SSH stack uses,
+# so no aws-lc/CMake build chain) which is the only backend that exposes a `Wss`
+# transport for secure websocket brokers. `rustls` is pinned to 0.22 (the version
+# tokio-rustls 0.25 pulls); `TlsConfiguration::default()` (system trust store) is
+# used for normal TLS, and a custom accept-all verifier is installed only for the
+# `insecure_skip_verify` (self-signed broker) toggle. `websocket` enables ws:// and
+# wss:// brokers. NOTE: rumqttc stores the `MqttOptions::new` *host* arg verbatim as
+# `broker_addr`; the WS transports parse that as a full `scheme://host:port/path`
+# URL, so for ws/wss we must pass the full URL there (a bare host yields
+# `InvalidUrl(Host)` and an endless reconnect loop).
+rumqttc = { version = "0.24", default-features = false, features = ["use-rustls", "websocket"] }
+rustls = { version = "=0.22", default-features = false, features = ["ring", "tls12", "logging"] }
+http = "1"
 font-kit = "0.13"
 encoding_rs = "0.8"
 chacha20poly1305 = "0.10"

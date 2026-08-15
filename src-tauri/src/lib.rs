@@ -8,6 +8,7 @@ mod frp;
 mod jlink;
 mod kb;
 mod local_fs;
+mod mqtt;
 mod notify;
 mod perm;
 mod perm_hook;
@@ -27,6 +28,7 @@ use tauri::{AppHandle, Manager, State};
 
 use ble::BleManager;
 use error::{AppError, AppResult};
+use mqtt::MqttManager;
 use pty::PtyManager;
 use serial::SerialManager;
 use ssh::{metrics::MetricsCache, SshManager};
@@ -39,6 +41,7 @@ pub struct AppState {
     ssh: SshManager,
     serial: SerialManager,
     ble: BleManager,
+    mqtt: MqttManager,
     pty: PtyManager,
     store: Store,
     metrics: MetricsCache,
@@ -797,6 +800,77 @@ async fn sync_pull(
 // ===========================================================================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// ===========================================================================
+// MQTT (ported MQTTX-style functionality)
+// ===========================================================================
+
+#[tauri::command]
+async fn mqtt_connect(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: MqttConnectConfig,
+) -> AppResult<String> {
+    state.mqtt.connect(app, &state.store, config)
+}
+
+#[tauri::command]
+async fn mqtt_disconnect(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.mqtt.disconnect(&id)
+}
+
+#[tauri::command]
+async fn mqtt_publish(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    topic: String,
+    payload: String,
+    qos: u8,
+    retain: bool,
+) -> AppResult<()> {
+    let bytes = B64
+        .decode(&payload)
+        .map_err(|e| AppError::Mqtt(format!("bad base64 payload: {e}")))?;
+    state.mqtt.publish(&app, &id, &topic, &bytes, qos, retain).await
+}
+
+#[tauri::command]
+async fn mqtt_subscribe(
+    state: State<'_, AppState>,
+    id: String,
+    topic: String,
+    qos: u8,
+) -> AppResult<()> {
+    state.mqtt.subscribe(&id, &topic, qos).await
+}
+
+#[tauri::command]
+async fn mqtt_unsubscribe(
+    state: State<'_, AppState>,
+    id: String,
+    topic: String,
+) -> AppResult<()> {
+    state.mqtt.unsubscribe(&id, &topic).await
+}
+
+#[tauri::command]
+async fn mqtt_list_connections(state: State<'_, AppState>) -> AppResult<Vec<MqttConnection>> {
+    state.store.list_mqtt_connections()
+}
+
+#[tauri::command]
+async fn mqtt_save_connection(
+    state: State<'_, AppState>,
+    conn: MqttConnection,
+) -> AppResult<MqttConnection> {
+    state.store.save_mqtt_connection(conn)
+}
+
+#[tauri::command]
+async fn mqtt_delete_connection(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.store.delete_mqtt_connection(&id)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -869,6 +943,7 @@ pub fn run() {
                 ssh: SshManager::default(),
                 serial: SerialManager::default(),
                 ble: BleManager::default(),
+                mqtt: MqttManager::default(),
                 pty: PtyManager::default(),
                 store,
                 metrics: MetricsCache::default(),
@@ -882,6 +957,7 @@ pub fn run() {
                 if let Some(state) = window.try_state::<AppState>() {
                     state.serial.close_all();
                     state.ble.close_all();
+                    state.mqtt.close_all();
                     state.pty.close_all();
                     // SSH teardown is async. Block briefly on the event-loop
                     // thread so remote shells receive a real disconnect instead
@@ -910,6 +986,14 @@ pub fn run() {
             sftp_write,
             sftp_read_bytes,
             sftp_set_perms,
+            mqtt_connect,
+            mqtt_disconnect,
+            mqtt_publish,
+            mqtt_subscribe,
+            mqtt_unsubscribe,
+            mqtt_list_connections,
+            mqtt_save_connection,
+            mqtt_delete_connection,
             remote_metrics,
             local_metrics,
             serial_list_ports,

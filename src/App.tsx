@@ -4,6 +4,7 @@ import {
   Cable,
   Copy,
   FolderOpen,
+  MessageSquare,
   Microchip,
   MonitorSmartphone,
   Server,
@@ -23,6 +24,7 @@ import { Settings } from "./pages/Settings";
 import { SftpPage } from "./pages/SftpPage";
 import { SerialPage } from "./pages/SerialPage";
 import { JLinkPage } from "./pages/JLinkPage";
+import { MqttPage } from "./pages/MqttPage";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
@@ -31,6 +33,7 @@ import { WslWorkspace } from "./components/workspace/WslWorkspace";
 import { FrpWorkspace } from "./components/workspace/FrpWorkspace";
 import { SftpWorkspace } from "./components/workspace/SftpWorkspace";
 import { JLinkWorkspace } from "./components/workspace/JLinkWorkspace";
+import { MqttWorkspace } from "./components/workspace/MqttWorkspace";
 import { AiPanel } from "./ai/AiPanel";
 import { useAiStore } from "./ai/useAiStore";
 
@@ -69,6 +72,8 @@ function PageContent({ page }: { page: Page }) {
       return <SerialPage />;
     case "jlink":
       return <JLinkPage />;
+    case "mqtt":
+      return <MqttPage />;
   }
 }
 
@@ -79,6 +84,7 @@ function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
   if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
   if (tab.kind === "jlink") return <JLinkWorkspace tab={tab} />;
+  if (tab.kind === "mqtt") return <MqttWorkspace tab={tab} />;
   return <LocalWorkspace tab={tab} />;
 }
 
@@ -188,6 +194,15 @@ export default function App() {
         onClick: () => {
           closeCtx();
           setPageCtx("sftp");
+        },
+      },
+      {
+        id: "mqtt",
+        label: t("app.openMqtt"),
+        icon: <MessageSquare size={14} />,
+        onClick: () => {
+          closeCtx();
+          setPageCtx("mqtt");
         },
       },
       { id: "sep2", separator: true, label: "" },

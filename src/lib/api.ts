@@ -30,6 +30,10 @@ import type {
   JLinkResponse,
   ProfileExportInfo,
   ProfileImportInfo,
+  MqttConnection,
+  MqttConnectConfig,
+  MqttMessage,
+  MqttStatus,
 } from "./types";
 
 /**
@@ -300,6 +304,33 @@ export const wslFs = {
 
   onProgress: (cb: (p: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>("wsl-progress", (e) => cb(e.payload)),
+};
+
+// --- MQTT (ported MQTTX-style functionality) -------------------------------
+
+export const mqtt = {
+  /** Open a live session. `config.password` may be "__saved__" with a `hostId`
+   *  to reveal a stored credential server-side. Returns the session id. */
+  connect: (config: MqttConnectConfig) => call<string>("mqtt_connect", { config }),
+  disconnect: (id: string) => call<void>("mqtt_disconnect", { id }),
+  /** `payload` is base64 (binary-safe). */
+  publish: (id: string, topic: string, payload: string, qos: number, retain: boolean) =>
+    call<void>("mqtt_publish", { id, topic, payload, qos, retain }),
+  subscribe: (id: string, topic: string, qos: number) =>
+    call<void>("mqtt_subscribe", { id, topic, qos }),
+  unsubscribe: (id: string, topic: string) =>
+    call<void>("mqtt_unsubscribe", { id, topic }),
+
+  onMessage: (id: string, cb: (m: MqttMessage) => void): Promise<UnlistenFn> =>
+    listen<MqttMessage>(`mqtt-message-${id}`, (e) => cb(e.payload)),
+  onStatus: (id: string, cb: (s: MqttStatus) => void): Promise<UnlistenFn> =>
+    listen<MqttStatus>(`mqtt-status-${id}`, (e) => cb(e.payload)),
+};
+
+export const mqttConnections = {
+  list: () => call<MqttConnection[]>("mqtt_list_connections"),
+  save: (conn: MqttConnection) => call<MqttConnection>("mqtt_save_connection", { conn }),
+  delete: (id: string) => call<void>("mqtt_delete_connection", { id }),
 };
 
 // --- Storage ---------------------------------------------------------------

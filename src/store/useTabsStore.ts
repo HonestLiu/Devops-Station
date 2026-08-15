@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { ble, frp, pty, serial, ssh, wsl } from "@/lib/api";
+import { ble, frp, mqtt, pty, serial, ssh, wsl } from "@/lib/api";
 import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
@@ -9,6 +9,7 @@ import type {
   FrpConfig,
   FrpLaunchConfig,
   Host,
+  MqttConnection,
   SerialOpenConfig,
   SshConnectConfig,
   Tab,
@@ -64,6 +65,8 @@ interface TabsState {
   openSftp: (host: Host, title?: string) => Promise<string>;
   /** Open a J-Link tool tab (persistent panel; GDB server lives in the backend). */
   openJlink: (title?: string) => Promise<string>;
+  /** Open a live MQTT session tab backed by a saved connection profile. */
+  openMqtt: (conn: MqttConnection, title?: string) => Promise<string>;
   openFromHost: (host: Host) => Promise<string>;
 
   /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
@@ -125,7 +128,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           ? serial.close
           : tab?.kind === "ble"
             ? ble.close
-            : pty.close;
+            : tab?.kind === "mqtt"
+              ? mqtt.disconnect
+              : pty.close;
     // Tear down the focused session plus every split-pane session.
     const sessions = [
       tab?.sessionId,
@@ -247,6 +252,47 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       ],
       activeId: id,
     }));
+    return id;
+  },
+
+  openMqtt: async (conn, title) => {
+    const id = nextId();
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        {
+          id,
+          kind: "mqtt",
+          title: title || conn.name,
+          subtitle: `${conn.protocol}://${conn.host}:${conn.port}`,
+          status: "connecting",
+          mqtt: conn,
+        },
+      ],
+      activeId: id,
+    }));
+
+    try {
+      const sessionId = await mqtt.connect({
+        name: conn.name,
+        protocol: conn.protocol,
+        host: conn.host,
+        port: conn.port,
+        clientId: conn.clientId,
+        username: conn.username ?? undefined,
+        password: conn.savePassword ? "__saved__" : conn.password ?? undefined,
+        hostId: conn.id,
+        clean: conn.clean,
+        keepAlive: conn.keepAlive,
+        connectTimeout: conn.connectTimeout,
+        reconnect: conn.reconnect,
+        path: conn.path,
+        insecureSkipVerify: conn.insecureSkipVerify,
+      });
+      get().patch(id, { status: "connecting", sessionId });
+    } catch (err) {
+      get().patch(id, { status: "error", error: (err as Error).message });
+    }
     return id;
   },
 
@@ -625,6 +671,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       }
       case "jlink":
         return void get().openJlink(tab.title);
+      case "mqtt":
+        if (tab.mqtt) return void get().openMqtt(tab.mqtt, tab.title);
+        break;
     }
   },
 
@@ -670,6 +719,30 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         // J-Link tabs are always "connected" (the GDB server / probe state
         // lives in the backend, not this tab) — nothing to re-establish.
         get().patch(id, { status: "connected" });
+      } else if (tab.kind === "mqtt" && tab.mqtt) {
+        const c = tab.mqtt;
+        get().patch(id, { status: "connecting", error: undefined, sessionId: undefined });
+        try {
+          const sessionId = await mqtt.connect({
+            name: c.name,
+            protocol: c.protocol,
+            host: c.host,
+            port: c.port,
+            clientId: c.clientId,
+            username: c.username ?? undefined,
+            password: c.savePassword ? "__saved__" : c.password ?? undefined,
+            hostId: c.id,
+            clean: c.clean,
+            keepAlive: c.keepAlive,
+            connectTimeout: c.connectTimeout,
+            reconnect: c.reconnect,
+            path: c.path,
+            insecureSkipVerify: c.insecureSkipVerify,
+          });
+          get().patch(id, { status: "connected", sessionId });
+        } catch (err) {
+          get().patch(id, { status: "error", error: (err as Error).message });
+        }
       } else if (tab.kind === "ssh" && tab.sshConfig) {
         // Reconnect the focused pane (or the whole tab when not split).
         const result = await ssh.connect(tab.sshConfig);

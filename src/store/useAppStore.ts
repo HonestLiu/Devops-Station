@@ -5,7 +5,7 @@ import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
 import type { AccountSettings, AISettings, ApprovalSettings, ThemeId } from "@/lib/types";
 
-export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink";
+export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink" | "mqtt";
 
 export type Language = "zh" | "en";
 
