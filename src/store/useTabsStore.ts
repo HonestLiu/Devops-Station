@@ -20,6 +20,17 @@ let counter = 0;
 const nextId = () => `tab-${++counter}`;
 let paneCounter = 0;
 const nextPaneId = () => `pane-${++paneCounter}`;
+let groupCounter = 0;
+const nextGroupId = () => `grp-${++groupCounter}`;
+
+/** Drop `group` from tabs that are their group's only remaining member. */
+function pruneSingleGroups(tabs: Tab[]): Tab[] {
+  const counts = new Map<string, number>();
+  for (const t of tabs) if (t.group) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
+  return tabs.map((t) =>
+    t.group && (counts.get(t.group) ?? 0) <= 1 ? { ...t, group: undefined } : t,
+  );
+}
 
 /** Non-React translate helper — the tabs store runs outside React. */
 function lang(
@@ -64,6 +75,18 @@ interface TabsState {
 
   /** Jump to whichever tab/pane owns `sessionId` (used by the notif bell). */
   focusBySession: (sessionId: string) => void;
+
+  /**
+   * Merge `sourceId` into `targetId`'s split group: both tabs (and any existing
+   * group members) render side-by-side in one view. No session is touched —
+   * this is purely a layout grouping. Max 4 members per group.
+   */
+  groupTabs: (sourceId: string, targetId: string) => void;
+  /**
+   * Detach `id` from its split group back into a standalone tab. The session
+   * keeps running — this is the "close this split pane" action.
+   */
+  ungroupTab: (id: string) => void;
 
   /** Re-open a fresh tab of the same kind using the cached connect config. */
   duplicateTab: (id: string) => Promise<void>;
@@ -113,7 +136,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       teardown(sid).catch(() => undefined);
     }
     set((s) => {
-      const tabs = s.tabs.filter((t) => t.id !== id);
+      const tabs = pruneSingleGroups(s.tabs.filter((t) => t.id !== id));
       let activeId = s.activeId;
       if (activeId === id) {
         const idx = s.tabs.findIndex((t) => t.id === id);
@@ -537,6 +560,40 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         return;
       }
     }
+  },
+
+  groupTabs: (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+    const { tabs } = get();
+    const source = tabs.find((t) => t.id === sourceId);
+    const target = tabs.find((t) => t.id === targetId);
+    if (!source || !target) return;
+
+    // Join the target's group (or start a new one together).
+    const group = target.group ?? nextGroupId();
+    const members = tabs.filter((t) => t.group === group).length;
+    if (members >= 4) return; // max 4 screens per group
+
+    // Move source right after target so layout order follows drop position.
+    const without = tabs.filter((t) => t.id !== sourceId);
+    const idx = without.findIndex((t) => t.id === targetId);
+    const reordered = [
+      ...without.slice(0, idx + 1),
+      { ...source, group },
+      ...without.slice(idx + 1),
+    ];
+    set({
+      tabs: pruneSingleGroups(
+        reordered.map((t) => (t.id === targetId && !t.group ? { ...t, group } : t)),
+      ),
+      activeId: sourceId,
+    });
+  },
+
+  ungroupTab: (id) => {
+    set((s) => ({
+      tabs: pruneSingleGroups(s.tabs.map((t) => (t.id === id ? { ...t, group: undefined } : t))),
+    }));
   },
 
   duplicateTab: async (id) => {

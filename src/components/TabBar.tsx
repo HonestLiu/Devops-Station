@@ -1,8 +1,9 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Bluetooth,
   Cable,
   ChevronsRight,
+  Columns2,
   Copy,
   FolderOpen,
   Globe,
@@ -46,6 +47,21 @@ function statusColor(tab: Tab): string {
   }
 }
 
+/**
+ * How long a press on a tab must be held before drag-to-split starts, and how
+ * far the pointer may wander during the press before it is treated as a plain
+ * click/select instead.
+ */
+const DRAG_PRESS_MS = 300;
+const DRAG_MOVE_TOLERANCE_PX = 6;
+
+/**
+ * Drag-to-split via a custom long-press drag (NOT HTML5 DnD — WebView2 shows a
+ * 🚫 cursor and drops the payload for in-app HTML5 drags, making them
+ * unreliable here). Hold a tab ~300ms, then move: a ghost label follows the
+ * cursor; dropping on another tab merges into that tab's split group, dropping
+ * anywhere else in the window merges with the currently active terminal.
+ */
 export function TabBar() {
   const t = useT();
   const tabs = useTabsStore((s) => s.tabs);
@@ -54,6 +70,7 @@ export function TabBar() {
   const closeTab = useTabsStore((s) => s.closeTab);
   const duplicateTab = useTabsStore((s) => s.duplicateTab);
   const reconnect = useTabsStore((s) => s.reconnect);
+  const groupTabs = useTabsStore((s) => s.groupTabs);
   const waitingBySession = useSessionStore((s) => s.waitingBySession);
 
   const isTabWaiting = (tab: Tab): boolean => {
@@ -63,6 +80,110 @@ export function TabBar() {
 
   const showCtx = useContextMenu((s) => s.show);
   const closeCtx = useContextMenu((s) => s.close);
+
+  // --- long-press drag state ------------------------------------------------
+  const [dragTabId, setDragTabId] = useState<string | null>(null);
+  const [hoverTabId, setHoverTabId] = useState<string | null>(null);
+  const pressRef = useRef<{ id: string; x: number; y: number; t: number } | null>(null);
+  const dragActiveRef = useRef(false);
+  const dragMovedRef = useRef(false);
+  const hoverTabIdRef = useRef<string | null>(null);
+  const suppressClickRef = useRef(false);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+
+  const endDrag = () => {
+    pressRef.current = null;
+    dragActiveRef.current = false;
+    dragMovedRef.current = false;
+    hoverTabIdRef.current = null;
+    setDragTabId(null);
+    setHoverTabId(null);
+    ghostRef.current?.remove();
+    ghostRef.current = null;
+  };
+
+  const onTabMouseDown = (e: ReactMouseEvent, tab: Tab) => {
+    if (e.button !== 0) return;
+    // A previous drag may have ended outside the window — always start fresh.
+    pressRef.current = { id: tab.id, x: e.clientX, y: e.clientY, t: Date.now() };
+    suppressClickRef.current = false;
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const press = pressRef.current;
+      if (!press) return;
+      const dx = e.clientX - press.x;
+      const dy = e.clientY - press.y;
+
+      if (!dragActiveRef.current) {
+        // Moving before the hold elapses = a plain click / text drag — cancel.
+        if (Math.hypot(dx, dy) > DRAG_MOVE_TOLERANCE_PX) {
+          pressRef.current = null;
+          return;
+        }
+        if (Date.now() - press.t < DRAG_PRESS_MS) return;
+        // Long-press reached → enter drag mode.
+        dragActiveRef.current = true;
+        suppressClickRef.current = true;
+        setDragTabId(press.id);
+        const ghost = document.createElement("div");
+        ghost.className =
+          "pointer-events-none fixed z-[100] flex items-center gap-1.5 rounded-lg border border-border bg-elevated px-2.5 py-1.5 text-[12px] text-fg opacity-90 shadow-xl";
+        const title = tabs.find((x) => x.id === press.id)?.title ?? "";
+        ghost.textContent = title;
+        ghost.style.left = `${e.clientX + 12}px`;
+        ghost.style.top = `${e.clientY + 10}px`;
+        document.body.appendChild(ghost);
+        ghostRef.current = ghost;
+      }
+
+      // Follow the cursor. Any real movement past the press point counts as an
+      // actual drag (a bare long-press-and-release must NOT merge anything).
+      if (Math.hypot(dx, dy) > 2) dragMovedRef.current = true;
+      if (ghostRef.current) {
+        ghostRef.current.style.left = `${e.clientX + 12}px`;
+        ghostRef.current.style.top = `${e.clientY + 10}px`;
+      }
+
+      // Track which tab (if any) is under the cursor. Outside the window the
+      // drag is cancelled (a mouseup there would never reach us).
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) {
+        endDrag();
+        return;
+      }
+      const tabEl = el?.closest<HTMLElement>("[data-tab-id]");
+      const hover = tabEl?.dataset.tabId ?? null;
+      hoverTabIdRef.current = hover;
+      setHoverTabId(hover);
+    };
+
+    const onUp = () => {
+      if (dragActiveRef.current && dragMovedRef.current) {
+        const src = pressRef.current?.id;
+        if (src) {
+          const target = hoverTabIdRef.current;
+          if (target && target !== src) {
+            groupTabs(src, target);
+          } else {
+            // Dropped on the terminal area / empty space → merge with the
+            // currently active terminal.
+            const active = useTabsStore.getState().activeId;
+            if (active && active !== src) groupTabs(src, active);
+          }
+        }
+      }
+      endDrag();
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [groupTabs, tabs]);
 
   const onTabContextMenu = (e: ReactMouseEvent, tab: Tab) => {
     e.preventDefault();
@@ -126,16 +247,30 @@ export function TabBar() {
       {tabs.map((tab) => {
         const Icon = KIND_ICON[tab.kind];
         const active = tab.id === activeId;
+        const dragging = dragTabId === tab.id;
+        const dropTarget = hoverTabId === tab.id;
         return (
           <div
             key={tab.id}
-            onClick={() => setActive(tab.id)}
+            data-tab-id={tab.id}
+            onMouseDown={(e) => onTabMouseDown(e, tab)}
+            onClick={() => {
+              // Swallow the click that follows a completed drag.
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                return;
+              }
+              setActive(tab.id);
+            }}
             onContextMenu={(e) => onTabContextMenu(e, tab)}
+            title={tab.group ? t("tabs.groupedHint") : t("tabs.dragToSplit")}
             className={cn(
               "group flex h-7 min-w-[140px] max-w-[220px] cursor-pointer items-center gap-2 rounded-lg px-2.5 text-[12px] transition-colors",
               active
                 ? "bg-elevated text-fg shadow-sm ring-1 ring-inset ring-border"
                 : "text-muted hover:bg-hover hover:text-fg",
+              dropTarget && "ring-2 ring-inset ring-accent",
+              dragging && "opacity-40",
             )}
           >
             <Icon
@@ -143,6 +278,7 @@ export function TabBar() {
               className={cn("shrink-0", active ? "text-accent" : "text-subtle")}
             />
             <span className="flex-1 truncate">{tab.title}</span>
+            {tab.group && <Columns2 size={11} className="shrink-0 text-accent/70" />}
             {isTabWaiting(tab) && (
               <span title={t("tabs.waitingInput")} className="flex shrink-0 items-center">
                 <Hourglass size={12} className="animate-pulse text-warning" />

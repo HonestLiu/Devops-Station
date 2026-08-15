@@ -276,6 +276,13 @@ export interface Tab {
   focusedPaneId?: string;
   /** 2-pane split orientation: "col" = side by side, "row" = stacked. */
   splitAxis?: "col" | "row";
+  /**
+   * Split-group id: tabs sharing the same id render side-by-side in one view
+   * (drag a tab onto another in the tab bar). Setting it to undefined detaches
+   * the tab back into a standalone view — the underlying session is untouched,
+   * so "closing" a split member just un-groups it.
+   */
+  group?: string;
 }
 
 /** One installed WSL distribution, from `wsl -l -v`. */

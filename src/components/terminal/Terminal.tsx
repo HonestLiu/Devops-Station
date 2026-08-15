@@ -654,7 +654,9 @@ export function Terminal(props: TerminalProps) {
   const handleFileDrop = (e: DragEvent<HTMLDivElement>) => {
     if (transport === "serial" || transport === "ble") return;
     const data = e.dataTransfer.getData("text/plain");
-    if (!data) return;
+    // Ignore tab-bar drags: they carry a tab id (tab-N) as text/plain and must
+    // not be typed into the terminal as a path.
+    if (!data || /^tab-\d+$/.test(data)) return;
     e.preventDefault();
     const typed = data.includes(" ") ? `"${data.replace(/"/g, '\\"')}"` : data;
     const writer =

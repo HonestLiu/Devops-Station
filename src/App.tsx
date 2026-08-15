@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   Server,
   Settings as SettingsIcon,
+  X,
 } from "lucide-react";
 
 import { Sidebar } from "./components/Sidebar";
@@ -204,6 +205,8 @@ export default function App() {
 
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
+  const setActive = useTabsStore((s) => s.setActive);
+  const ungroupTab = useTabsStore((s) => s.ungroupTab);
   const activeTab = tabs.find((t) => t.id === activeId);
 
   const showTabs = tabs.length > 0;
@@ -397,27 +400,73 @@ export default function App() {
         {showTabs && <TabBar />}
         <main className="relative min-h-0 flex-1 overflow-hidden">
           {/*
-            Every open tab stays mounted. Rendering only the active one would
-            tear down its xterm instance on each switch, taking the scrollback,
-            the running session view and the SFTP listing with it — you'd come
-            back to a blank terminal.
+            Every open tab stays mounted — and, crucially, every tab keeps the
+            SAME position in the component tree (one container, one child per
+            tab, keyed by tab.id). Split-grouping is expressed purely through
+            CSS layout classes, never by moving children between parents: moving
+            a TabContent across trees would unmount/remount its xterm, replaying
+            the shell init (duplicate OSC 7 injection) and freezing the session.
 
-            `invisible` rather than `hidden`: visibility:hidden keeps layout, so
-            FitAddon can still measure the element and the terminal is already
-            the right size the moment you switch back.
+            The active region (a standalone tab, or a group of tabs) fills the
+            grid; inactive tabs become `invisible absolute inset-0` so they keep
+            layout size (FitAddon can measure) without occupying a grid cell.
           */}
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={cn(
-                "absolute inset-0",
-                tab.id === activeId ? "z-10" : "invisible pointer-events-none",
-              )}
-              aria-hidden={tab.id !== activeId}
-            >
-              <TabContent tab={tab} />
-            </div>
-          ))}
+          {(() => {
+            // Which region is on screen: the active tab's group, or itself.
+            const regionTabs = activeTab?.group
+              ? tabs.filter((t) => t.group === activeTab.group)
+              : activeTab
+                ? [activeTab]
+                : [];
+            const size = regionTabs.length;
+            const containerCls =
+              size <= 1
+                ? "block"
+                : size === 2
+                  ? "grid grid-cols-2"
+                  : "grid grid-cols-2 grid-rows-2";
+            return (
+              <div className={cn("absolute inset-0 h-full bg-bg", containerCls)}>
+                {tabs.map((tab) => {
+                  const inRegion = activeTab
+                    ? tab.group
+                      ? activeTab.group === tab.group
+                      : activeTab.id === tab.id
+                    : false;
+                  return (
+                    <div
+                      key={tab.id}
+                      onClick={() => setActive(tab.id)}
+                      aria-hidden={!inRegion}
+                      className={cn(
+                        "relative min-h-0 min-w-0 overflow-hidden bg-bg",
+                        inRegion
+                          ? size <= 1
+                            ? "h-full w-full"
+                            : "min-h-0 min-w-0"
+                          : "invisible pointer-events-none absolute inset-0",
+                        tab.group && tab.id === activeId && "ring-2 ring-inset ring-accent/50",
+                      )}
+                    >
+                      <TabContent tab={tab} />
+                      {tab.group && inRegion && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ungroupTab(tab.id);
+                          }}
+                          title={t("tabs.ungroup")}
+                          className="absolute right-2 top-11 z-30 flex h-6 w-6 items-center justify-center rounded-md bg-bg/80 text-subtle opacity-60 transition-opacity hover:bg-border hover:text-danger hover:opacity-100"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           {!activeTab && (
             <div className="absolute inset-0 z-20 bg-bg">
               <PageContent page={page} />
