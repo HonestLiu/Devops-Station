@@ -1,10 +1,18 @@
 import { create } from "zustand";
 
 import { isWaitingForInput } from "@/ai/errorScan";
+import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 
 export interface PermItem {
   id: string;
+  /** Session id reported by the backend — for HOOK events this is the agent
+   *  CLI's own session id, which has no relation to our local pty sessions. */
   sessionId: string;
+  /** Local terminal session the prompt was associated with (HOOK events are
+   *  linked to the tab that was active when the request arrived). `undefined`
+   *  when no terminal was active. */
+  targetSessionId?: string;
   tool: string;
   snippet: string;
   /** Detection timestamp (epoch ms). */
@@ -21,6 +29,9 @@ interface PermState {
   dismiss: (id: string) => void;
   markSeen: () => void;
   clear: () => void;
+  /** The most recent approval event and the local session it was linked to —
+   *  drives the quick-approve shortcut when no session is text-flagged. */
+  lastApproval: { sessionId: string; ts: number } | null;
 }
 
 /** Requests older than this are auto-dropped — a stale prompt has long since resolved. */
@@ -49,6 +60,18 @@ function fingerprint(snippet: string): string {
     .toLowerCase();
 }
 
+/**
+ * The local terminal session the user is currently working in — the most
+ * plausible owner of a just-arrived approval request. `tab.sessionId` stays in
+ * sync with the focused pane (see useTabsStore.focusPane), so this resolves
+ * split tabs correctly. Returns undefined for non-terminal tabs (SFTP, J-Link).
+ */
+export function resolveLocalSession(): string | undefined {
+  const { tabs, activeId } = useTabsStore.getState();
+  const tab = tabs.find((t) => t.id === activeId);
+  return tab?.sessionId || undefined;
+}
+
 /** Last-seen per (session, fingerprint) — first detection in the window wins. */
 const lastSeen = new Map<string, number>();
 /** Fingerprints the user dismissed — suppressed until the window lapses. */
@@ -57,6 +80,7 @@ const dismissed = new Map<string, number>();
 export const usePermStore = create<PermState>((set, get) => ({
   items: [],
   unseen: 0,
+  lastApproval: null,
 
   push: (p) => {
     // Frontend gate — only for the legacy SCAN source. A scan matches on
@@ -85,11 +109,25 @@ export const usePermStore = create<PermState>((set, get) => ({
     if (now - prev < SESSION_WINDOW_MS) return;
     lastSeen.set(sessionKey, now);
 
+    // Link the request to a local terminal session: the tab that was active
+    // when it arrived is the one running the agent CLI (a hook's session id is
+    // the agent's own, useless for targeting our pty). When linked, mark the
+    // session as "waiting" so the tab badge and the quick-approve shortcut
+    // (which need a local session id) light up immediately — the text scanner
+    // may never flag agent TUIs whose prompt text doesn't match INTERACTIVE_RE.
+    const targetSessionId = resolveLocalSession();
+    if (targetSessionId) {
+      useSessionStore.getState().markHookWaiting(targetSessionId);
+    }
+
     const live = get().items.filter((i) => now - i.ts < EXPIRE_MS);
-    const item: PermItem = { ...p, id: crypto.randomUUID() };
+    const item: PermItem = { ...p, targetSessionId, id: crypto.randomUUID() };
     set({
       items: [item, ...live].slice(0, 40),
       unseen: get().unseen + 1,
+      lastApproval: targetSessionId
+        ? { sessionId: targetSessionId, ts: now }
+        : get().lastApproval,
     });
   },
 

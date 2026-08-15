@@ -612,6 +612,35 @@ fn set_scan_fallback(enabled: bool) {
     crate::perm::set_scan_fallback(enabled);
 }
 
+/// Register (or clear) the OS-level quick-approve shortcut. The accelerator is
+/// a plugin-format string like "Ctrl+Shift+Enter"; an empty string unregisters.
+/// While registered, pressing the combo anywhere on the system emits
+/// `approval-shortcut` to the frontend, which forwards Enter to the terminal
+/// currently waiting on an agent CLI approval prompt.
+#[tauri::command]
+fn set_global_approve_shortcut(app: tauri::AppHandle, accelerator: String) -> Result<(), String> {
+    use tauri::Emitter;
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+    let gs = app.global_shortcut();
+    // Drop any previously registered combo first — re-registering the same
+    // accelerator after a change would otherwise stack handlers.
+    gs.unregister_all().map_err(|e| format!("清理旧快捷键失败：{e}"))?;
+
+    let acc = accelerator.trim();
+    if acc.is_empty() {
+        return Ok(());
+    }
+    let shortcut: Shortcut = acc
+        .parse()
+        .map_err(|e| format!("无效快捷键 {acc}: {e}"))?;
+    gs.on_shortcut(shortcut, |app, _sc, _state| {
+        let _ = app.emit("approval-shortcut", ());
+    })
+    .map_err(|e| format!("注册全局快捷键失败：{e}"))?;
+    Ok(())
+}
+
 // ===========================================================================
 // Storage
 // ===========================================================================
@@ -717,43 +746,26 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             .setup(|app| {
             // Ensure OS notifications are attributed to this app (not
             // "Windows PowerShell") by registering our Start Menu shortcut +
             // AUMID on Windows. Safe no-op on other platforms / release builds
             // that already ship the shortcut via the installer.
-            // Probe files (absolute path, independent of home_dir/debug_log)
-            // to pinpoint exactly where setup stops. GUI binaries have no
-            // console, so eprintln! is invisible.
-            let probe = |tag: &str| {
-                let p = format!(
-                    "{}/.devops-station/hooks/setup_{tag}.txt",
-                    std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into())
-                );
-                let _ = std::fs::write(&p, format!("{tag} {}\n", std::process::id()));
-            };
-            probe("enter");
             crate::notify::register_aumid();
-            probe("aumid");
 
             let data_dir = match app.path().app_data_dir() {
                 Ok(d) => d,
-                Err(e) => {
-                    probe(&format!("data_dir_err_{e:?}"));
-                    return Err(format!("cannot resolve app data dir: {e}").into());
-                }
+                Err(e) => return Err(format!("cannot resolve app data dir: {e}").into()),
             };
-            probe("data_dir");
             crate::perm_hook::debug_log("setup: before Store::new");
             let store = match Store::new(&data_dir) {
                 Ok(s) => s,
                 Err(e) => {
                     crate::perm_hook::debug_log(&format!("setup: Store::new FAILED: {e}"));
-                    probe(&format!("store_err_{e:?}"));
                     return Err(format!("store init failed: {e}").into());
                 }
             };
-            probe("store_ok");
             crate::perm_hook::debug_log("setup: store ok");
             crate::perm_hook::debug_log(&format!("setup: data_dir={}", data_dir.display()));
 
@@ -764,7 +776,6 @@ pub fn run() {
             // left approval hooks POSTing into a dead port.
             match store.get_settings() {
                 Ok(settings) => {
-                    probe("get_settings_ok");
                     let approval = settings
                         .get("approval")
                         .cloned()
@@ -777,7 +788,6 @@ pub fn run() {
                         .get("port")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(47890) as u16;
-                    probe(&format!("approval_enabled{enabled}_port{port}"));
                     crate::perm_hook::debug_log(&format!(
                         "setup: approval={approval} enabled={enabled} port={port}"
                     ));
@@ -788,12 +798,12 @@ pub fn run() {
                         let r = tauri::async_runtime::block_on(
                             crate::perm_hook::perm_hook_start(handle, port),
                         );
-                        probe(&format!("start_result_{r:?}"));
-                        crate::perm_hook::debug_log("setup: listener started (block_on)");
+                        crate::perm_hook::debug_log(&format!(
+                            "setup: listener start result {r:?}"
+                        ));
                     }
                 }
                 Err(e) => {
-                    probe(&format!("get_settings_err_{e:?}"));
                     crate::perm_hook::debug_log(&format!("setup: get_settings failed: {e}"));
                 }
             }
@@ -885,6 +895,7 @@ pub fn run() {
             notify_show,
             set_approval_notifications,
             set_scan_fallback,
+            set_global_approve_shortcut,
             perm_hook::perm_hook_start,
             perm_hook::perm_hook_stop,
             perm_hook::perm_hook_install,

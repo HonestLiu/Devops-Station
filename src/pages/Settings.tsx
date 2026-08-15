@@ -27,7 +27,7 @@ import { Button, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
-import { formatShortcut } from "@/lib/shortcut";
+import { formatShortcut, setShortcutRecording } from "@/lib/shortcut";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
@@ -165,13 +165,23 @@ function ShortcutRecorder({
 }) {
   const [recording, setRecording] = useState(false);
 
+  // Publish the recording state globally so the app-level shortcut handlers
+  // (registered on window in the capture phase, before this listener) stand
+  // down — otherwise a combination equal to an existing shortcut is consumed
+  // and stopPropagation'd before the recorder ever sees it.
+  const stopRecording = () => {
+    setShortcutRecording(false);
+    setRecording(false);
+  };
+
   useEffect(() => {
     if (!recording) return;
+    setShortcutRecording(true);
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (e.code === "Escape") {
-        setRecording(false);
+        stopRecording();
         return;
       }
       if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) return;
@@ -181,16 +191,20 @@ function ShortcutRecorder({
       if (e.shiftKey) mods.push("shift");
       if (e.metaKey) mods.push("meta");
       onChange([...mods, e.code].join("+"));
-      setRecording(false);
+      stopRecording();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      setShortcutRecording(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, onChange]);
 
   return (
     <button
       type="button"
-      onClick={() => setRecording((v) => !v)}
+      onClick={() => (recording ? stopRecording() : setRecording(true))}
       title={recording ? undefined : recordHint}
       className={cn(
         "no-drag flex h-9 w-60 items-center justify-center rounded-lg border font-mono text-[12px] transition-colors",

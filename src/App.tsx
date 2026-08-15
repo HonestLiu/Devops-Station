@@ -43,7 +43,11 @@ import { checkForUpdate } from "./lib/updater";
 import { permHook } from "./lib/api";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { approveWaitingNow } from "./lib/quickApprove";
-import { matchesShortcut } from "./lib/shortcut";
+import {
+  isShortcutRecording,
+  matchesShortcut,
+  shortcutToAccelerator,
+} from "./lib/shortcut";
 import type { PermRequest, Tab } from "./lib/types";
 
 function PageContent({ page }: { page: Page }) {
@@ -208,6 +212,7 @@ export default function App() {
   const toggleAi = useAiStore((s) => s.togglePanel);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isShortcutRecording()) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "Period") {
         e.preventDefault();
         e.stopPropagation();
@@ -217,7 +222,6 @@ export default function App() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [toggleAi]);
-
   // Permission-request alerts from the backend (vibecoding CLI approval prompts).
   // The OS-level notification is raised in Rust; here we just feed the in-app bell.
   useEffect(() => {
@@ -246,12 +250,16 @@ export default function App() {
 
   // Quick approval shortcut (configurable in Settings → Shortcuts): sends Enter
   // to the session that is currently waiting on an agent CLI approval prompt
-  // (Claude Code, Codex, …), confirming the highlighted "Yes" option without
-  // leaving the current view. Capture phase + stopPropagation so the keystroke
-  // never reaches the terminal.
+  // (Claude Code, Codex, …), confirming the highlighted "Yes" option. In-window
+  // keydown (capture phase + stopPropagation so the keystroke never reaches the
+  // terminal) — the OS-level registration below covers the no-focus case; the
+  // 400ms dedup in approveWaitingNow keeps the two from double-sending Enter.
   const approveShortcut = useAppStore((s) => s.settings.approveShortcut);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Stand down while Settings is recording a shortcut: the recorder's own
+      // listener must be the one to consume the keystroke (capture-order).
+      if (isShortcutRecording()) return;
       if (matchesShortcut(e, approveShortcut)) {
         e.preventDefault();
         e.stopPropagation();
@@ -262,12 +270,34 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [approveShortcut]);
 
+  // Keep the OS-level (system-wide) quick-approve shortcut in sync with the
+  // setting — it works even when this window has no focus, e.g. the user is
+  // watching Claude Code in a separate terminal window.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    void permHook.setGlobalShortcut(shortcutToAccelerator(approveShortcut)).catch(() => undefined);
+  }, [settingsLoaded, approveShortcut]);
+
+  // OS-level quick-approve shortcut (tauri-plugin-global-shortcut): fires even
+  // when the app window has no focus (e.g. the user is looking at Claude Code
+  // in a separate terminal window). The Rust side re-registers it whenever
+  // settings.approveShortcut changes; here we just react to the event.
+  useEffect(() => {
+    const un = listen("approval-shortcut", () => {
+      void approveWaitingNow();
+    });
+    return () => {
+      void un.then((fn) => fn());
+    };
+  }, []);
+
   // Global command palette shortcut: Cmd+K on macOS, Ctrl+K on Windows/Linux.
   // Registered in the CAPTURE phase and stopPropagation'd so the keystroke never
   // reaches the focused xterm (otherwise Ctrl+K would also fire bash's kill-line
   // inside the terminal, and the palette would feel unresponsive).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isShortcutRecording()) return;
       const isK = e.code === "KeyK" || e.key.toLowerCase() === "k";
       if ((e.metaKey || e.ctrlKey) && isK) {
         e.preventDefault();

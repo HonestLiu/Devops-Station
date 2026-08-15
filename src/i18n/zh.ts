@@ -183,7 +183,7 @@ export const zh = {
   "settings.jlink": "J-Link",
   "settings.shortcuts": "快捷键",
   "settings.approveShortcut": "快速审批",
-  "settings.approveShortcutHint": "向当前等待审批的 CLI 会话（Claude Code / Codex 等）发送回车确认。点击右侧按钮后按下组合键即可录制。",
+  "settings.approveShortcutHint": "向当前等待审批的 CLI 会话（Claude Code / Codex 等）发送回车确认。系统级快捷键，即使焦点在其他窗口也能生效。点击右侧按钮后按下组合键即可录制。",
   "settings.shortcutRecordHint": "点击后按下组合键（需包含 Ctrl/Alt/Shift/Cmd）",
   "settings.shortcutPress": "按下组合键…（Esc 取消）",
   "settings.notifications": "通知",

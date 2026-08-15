@@ -456,4 +456,11 @@ export const permHook = {
   /** Enable/disable the legacy terminal-output scan (compat mode, default off). */
   setScanFallback: (enabled: boolean) =>
     call<void>("set_scan_fallback", { enabled }),
+  /**
+   * Register the OS-level quick-approve shortcut (accelerator string like
+   * "Ctrl+Shift+Enter", or null/empty to unregister). Fires "approval-shortcut"
+   * to the frontend even when the window has no focus.
+   */
+  setGlobalShortcut: (accelerator: string | null) =>
+    call<void>("set_global_approve_shortcut", { accelerator: accelerator ?? "" }),
 };

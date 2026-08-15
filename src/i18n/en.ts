@@ -174,7 +174,7 @@ export const en: Record<keyof typeof zh, string> = {
   "settings.jlink": "J-Link",
   "settings.shortcuts": "Shortcuts",
   "settings.approveShortcut": "Quick approve",
-  "settings.approveShortcutHint": "Sends Enter to the session currently waiting on an agent CLI approval (Claude Code / Codex, …). Click the button, then press a key combination to record it.",
+  "settings.approveShortcutHint": "Sends Enter to the session currently waiting on an agent CLI approval (Claude Code / Codex, …). Works system-wide, even when another window has focus. Click the button, then press a key combination to record it.",
   "settings.shortcutRecordHint": "Click, then press a combination (needs Ctrl/Alt/Shift/Cmd)",
   "settings.shortcutPress": "Press a combination… (Esc to cancel)",
   "settings.notifications": "Notifications",

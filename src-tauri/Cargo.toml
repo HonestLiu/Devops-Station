@@ -19,6 +19,10 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# OS-level (system-wide) quick-approve shortcut: fires even when the app window
+# has no focus, so the user can approve a Claude Code / Codex prompt while
+# looking at it in any terminal.
+tauri-plugin-global-shortcut = "2"
 # Direct dep so we can pin our own AppUserModelID on OS notifications (the
 # notification plugin only sets it in release builds, which is why dev-mode
 # toasts otherwise show up under "Windows PowerShell").

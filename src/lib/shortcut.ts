@@ -134,3 +134,72 @@ export function formatShortcut(spec: string): string {
   else if (key.startsWith("Digit")) key = key.slice(5);
   return [...mods, key].join(" + ");
 }
+
+/**
+ * Whether a shortcut is being recorded in Settings right now. While true, the
+ * app-level shortcut handlers (quick-approve, palette, AI panel) must stand
+ * down: they are registered on `window` in the capture phase *before* the
+ * recorder's own listener, and a matching combination would otherwise
+ * `stopPropagation` and swallow the keystroke the recorder is trying to read.
+ */
+let recordingShortcut = false;
+
+export function setShortcutRecording(v: boolean): void {
+  recordingShortcut = v;
+}
+
+export function isShortcutRecording(): boolean {
+  return recordingShortcut;
+}
+
+/**
+ * Normalize a front-end shortcut spec ("ctrl+shift+Enter", KeyboardEvent.code
+ * based) into the accelerator string the OS-level global-shortcut plugin
+ * accepts ("Ctrl+Shift+Enter"). Returns null when the spec has no key.
+ */
+export function shortcutToAccelerator(spec: string): string | null {
+  const s = parseShortcut(spec);
+  if (!s || !s.code) return null;
+  const mods: string[] = [];
+  if (s.ctrl) mods.push("Ctrl");
+  if (s.alt) mods.push("Alt");
+  if (s.shift) mods.push("Shift");
+  if (s.meta) mods.push("Super");
+  // KeyboardEvent.code → accelerator key name.
+  const KEY_NAMES: Record<string, string> = {
+    Enter: "Enter",
+    Space: "Space",
+    Tab: "Tab",
+    Escape: "Esc",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    Home: "Home",
+    End: "End",
+    Insert: "Insert",
+    Slash: "/",
+    Period: ".",
+    Comma: ",",
+    Semicolon: ";",
+    Quote: "'",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Backslash: "\\",
+    Minus: "-",
+    Equal: "=",
+    Backquote: "`",
+  };
+  let key = KEY_NAMES[s.code];
+  if (!key) {
+    if (s.code.startsWith("Key")) key = s.code.slice(3);
+    else if (s.code.startsWith("Digit")) key = s.code.slice(5);
+    else if (/^F\d{1,2}$/.test(s.code)) key = s.code;
+    else return null;
+  }
+  return [...mods, key].join("+");
+}

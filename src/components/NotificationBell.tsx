@@ -24,15 +24,19 @@ function Row({ item }: { item: PermItem }) {
   const focusBySession = useTabsStore((s) => s.focusBySession);
   const dismiss = usePermStore((s) => s.dismiss);
 
+  // HOOK events carry the agent's own session id, which no local tab owns —
+  // target the linked local session when we have one.
+  const localSid = item.targetSessionId ?? item.sessionId;
+
   const jump = () => {
-    focusBySession(item.sessionId);
+    focusBySession(localSid);
     dismiss(item.id);
   };
 
   const approve = () => {
     // Send Enter to the waiting session (confirms the highlighted "Yes" option),
     // then drop the entry so the bell reflects it as handled.
-    void approveSession(item.sessionId);
+    void approveSession(localSid);
     dismiss(item.id);
   };
 
