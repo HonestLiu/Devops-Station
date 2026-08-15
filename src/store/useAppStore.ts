@@ -96,6 +96,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoDiagnose: true,
     useKnowledgeBase: false,
     knowledgeBasePath: "",
+    // Keep the model's native behavior by default; opt in for faster replies.
+    disableThinking: false,
   },
 };
 

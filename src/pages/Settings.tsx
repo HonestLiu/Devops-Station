@@ -648,6 +648,13 @@ export function Settings() {
                 onChange={(e) => setAi("temperature", Number(e.target.value) || 0.3)}
               />
             </Row>
+            <Row title={t("settings.disableThinking")} desc={t("settings.disableThinkingHint")}>
+              <Switch
+                checked={settings.ai.disableThinking}
+                onChange={(v) => setAi("disableThinking", v)}
+                label={t("settings.disableThinking")}
+              />
+            </Row>
             <Row title={t("settings.terminalContext")}>
               <Switch
                 checked={settings.ai.terminalContext}

@@ -68,6 +68,7 @@ export function currentProvider() {
     apiKey: s.apiKey,
     model: s.model,
     temperature: s.temperature,
+    disableThinking: s.disableThinking,
   };
 }
 

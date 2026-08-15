@@ -35,6 +35,10 @@ pub struct ProviderConfig {
     pub model: String,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    /// Ask the provider to skip its thinking/reasoning pass for faster first
+    /// tokens. Mapped per API family in `build_request`.
+    #[serde(default)]
+    pub disable_thinking: bool,
 }
 
 fn default_temperature() -> f32 {
@@ -68,14 +72,18 @@ fn build_request(
     match cfg.kind.as_str() {
         "ollama" => {
             let url = format!("{base}/api/chat");
-            let body = json!({
+            let mut body = json!({
                 "model": cfg.model,
                 "messages": messages,
                 "stream": true,
                 "options": { "temperature": cfg.temperature },
-            })
-            .to_string();
-            Ok((url, body, None))
+            });
+            // Ollama reasoning models (e.g. Qwen3) think by default; `think:
+            // false` skips the thinking pass entirely.
+            if cfg.disable_thinking {
+                body["think"] = json!(false);
+            }
+            Ok((url, body.to_string(), None))
         }
         "openai" | "custom" => {
             let url = format!("{base}/chat/completions");
@@ -84,15 +92,22 @@ fn build_request(
             } else {
                 Some(format!("Bearer {}", cfg.api_key))
             };
-            let body = json!({
+            let mut body = json!({
                 "model": cfg.model,
                 "messages": messages,
                 "temperature": cfg.temperature,
                 "stream": true,
                 "stream_options": { "include_usage": false },
-            })
-            .to_string();
-            Ok((url, body, auth))
+            });
+            if cfg.disable_thinking {
+                // Cover the OpenAI-compatible families: OpenAI o-series accepts
+                // reasoning_effort (lowest allowed = "low"); DeepSeek turns the
+                // chain-of-thought off via thinking.type=disabled. Servers that
+                // have no reasoning mode simply ignore unknown fields.
+                body["reasoning_effort"] = json!("low");
+                body["thinking"] = json!({ "type": "disabled" });
+            }
+            Ok((url, body.to_string(), auth))
         }
         other => Err(format!("Unsupported AI provider kind: {other}")),
     }

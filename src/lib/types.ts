@@ -467,6 +467,13 @@ export interface AISettings {
   useKnowledgeBase: boolean;
   /** Root directory scanned for the local knowledge base. */
   knowledgeBasePath: string;
+  /**
+   * Ask the provider to skip its "thinking / reasoning" pass for faster first
+   * tokens. Mapped per API family: OpenAI-compatible gets `reasoning_effort:
+   * "low"` + DeepSeek's `thinking.disabled`, Ollama gets `think: false`.
+   * Providers without a reasoning mode ignore the extra fields.
+   */
+  disableThinking: boolean;
 }
 
 export interface AIChatMessage {
@@ -502,6 +509,8 @@ export interface AIProviderConfig {
   apiKey: string;
   model: string;
   temperature: number;
+  /** Ask the provider to skip its thinking/reasoning pass (see AISettings). */
+  disableThinking?: boolean;
 }
 
 export interface AIChunkPayload {

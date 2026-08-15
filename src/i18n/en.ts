@@ -225,6 +225,8 @@ export const en: Record<keyof typeof zh, string> = {
   "settings.copyOnSelect": "Copy on selection",
   "settings.confirmClose": "Confirm before closing a tab",
   "settings.terminalContext": "Attach terminal context to messages",
+  "settings.disableThinking": "Disable thinking mode (faster replies)",
+  "settings.disableThinkingHint": "Sends a 'skip reasoning' hint with each request to cut first-token latency: DeepSeek gets thinking=disabled, OpenAI-style endpoints reasoning_effort=low, Ollama think=false. Models without a reasoning mode ignore it.",
   "settings.errorHints": "Proactive error hints in the terminal",
   "settings.autoDiagnose": "Auto-diagnose command errors",
   "settings.autoDiagnoseHint": "When a terminal command fails, automatically ask the AI to explain the cause and stream the diagnosis to the bottom panel — no click needed. Suppressed while the AI agent is running.",

@@ -234,6 +234,8 @@ export const zh = {
   "settings.copyOnSelect": "选中即复制",
   "settings.confirmClose": "关闭标签页前确认",
   "settings.terminalContext": "向消息附加终端上下文",
+  "settings.disableThinking": "关闭思考模式（更快响应）",
+  "settings.disableThinkingHint": "请求时附带关闭思考/推理的参数，减少首字等待。DeepSeek 发送 thinking=disabled、OpenAI 系列用 reasoning_effort=low、Ollama 发送 think=false；不支持该参数的模型会忽略。",
   "settings.errorHints": "终端中的主动错误提示",
   "settings.autoDiagnose": "命令出错自动诊断",
   "settings.autoDiagnoseHint": "终端命令执行出错时，自动调用 AI 分析错误原因，并在底部直接展示诊断结果（无需手动点击）。AI Agent 运行期间不触发。",
