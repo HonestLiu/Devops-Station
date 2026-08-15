@@ -58,7 +58,7 @@ export const en: Record<keyof typeof zh, string> = {
   "tabs.reconnect": "Reconnect",
   "tabs.closeAria": "Close tab",
   "tabs.waitingInput": "Waiting for input",
-  "tabs.dragToSplit": "Drag onto another tab to split-screen them",
+  "tabs.dragToSplit": "Press & hold this tab for ~0.3s, then drag to merge into a split with another tab or the active terminal",
   "tabs.groupedHint": "Split · drag to merge with other tabs, or use ✕ on the pane to ungroup",
   "tabs.ungroup": "Ungroup split (restore standalone tab, keep session running)",
   "tabs.defaultDistro": "default distro",

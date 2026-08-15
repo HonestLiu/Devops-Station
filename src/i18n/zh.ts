@@ -67,7 +67,7 @@ export const zh = {
   "tabs.reconnect": "重新连接",
   "tabs.closeAria": "关闭标签页",
   "tabs.waitingInput": "等待输入",
-  "tabs.dragToSplit": "拖到其他标签上可合并分屏",
+  "tabs.dragToSplit": "按住本标签约 0.3 秒后拖动，可与其他标签或当前终端合并分屏",
   "tabs.groupedHint": "已分屏 · 拖动可与其他标签合并，点终端右上角 ✕ 解散",
   "tabs.ungroup": "解散分屏（恢复为独立标签，不关闭会话）",
   "tabs.defaultDistro": "默认发行版",

@@ -84,6 +84,10 @@ export function TabBar() {
   // --- long-press drag state ------------------------------------------------
   const [dragTabId, setDragTabId] = useState<string | null>(null);
   const [hoverTabId, setHoverTabId] = useState<string | null>(null);
+  // Hover hint bubble: reminds the user to PRESS AND HOLD a tab before dragging
+  // (the split drag is long-press based, not HTML5 DnD). Positioned `fixed` so
+  // the TabBar's overflow-x-auto can't clip it.
+  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
   const pressRef = useRef<{ id: string; x: number; y: number; t: number } | null>(null);
   const dragActiveRef = useRef(false);
   const dragMovedRef = useRef(false);
@@ -101,6 +105,12 @@ export function TabBar() {
     ghostRef.current?.remove();
     ghostRef.current = null;
   };
+
+  const showTip = (e: ReactMouseEvent, tab: Tab) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.bottom + 6 });
+  };
+  const hideTip = () => setTip(null);
 
   const onTabMouseDown = (e: ReactMouseEvent, tab: Tab) => {
     if (e.button !== 0) return;
@@ -254,6 +264,8 @@ export function TabBar() {
             key={tab.id}
             data-tab-id={tab.id}
             onMouseDown={(e) => onTabMouseDown(e, tab)}
+            onMouseEnter={(e) => showTip(e, tab)}
+            onMouseLeave={hideTip}
             onClick={() => {
               // Swallow the click that follows a completed drag.
               if (suppressClickRef.current) {
@@ -305,6 +317,16 @@ export function TabBar() {
           </div>
         );
       })}
+      {/* Hover hint: the split drag is long-press based — say so before the
+          user tries a quick drag and sees nothing happen. */}
+      {tip && !dragActiveRef.current && (
+        <div
+          className="pointer-events-none fixed z-[90] -translate-x-1/2 whitespace-nowrap rounded-lg border border-border bg-elevated px-2.5 py-1.5 text-[11px] text-fg shadow-xl"
+          style={{ left: tip.x, top: tip.y }}
+        >
+          {t("tabs.dragToSplit")}
+        </div>
+      )}
     </div>
   );
 }
