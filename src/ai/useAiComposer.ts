@@ -27,9 +27,23 @@ interface ComposerState {
    * without polluting the user's chat history.
    */
   displaySessionId: string | null;
+  /**
+   * One-shot signal asking the floating selection menu to open its free-form
+   * "ask" input (e.g. triggered from the terminal's right-click menu). Consumed
+   * (reset to false) by the menu once it opens the input.
+   */
+  requestAsk: boolean;
+  /**
+   * Terminal selection to ask about, captured by `openAsk(text)` so the ask box
+   * still has its context even after focusing the input clears the xterm
+   * selection.
+   */
+  askContext: string | null;
   setPrefill: (text: string, autoSend?: boolean, system?: string | null) => void;
   setRevealAnswer: (v: boolean) => void;
   setDisplaySessionId: (id: string | null) => void;
+  openAsk: (text?: string) => void;
+  consumeAsk: () => void;
   clear: () => void;
 }
 
@@ -39,10 +53,21 @@ export const useAiComposer = create<ComposerState>((set) => ({
   system: null,
   revealAnswer: false,
   displaySessionId: null,
+  requestAsk: false,
+  askContext: null,
   setPrefill: (text: string, autoSend = false, system: string | null = null) =>
     set({ prefill: text, autoSend, system }),
   setRevealAnswer: (v: boolean) => set({ revealAnswer: v }),
   setDisplaySessionId: (id: string | null) => set({ displaySessionId: id }),
+  openAsk: (text?: string) => set({ requestAsk: true, askContext: text ?? null }),
+  consumeAsk: () => set({ requestAsk: false, askContext: null }),
   clear: () =>
-    set({ prefill: null, autoSend: false, system: null, displaySessionId: null }),
+    set({
+      prefill: null,
+      autoSend: false,
+      system: null,
+      displaySessionId: null,
+      requestAsk: false,
+      askContext: null,
+    }),
 }));

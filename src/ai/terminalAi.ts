@@ -256,6 +256,18 @@ export const GENERATE_SYSTEM =
   "idempotent commands and avoid destructive actions unless explicitly requested.";
 
 /**
+ * System prompt for the free-form "ask a question about the selection" action.
+ * The user has box-selected terminal text and is asking their own question; the
+ * selection is attached as context. Answer concisely, grounded in that context.
+ */
+export const ASK_SYSTEM =
+  "You are a senior Linux / embedded / DevOps engineer helping the user understand their " +
+  "terminal. The user has selected text from their terminal and is asking a question about it. " +
+  "Answer concisely and directly using the selected terminal text as the primary context. " +
+  "When a command or fix is warranted, put it in a single fenced bash code block. " +
+  "Be precise; if the selection is ambiguous, say what you can and what is missing. Under 250 words.";
+
+/**
  * Explain the currently-selected terminal text. Routes into the inline composer
  * (not the side panel) so the explanation streams back inside the terminal flow.
  */

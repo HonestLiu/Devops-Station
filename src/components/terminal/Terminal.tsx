@@ -303,43 +303,60 @@ export function Terminal(props: TerminalProps) {
     ];
 
     // When the user has box-selected text, surface the same AI actions the
-    // floating selection icon offers — directly inside the right-click menu so
-    // the icon becomes optional, not required.
+    // floating selection icon offers — folded into a single "AI" submenu (like
+    // the Snippets flyout) so the right-click menu stays short.
     if (sel) {
       items.push(
         { id: "sep-ai", separator: true, label: "" },
         {
-          id: "ai-explain",
-          label: t("term.aiExplain"),
+          id: "ai",
+          label: t("term.aiMenu"),
           icon: <Sparkles size={14} />,
-          onClick: () =>
-            useAiComposer.getState().setPrefill(
-              `Explain the following terminal selection:\n\n${sel}`,
-              true,
-              EXPLAIN_SYSTEM,
-            ),
-        },
-        {
-          id: "ai-fix",
-          label: t("term.aiFix"),
-          icon: <Sparkles size={14} />,
-          onClick: () =>
-            useAiComposer.getState().setPrefill(
-              `Here is the terminal excerpt:\n\n${sel}\n\nWhat went wrong and how do I fix it?`,
-              true,
-              FIX_SYSTEM,
-            ),
-        },
-        {
-          id: "ai-generate",
-          label: t("term.aiCommand"),
-          icon: <Sparkles size={14} />,
-          onClick: () =>
-            useAiComposer.getState().setPrefill(
-              `Turn the following into the shell command(s) I should run:\n\n${sel}`,
-              true,
-              GENERATE_SYSTEM,
-            ),
+          submenu: [
+            {
+              id: "ai-explain",
+              label: t("term.aiExplain"),
+              icon: <Sparkles size={14} />,
+              onClick: () =>
+                useAiComposer.getState().setPrefill(
+                  `Explain the following terminal selection:\n\n${sel}`,
+                  true,
+                  EXPLAIN_SYSTEM,
+                ),
+            },
+            {
+              id: "ai-fix",
+              label: t("term.aiFix"),
+              icon: <Sparkles size={14} />,
+              onClick: () =>
+                useAiComposer.getState().setPrefill(
+                  `Here is the terminal excerpt:\n\n${sel}\n\nWhat went wrong and how do I fix it?`,
+                  true,
+                  FIX_SYSTEM,
+                ),
+            },
+            {
+              id: "ai-generate",
+              label: t("term.aiCommand"),
+              icon: <Sparkles size={14} />,
+              onClick: () =>
+                useAiComposer.getState().setPrefill(
+                  `Turn the following into the shell command(s) I should run:\n\n${sel}`,
+                  true,
+                  GENERATE_SYSTEM,
+                ),
+            },
+            {
+              id: "ai-ask",
+              label: t("term.aiAsk"),
+              icon: <Sparkles size={14} />,
+              // Open the floating selection menu's free-form "ask" input with the
+              // current selection as context, so the user can type their own
+              // question. (Passing `sel` guarantees context even if the store's
+              // live selection hasn't been updated yet.)
+              onClick: () => useAiComposer.getState().openAsk(sel),
+            },
+          ],
         },
       );
     }
