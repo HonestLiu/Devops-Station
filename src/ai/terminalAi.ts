@@ -2,6 +2,7 @@ import { ssh, pty, serial } from "@/lib/api";
 import { dataLink } from "@/lib/dataLink";
 import { textToBase64 } from "@/lib/utils";
 import { tFrom } from "@/i18n";
+import { isMac, isWindows } from "@/lib/platform";
 import { useAppStore } from "@/store/useAppStore";
 import { useAiStore } from "./useAiStore";
 import { useAiComposer } from "./useAiComposer";
@@ -119,16 +120,18 @@ export function getTerminalTypeDescription(pinned?: string | null): string {
     }
     case "local": {
       const fam = shellFamily(tab.shell);
-      const isWin =
-        !tab.shell ||
-        /\.exe$/i.test(tab.shell) ||
-        /pwsh|powershell|cmd\.exe/i.test(tab.shell);
-      const os = isWin ? "Windows" : "Linux/Unix (or macOS)";
+      // The local shell runs on the SAME machine as this app, so the real OS is
+      // the app's own platform — don't infer it from the shell path. An empty or
+      // exotic `tab.shell` used to make the old `!tab.shell` test report Windows,
+      // which sent the agent down the wrong (Windows) command path on macOS.
+      const os = isMac ? "macOS" : isWindows ? "Windows" : "Linux";
       parts.push(
         `TERMINAL ENVIRONMENT: a LOCAL ${os} shell (${fam}). ` +
-          (isWin
+          (isWindows
             ? "Prefer PowerShell/cmd syntax as appropriate; be careful with Windows path quoting and backslashes."
-            : "Use Unix command syntax and forward slashes for paths."),
+            : os === "macOS"
+              ? "Use Unix/macOS command syntax and forward slashes for paths. Homebrew is usually at /opt/homebrew/bin (Apple Silicon) or /usr/local/bin (Intel); if `brew` is not found, the shell did not load the login profile."
+              : "Use Unix command syntax and forward slashes for paths."),
       );
       break;
     }

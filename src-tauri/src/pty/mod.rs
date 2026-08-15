@@ -95,7 +95,27 @@ impl PtyManager {
         cols: u16,
         rows: u16,
     ) -> AppResult<String> {
-        let mut cmd = CommandBuilder::new(shell.unwrap_or_else(default_shell));
+        let shell = shell.unwrap_or_else(default_shell);
+        let mut cmd = CommandBuilder::new(shell.clone());
+        // On Unix, launch the shell as a *login* shell (`-l`) so it sources the
+        // user's profile (`/etc/profile`, `~/.zprofile`, `/etc/zprofile` →
+        // `path_helper` → `/etc/paths` + `/etc/paths.d`, which is where Homebrew
+        // registers `/opt/homebrew/bin` / `/usr/local/bin`). A Tauri GUI app does
+        // NOT inherit the login environment, so a bare (non-login) shell starts
+        // with a minimal PATH and `brew`, `node`, etc. are suddenly "not found"
+        // even though they work in the system Terminal. Windows shells (pwsh /
+        // powershell / cmd) don't take `-l`, so only add it off-Windows and only
+        // for shells that understand it.
+        #[cfg(not(windows))]
+        {
+            let base = shell.rsplit('/').next().unwrap_or(&shell);
+            if ["bash", "zsh", "sh", "ksh", "fish", "tcsh", "csh", "dash"]
+                .iter()
+                .any(|s| *s == base)
+            {
+                cmd.arg("-l");
+            }
+        }
         if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
             cmd.cwd(dir);
         }

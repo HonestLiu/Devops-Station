@@ -29,7 +29,7 @@ import { Button, Input, PasswordInput, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
-import { formatShortcut, setShortcutRecording } from "@/lib/shortcut";
+import { formatShortcut, setShortcutRecording, MODIFIER_CODES } from "@/lib/shortcut";
 import {
   loginAccount,
   logoutAccount,
@@ -215,6 +215,13 @@ function ShortcutRecorder({
         stopRecording();
         return;
       }
+      // Ignore keydown events for the modifier keys themselves. Otherwise the
+      // first modifier you press (e.g. Ctrl) is captured as the "key" and the
+      // recorder stops before Shift/Enter ever arrive — you could never record
+      // a combination, and the stored value (e.g. "ctrl+Control") would then
+      // fire on every bare Ctrl keydown. Only the real, non-modifier key
+      // finalizes the shortcut.
+      if (MODIFIER_CODES.has(e.code)) return;
       if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) return;
       const mods: string[] = [];
       if (e.ctrlKey) mods.push("ctrl");

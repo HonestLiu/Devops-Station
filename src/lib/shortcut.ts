@@ -13,6 +13,9 @@ export interface Shortcut {
   code: string;
 }
 
+/** KeyboardEvent.code values for the modifier keys themselves. */
+export const MODIFIER_CODES = new Set(["Control", "Shift", "Alt", "Meta"]);
+
 /** Parse "ctrl+shift+Enter" → Shortcut. Loose on case and separator order. */
 export function parseShortcut(spec: string): Shortcut | null {
   if (!spec) return null;
@@ -68,6 +71,12 @@ export function parseShortcut(spec: string): Shortcut | null {
   } else if (/^f\d{1,2}$/i.test(key)) {
     code = `F${lower.slice(1)}`;
   }
+
+  // A shortcut whose "key" is itself a modifier (e.g. "ctrl+Control", produced
+  // by a buggy recorder that captured the modifier keydown instead of ignoring
+  // it) is nonsensical — never let it match. This neutralizes a corrupted spec
+  // like "ctrl+Control" that would otherwise fire on every bare Ctrl keydown.
+  if (MODIFIER_CODES.has(code)) return null;
 
   return {
     ctrl: mods.includes("ctrl") || mods.includes("control"),
