@@ -392,7 +392,7 @@ export function TerminalInlineAsk({ tab }: { tab: Tab }) {
           automatically on a terminal diagnosis (revealAnswer) so the operator
           sees the cause without opening the composer. */}
       {((open && answer) || revealAnswer) && !agentActive && (
-        <div className="max-h-56 overflow-y-auto border-b border-border/70 px-3 py-2">
+        <div className="max-h-56 select-text overflow-y-auto border-b border-border/70 px-3 py-2">
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-subtle">
               AI
@@ -790,7 +790,7 @@ function AgentBlock({
         </div>
       </div>
       {expanded && (
-        <div className="max-h-52 space-y-2 overflow-y-auto px-3 pb-2">
+        <div className="max-h-52 select-text space-y-2 overflow-y-auto px-3 pb-2">
           {error && <p className="whitespace-pre-wrap text-[12px] text-danger">{error}</p>}
           {steps.map((s, i) => (
             <div key={i} className="rounded-md border border-border/60 bg-bg p-2">

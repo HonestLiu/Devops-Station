@@ -395,7 +395,7 @@ export function Markdown({
 }) {
   const blocks = parseBlocks(content);
   return (
-    <div className={cn("text-fg")}>
+    <div className={cn("text-fg select-text")}>
       {blocks.map((b, i) => renderBlock(b, i, onInsert, onRun))}
     </div>
   );
