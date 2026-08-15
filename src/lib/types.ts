@@ -1,5 +1,24 @@
 export type HostKind = "ssh" | "serial" | "local" | "wsl" | "frp";
 
+/** A single terminal keyword-highlight rule. Matched case-insensitively. */
+export interface KeywordHighlightRule {
+  /** Stable id for editing / removal. */
+  id: string;
+  /** Regex source (no delimiters / flags). */
+  pattern: string;
+  /** #RRGGBB color. */
+  color: string;
+  /** Tint the whole line background (else only the scrollbar marker is shown). */
+  wholeLine?: boolean;
+  enabled: boolean;
+}
+
+/** Global keyword-highlight configuration (per-host rules merge on top). */
+export interface KeywordHighlightSettings {
+  enabled: boolean;
+  rules: KeywordHighlightRule[];
+}
+
 export interface Host {
   id: string;
   name: string;
@@ -32,6 +51,10 @@ export interface Host {
   createdAt?: number | null;
   /** Last write time (unix seconds) — used by export/import and future sync. */
   updatedAt?: number | null;
+  /** Per-host keyword-highlight rules (merged with the global settings). */
+  keywordRules?: KeywordHighlightRule[] | null;
+  /** Whether this host uses keyword highlighting. null = follow the global toggle. */
+  keywordEnabled?: boolean | null;
 }
 
 export interface SshConnectConfig {

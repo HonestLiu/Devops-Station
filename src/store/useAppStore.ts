@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
-import type { AccountSettings, AISettings, ApprovalSettings, ThemeId } from "@/lib/types";
+import type { AccountSettings, AISettings, ApprovalSettings, KeywordHighlightSettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink" | "mqtt";
 
@@ -30,6 +30,10 @@ export interface AppSettings {
    *  only here — a fun extra shape not available for the focused cursor). */
   cursorInactiveStyle: "block" | "outline" | "bar";
   scrollback: number;
+  /** Render inline images sent by the remote (SIXEL / iTerm2 imgcat). */
+  inlineImages: boolean;
+  /** Terminal keyword-highlight rules (global; per-host rules merge on top). */
+  keywordHighlight: KeywordHighlightSettings;
   copyOnSelect: boolean;
   /** Poll interval for the Monitoring page, in milliseconds. */
   metricsInterval: number;
@@ -76,6 +80,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cursorColor: "",
   cursorInactiveStyle: "block",
   scrollback: 10000,
+  inlineImages: true,
+  keywordHighlight: {
+    enabled: true,
+    rules: [
+      { id: "kh-error", pattern: "error|fail|failed|exception|fatal|panic|denied|refused", color: "#ff5555", wholeLine: true, enabled: true },
+      { id: "kh-warn", pattern: "warn|warning|deprecated|timeout", color: "#ffb86c", wholeLine: true, enabled: true },
+      { id: "kh-ok", pattern: "success|succeeded|\\bok\\b|done|ready|listening|started", color: "#50fa7b", wholeLine: true, enabled: true },
+      { id: "kh-ip", pattern: "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", color: "#8be9fd", wholeLine: false, enabled: true },
+    ],
+  },
   copyOnSelect: true,
   metricsInterval: 2000,
   confirmOnClose: true,
@@ -202,6 +216,12 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...DEFAULT_SETTINGS.approval.tools,
             ...(((stored as Partial<AppSettings>).approval as ApprovalSettings | undefined)?.tools ?? {}),
           },
+        },
+        // `keywordHighlight` is a nested object (rules) — merge so an older
+        // persisted shape can't drop the default rules.
+        keywordHighlight: {
+          ...DEFAULT_SETTINGS.keywordHighlight,
+          ...((stored as Partial<AppSettings>).keywordHighlight ?? {}),
         },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);

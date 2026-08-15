@@ -4,7 +4,9 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { ImageAddon } from "@xterm/addon-image";
 import type { ITheme } from "@xterm/xterm";
+import { KeywordHighlighter } from "./keywordHighlight";
 import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "lucide-react";
 
 import { ssh, pty, localFs, notify } from "@/lib/api";
@@ -16,6 +18,7 @@ import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useHostsStore } from "@/store/useHostsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { isBenignContext, isWaitingForInput, scanForError, errorFingerprint } from "@/ai/errorScan";
 import { maybeAutoDiagnose } from "@/ai/diagnose";
@@ -412,6 +415,44 @@ export function Terminal(props: TerminalProps) {
     term.open(host);
     fit.fit();
 
+    // Inline images (SIXEL / iTerm2 imgcat) — toggleable in Settings. The addon
+    // needs `allowProposedApi` (already set above) and is a no-op until the
+    // remote emits a recognized image sequence.
+    if (useAppStore.getState().settings.inlineImages) {
+      try {
+        term.loadAddon(new ImageAddon());
+      } catch {
+        /* image addon is best-effort */
+      }
+    }
+
+    // Keyword highlighting: global rules + this host's per-host rules. Re-applied
+    // live whenever the settings change.
+    const highlighter = new KeywordHighlighter(term);
+    const applyHighlightRules = () => {
+      const s = useAppStore.getState().settings.keywordHighlight;
+      const hostId = useTabsStore
+        .getState()
+        .tabs.find(
+          (tt) =>
+            tt.sessionId === sessionId || !!tt.panes?.some((p) => p.sessionId === sessionId),
+        )?.hostId;
+      const host = hostId ? useHostsStore.getState().hosts.find((h) => h.id === hostId) : undefined;
+      const hostEnabled = host?.keywordEnabled;
+      const enabled = hostEnabled ?? s.enabled;
+      const rules = host?.keywordRules?.length
+        ? [...s.rules, ...host.keywordRules]
+        : s.rules;
+      highlighter.setRules(enabled, rules);
+    };
+    applyHighlightRules();
+    const unsubSettings = useAppStore.subscribe((state, prev) => {
+      if (state.settings.keywordHighlight !== prev.settings.keywordHighlight) {
+        applyHighlightRules();
+      }
+    });
+    const unsubHosts = useHostsStore.subscribe(() => applyHighlightRules());
+
     // For SSH sessions, capture the remote shell's working directory via the
     // OSC 7 sequence (file://host/path) that we ask the shell to emit on every
     // prompt. The SFTP panel reads this from the session store to follow `cd`.
@@ -639,6 +680,9 @@ export function Terminal(props: TerminalProps) {
       onData.dispose();
       onSel.dispose();
       oscDisposable?.dispose();
+      unsubSettings?.();
+      unsubHosts?.();
+      highlighter?.dispose();
       for (const stop of unlisteners) stop();
       term.dispose();
       termRef.current = null;

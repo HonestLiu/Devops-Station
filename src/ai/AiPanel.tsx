@@ -27,6 +27,8 @@ import { buildContext } from "./context";
 import { Markdown } from "./Markdown";
 import { writeToTerminal } from "./terminalAi";
 import { runAgent } from "./agent";
+import { runAgentMulti, listHostSessions } from "./agentMulti";
+import { useAiOrchestrator, type HostStatus } from "./useAiOrchestrator";
 import { loadKnowledgeBase, kbChunkCount } from "./knowledgeBase";
 import { analyzeTerminal, parseSerialProtocol, monitoringInsight } from "./tasks";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -244,14 +246,19 @@ function Composer({
   sessionId,
   agentMode,
   agentAuto,
+  multiHost = false,
+  selectedHostIds = [],
 }: {
   sessionId: string;
   agentMode: boolean;
   agentAuto: boolean;
+  multiHost?: boolean;
+  selectedHostIds?: string[];
 }) {
   const t = useT();
   const [text, setText] = useState("");
   const [needSetup, setNeedSetup] = useState(false);
+  const [needHosts, setNeedHosts] = useState(false);
   const send = useAiStore((s) => s.send);
   const streaming = useAiStore(
     (s) =>
@@ -266,6 +273,16 @@ function Composer({
     setText("");
     if (!hasAiConfig()) {
       setNeedSetup(true);
+      return;
+    }
+    if (multiHost) {
+      if (selectedHostIds.length < 1) {
+        setNeedHosts(true);
+        return;
+      }
+      setNeedHosts(false);
+      setNeedSetup(false);
+      void runAgentMulti(value, selectedHostIds, agentAuto);
       return;
     }
     setNeedSetup(false);
@@ -292,6 +309,18 @@ function Composer({
           </button>
           <button
             onClick={() => setNeedSetup(false)}
+            className="shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-hover hover:text-fg"
+            title={t("ai.dismiss")}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      {needHosts && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5">
+          <span className="flex-1 truncate text-[11px] text-fg">{t("ai.multiNeedHosts")}</span>
+          <button
+            onClick={() => setNeedHosts(false)}
             className="shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-hover hover:text-fg"
             title={t("ai.dismiss")}
           >
@@ -336,6 +365,135 @@ function Composer({
   );
 }
 
+/** Small colored chip reflecting a host's orchestration status. */
+function StatusChip({ status }: { status: HostStatus }) {
+  const t = useT();
+  const map = {
+    pending: { label: t("ai.multiStatusPending"), cls: "bg-border/50 text-muted" },
+    running: { label: t("ai.multiStatusRunning"), cls: "bg-accent/15 text-accent" },
+    done: { label: t("ai.multiStatusDone"), cls: "bg-success/15 text-success" },
+    error: { label: t("ai.multiStatusError"), cls: "bg-danger/15 text-danger" },
+  } as const;
+  const m = map[status];
+  return <span className={cn("pill shrink-0", m.cls)}>{m.label}</span>;
+}
+
+/**
+ * Multi-host orchestration surface: pick target hosts, watch them run in
+ * parallel, and read the cross-host synthesis. Reads live progress from
+ * `useAiOrchestrator`.
+ */
+function MultiHostView({
+  selected,
+  onToggle,
+}: {
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const t = useT();
+  const hosts = useAiOrchestrator((s) => s.hosts);
+  const running = useAiOrchestrator((s) => s.running);
+  const synthesis = useAiOrchestrator((s) => s.synthesis);
+  const all = listHostSessions();
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 select-text">
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-subtle">
+            {t("ai.multiSelectHosts")}
+          </span>
+          {selected.size > 0 && (
+            <span className="pill bg-accent/15 text-accent">
+              {t("ai.multiSelected", { n: selected.size })}
+            </span>
+          )}
+        </div>
+        {all.length === 0 ? (
+          <p className="text-[12px] leading-relaxed text-subtle">{t("ai.multiNoHosts")}</p>
+        ) : (
+          <div className="space-y-1">
+            {all.map((h) => {
+              const checked = selected.has(h.sessionId);
+              return (
+                <label
+                  key={h.sessionId}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-fg transition-colors hover:bg-hover"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(h.sessionId)}
+                    className="h-3.5 w-3.5 accent-[rgb(var(--c-accent))]"
+                  />
+                  <span className="flex-1 truncate">{h.label}</span>
+                  <span className="pill bg-border/50 text-muted">{h.kind}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-1.5 text-[11px] leading-relaxed text-subtle">
+          {t("ai.multiHostHint")}
+        </p>
+      </div>
+
+      {hosts.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-subtle">
+              {t("ai.multiHostsCount", { n: hosts.length })}
+            </span>
+            {running && (
+              <span className="pill bg-accent/15 text-accent">
+                {t("ai.multiRunning", { n: hosts.length })}
+              </span>
+            )}
+          </div>
+          {hosts.map((h) => (
+            <div key={h.sessionId} className="rounded-lg border border-border/70 bg-elevated p-2.5">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="truncate text-[12px] font-medium text-fg">{h.label}</span>
+                <StatusChip status={h.status} />
+              </div>
+              {h.steps.length > 0 && (
+                <div className="mb-1.5 space-y-0.5">
+                  {h.steps.map((s, i) => (
+                    <div key={i} className="truncate text-[11px] leading-snug">
+                      <span className="font-mono text-accent">$ {s.cmd.split("\n")[0]}</span>
+                      {s.result && (
+                        <span className="ml-1 text-subtle">
+                          {s.result.split("\n")[0].slice(0, 90)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {h.summary && (
+                <div className="text-[11px] text-muted">
+                  <span className="font-semibold">{t("ai.multiSummary")}: </span>
+                  {h.summary}
+                </div>
+              )}
+              {h.error && <div className="text-[11px] text-danger">{h.error}</div>}
+            </div>
+          ))}
+
+          {synthesis && (
+            <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-accent">
+                {t("ai.multiSynthesis")}
+              </div>
+              <Markdown content={synthesis} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Docked right sidebar AI assistant. Hidden when closed; history is collapsible. */
 export function AiPanel() {
   const t = useT();
@@ -349,6 +507,15 @@ export function AiPanel() {
   const terminalContext = useAppStore((s) => s.settings.ai.terminalContext);
   const [agentMode, setAgentMode] = useState(false);
   const [agentAuto, setAgentAuto] = useState(false);
+  const [multiHost, setMultiHost] = useState(false);
+  const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
+  const toggleHost = (id: string) =>
+    setSelectedHosts((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   // Structured KB load state (never infer status from translated text).
   type KbState =
     | { kind: "loading" }
@@ -509,6 +676,13 @@ export function AiPanel() {
           <Bot size={13} /> {t("ai.agent")}
         </button>
         <button
+          onClick={() => setMultiHost((v) => !v)}
+          className={toolBtn(multiHost)}
+          title={t("ai.multiHostTitle")}
+        >
+          <Cable size={13} /> {t("ai.multiHost")}
+        </button>
+        <button
           onClick={() => void loadKb()}
           className={toolBtn(kbState?.kind === "ready")}
           title={t("ai.kbTitle")}
@@ -551,7 +725,18 @@ export function AiPanel() {
           </>
         )}
 
-        {active ? (
+        {multiHost ? (
+          <>
+            <MultiHostView selected={selectedHosts} onToggle={toggleHost} />
+            <Composer
+              sessionId={active?.id ?? ""}
+              agentMode={agentMode}
+              agentAuto={agentAuto}
+              multiHost
+              selectedHostIds={[...selectedHosts]}
+            />
+          </>
+        ) : active ? (
           <>
             <MessageView
               session={active}

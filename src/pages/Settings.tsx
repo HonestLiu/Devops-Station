@@ -961,6 +961,121 @@ export function Settings() {
                 label={t("settings.copyOnSelect")}
               />
             </Row>
+            <Row title={t("settings.inlineImages")} desc={t("settings.inlineImagesHint")}>
+              <Switch
+                checked={settings.inlineImages}
+                onChange={(v) => set("inlineImages", v)}
+                label={t("settings.inlineImages")}
+              />
+            </Row>
+
+            {/* Keyword highlighting */}
+            <Row title={t("settings.keywordHighlight")} desc={t("settings.keywordHighlightHint")} full>
+              <div className="mt-2 flex flex-col gap-2">
+                <Switch
+                  checked={settings.keywordHighlight.enabled}
+                  onChange={(v) =>
+                    updateSetting("keywordHighlight", { ...settings.keywordHighlight, enabled: v })
+                  }
+                  label={t("settings.enable")}
+                />
+                <div className="flex flex-col gap-2">
+                  {settings.keywordHighlight.rules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className="flex items-center gap-2 rounded-lg border border-border bg-bg p-2"
+                    >
+                      <input
+                        type="color"
+                        value={rule.color}
+                        onChange={(e) => {
+                          const rules = settings.keywordHighlight.rules.map((r) =>
+                            r.id === rule.id ? { ...r, color: e.target.value } : r,
+                          );
+                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                        }}
+                        className="h-7 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+                        title={t("settings.khColor")}
+                      />
+                      <input
+                        type="text"
+                        value={rule.pattern}
+                        placeholder={t("settings.khPattern")}
+                        onChange={(e) => {
+                          const rules = settings.keywordHighlight.rules.map((r) =>
+                            r.id === rule.id ? { ...r, pattern: e.target.value } : r,
+                          );
+                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                        }}
+                        className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-[12px] text-fg outline-none focus:border-accent"
+                      />
+                      <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted">
+                        <input
+                          type="checkbox"
+                          checked={!!rule.wholeLine}
+                          onChange={(e) => {
+                            const rules = settings.keywordHighlight.rules.map((r) =>
+                              r.id === rule.id ? { ...r, wholeLine: e.target.checked } : r,
+                            );
+                            updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                          }}
+                        />
+                        {t("settings.khWholeLine")}
+                      </label>
+                      <button
+                        onClick={() => {
+                          const rules = settings.keywordHighlight.rules.map((r) =>
+                            r.id === rule.id ? { ...r, enabled: !r.enabled } : r,
+                          );
+                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                        }}
+                        className={cn(
+                          "shrink-0 rounded-md px-2 py-1 text-[11px]",
+                          rule.enabled
+                            ? "bg-accent/15 text-accent"
+                            : "bg-bg text-subtle hover:text-fg",
+                        )}
+                        title={t("settings.khToggle")}
+                      >
+                        {rule.enabled ? t("settings.khOn") : t("settings.khOff")}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const rules = settings.keywordHighlight.rules.filter(
+                            (r) => r.id !== rule.id,
+                          );
+                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                        }}
+                        className="shrink-0 rounded-md p-1 text-subtle hover:bg-danger/10 hover:text-danger"
+                        title={t("settings.khDelete")}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const rules = [
+                      ...settings.keywordHighlight.rules,
+                      {
+                        id: `kh-${Date.now()}`,
+                        pattern: "",
+                        color: "#ff79c6",
+                        wholeLine: true,
+                        enabled: true,
+                      },
+                    ];
+                    updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                  }}
+                >
+                  + {t("settings.khAdd")}
+                </Button>
+              </div>
+            </Row>
+
             <Row title={t("settings.confirmClose")}>
               <Switch
                 checked={settings.confirmOnClose}
