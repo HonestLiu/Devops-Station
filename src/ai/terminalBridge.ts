@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Terminal as XTerm } from "@xterm/xterm";
+import { useTabsStore } from "@/store/useTabsStore";
 
 /**
  * Bridges the per-session xterm instances (which live inside the Terminal
@@ -20,6 +21,24 @@ export function unregisterTerminal(sessionId: string): void {
 
 export function getTerminal(sessionId: string): XTerm | undefined {
   return registry.get(sessionId);
+}
+
+/** Give keyboard focus to a specific terminal (no-op when it isn't mounted). */
+export function focusTerminal(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  registry.get(sessionId)?.focus();
+}
+
+/**
+ * Focus the terminal the user is currently working in: the active tab's
+ * session (`tab.sessionId` tracks the focused pane, so split tabs resolve
+ * correctly). Used to restore focus when the window regains it (Alt+Tab) and
+ * after tab switches, so typing works immediately without a click.
+ */
+export function focusActiveTerminal(): void {
+  const { tabs, activeId } = useTabsStore.getState();
+  const tab = tabs.find((t) => t.id === activeId);
+  if (tab?.sessionId) focusTerminal(tab.sessionId);
 }
 
 /**

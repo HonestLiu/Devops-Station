@@ -15,6 +15,7 @@ import { base64ToBytes, textToBase64 } from "@/lib/utils";
 import type { Attached, SessionClosed, StreamChunk } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
+import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { isBenignContext, isWaitingForInput, scanForError, errorFingerprint } from "@/ai/errorScan";
 import { maybeAutoDiagnose } from "@/ai/diagnose";
@@ -214,6 +215,22 @@ export function Terminal(props: TerminalProps) {
   // Kept in a ref so a changing callback never re-runs the session effect.
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+
+  // Whether THIS terminal is the one the user is currently working in (active
+  // tab + focused pane). All tab workspaces stay mounted (inactive tabs are
+  // merely hidden), so focus can only be grabbed by the terminal that is
+  // actually visible and focused — everything else must stay untouched.
+  const isActive = useTabsStore((s) => {
+    const t = s.tabs.find(
+      (tt) =>
+        tt.sessionId === sessionId || !!tt.panes?.some((p) => p.sessionId === sessionId),
+    );
+    if (!t || t.id !== s.activeId) return false;
+    const panes = t.panes;
+    if (!panes || panes.length === 0) return true; // single-pane tab
+    const mine = panes.find((p) => p.sessionId === sessionId);
+    return mine ? mine.id === (t.focusedPaneId ?? panes[0].id) : t.sessionId === sessionId;
+  });
 
   // Right-click menu: copy / paste / select-all / clear, operating directly on the
   // xterm instance. stopPropagation keeps the app-level default menu from also
@@ -600,6 +617,13 @@ export function Terminal(props: TerminalProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, transport]);
+
+  // Grab keyboard focus when this terminal becomes the active one: on mount
+  // (newly opened tab / pane), on tab switch, and on split-pane focus changes.
+  // Defined AFTER the lifecycle effect so `termRef` is populated on first run.
+  useEffect(() => {
+    if (isActive) termRef.current?.focus();
+  }, [isActive, sessionId]);
 
   // --- live option updates ------------------------------------------------
   useEffect(() => {

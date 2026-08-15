@@ -43,6 +43,7 @@ import { checkForUpdate } from "./lib/updater";
 import { permHook } from "./lib/api";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { approveWaitingNow } from "./lib/quickApprove";
+import { focusActiveTerminal } from "./ai/terminalBridge";
 import {
   isShortcutRecording,
   matchesShortcut,
@@ -231,6 +232,21 @@ export default function App() {
     return () => {
       void un.then((fn) => fn());
     };
+  }, []);
+
+  // When the window regains focus (e.g. Alt+Tab back), put keyboard focus back
+  // on the active terminal so typing works immediately without a click. Text
+  // fields are left alone — the user may have been typing in the inline ask /
+  // AI panel before switching away (an xterm's internal helper textarea also
+  // matches TEXTAREA, which is fine: it means the terminal is already focused).
+  useEffect(() => {
+    const onWinFocus = () => {
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      focusActiveTerminal();
+    };
+    window.addEventListener("focus", onWinFocus);
+    return () => window.removeEventListener("focus", onWinFocus);
   }, []);
 
   // Approval HOOK service lifecycle: keep the local listener and the legacy
