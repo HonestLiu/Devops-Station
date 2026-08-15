@@ -19,6 +19,7 @@
 import { useAppStore, DEFAULT_SETTINGS } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { tFrom } from "@/i18n";
+import { db } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
 import type { Host, QuickCommand } from "@/lib/types";
 
@@ -118,9 +119,17 @@ export async function loginAccount(
 
 // ------------------------------------------------------------------ sync
 
-function collectSyncData(): SyncData {
+/**
+ * Gather what gets pushed. Hosts are fetched WITH their real (decrypted)
+ * credentials via `db.listHosts(true)` — without that, the payload would only
+ * carry the `__saved__` sentinel and the password would vanish on the other
+ * device. The server is the user's own deployment (plaintext-at-rest is an
+ * accepted tradeoff, see Server/README).
+ */
+async function collectSyncData(): Promise<SyncData> {
   const s = useAppStore.getState().settings;
-  const { hosts, quickCommands } = useHostsStore.getState();
+  const { quickCommands } = useHostsStore.getState();
+  const hosts = await db.listHosts(true);
   const settings: Record<string, unknown> = {};
   for (const k of SYNC_SETTING_KEYS) settings[k] = s[k];
   return { settings, hosts, quickCommands };
@@ -128,7 +137,7 @@ function collectSyncData(): SyncData {
 
 /** Push the current local state to the server (last-write-wins). */
 export async function pushSyncData(serverUrl: string, token: string): Promise<void> {
-  const data = collectSyncData();
+  const data = await collectSyncData();
   await api(`${base(serverUrl)}/api/sync`, "POST", token, { data });
   useAppStore.getState().updateSetting("account", {
     ...useAppStore.getState().settings.account,
@@ -180,7 +189,16 @@ export async function applySyncData(data: Partial<SyncData>): Promise<void> {
     for (const h of hs.hosts) {
       if (!remoteHosts.some((r) => r.id === h.id)) await hs.deleteHost(h.id);
     }
-    for (const h of remoteHosts) await hs.saveHost(h);
+    for (const h of remoteHosts) {
+      // A plaintext (non-`__saved__`) credential arriving from sync must be
+      // persisted into this device's own vault, so force `savePassword` on.
+      // Otherwise `save_host` drops it (save_password=false) and the password
+      // is lost again on this device.
+      const hasPlainSecret =
+        (typeof h.password === "string" && h.password.length > 0 && h.password !== "__saved__") ||
+        (typeof h.passphrase === "string" && h.passphrase.length > 0 && h.passphrase !== "__saved__");
+      await hs.saveHost(hasPlainSecret ? { ...h, savePassword: true } : h);
+    }
     for (const c of hs.quickCommands) {
       if (!remoteCommands.some((r) => r.id === c.id)) await hs.deleteQuickCommand(c.id);
     }
@@ -240,10 +258,18 @@ export async function saveProfile(
   return profile;
 }
 
-/** Clear the local login (token + identity), keeping the server address. */
+/** Clear the local login (token + identity), keeping the server address.
+
+ *  Best-effort: also asks the server to invalidate this device's session so a
+ *  logged-out device can't keep using a stale token. Network failures are
+ *  ignored — the local clear always happens. */
 export function logoutAccount(): void {
+  const a = useAppStore.getState().settings.account;
+  if (a.serverUrl && a.token) {
+    api(`${base(a.serverUrl)}/api/logout`, "POST", a.token).catch(() => {});
+  }
   useAppStore.getState().updateSetting("account", {
-    ...useAppStore.getState().settings.account,
+    ...a,
     username: "",
     token: "",
     nickname: "",

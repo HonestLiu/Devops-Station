@@ -109,6 +109,8 @@ $RECYCLE.BIN/
 # ==============
 # Server/data/users.db 含注册用户凭证/令牌，属运行时数据库，禁止入库
 Server/data/
+# Python 字节码缓存（运行测试/起服务时生成，不应入库）
+Server/__pycache__/
 
 # ==============
 # 其他

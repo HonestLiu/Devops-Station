@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe, MonitorSmartphone, Plus, Server, TerminalSquare, Trash2 } from "lucide-react";
 
 import { DistroPicker } from "@/components/wsl/DistroPicker";
-import { Button, Checkbox, Dialog, Field, Input, Select } from "@/components/ui";
+import { Button, Checkbox, Dialog, Field, Input, PasswordInput, Select } from "@/components/ui";
 import { isWindows } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
+import { db } from "@/lib/api";
 import type { FrpConfig, FrpProxy, FrpProxyType, FrpServer, Host, HostKind } from "@/lib/types";
 
 const COLORS = [
@@ -61,6 +62,33 @@ export function HostDialog({
       ],
     };
   });
+
+  // A host whose secret is already stored only carries the `__saved__` sentinel in
+  // the UI; the real value lives in the per-device vault. To let the eye toggle
+  // actually reveal it, fetch the decrypted secret on open and seed the field.
+  useEffect(() => {
+    let cancelled = false;
+    const needPw = initial.password === SAVED;
+    const needPh = initial.passphrase === SAVED;
+    if ((!needPw && !needPh) || !initial.id) return;
+    (async () => {
+      try {
+        const all = await db.listHosts(true);
+        const found = all.find((h) => h.id === initial.id);
+        if (!found || cancelled) return;
+        if (needPw && found.password && found.password !== SAVED) setPasswordInput(found.password);
+        if (needPh && found.passphrase && found.passphrase !== SAVED) {
+          setPassphraseInput(found.passphrase);
+        }
+      } catch {
+        /* keep masked if reveal fails */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const patch = (p: Partial<Host>) => setHost((h) => ({ ...h, ...p }));
 
@@ -187,8 +215,7 @@ export function HostDialog({
                 label={t("hostDialog.password")}
                 hint={host.password === SAVED ? t("hostDialog.pwStored") : undefined}
               >
-                <Input
-                  type="password"
+                <PasswordInput
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder={host.password === SAVED ? t("hostDialog.phPwUnchanged") : ""}
@@ -204,8 +231,7 @@ export function HostDialog({
                 />
               </Field>
               <Field label={t("hostDialog.passphrase")} className="col-span-2">
-                <Input
-                  type="password"
+                <PasswordInput
                   value={passphraseInput}
                   onChange={(e) => setPassphraseInput(e.target.value)}
                   placeholder={host.passphrase === SAVED ? t("hostDialog.phPwUnchanged") : t("hostDialog.phOptional")}
@@ -342,8 +368,7 @@ function FrpForm({
             />
           </Field>
           <Field label={t("hostDialog.frpToken")} hint={t("hostDialog.frpOptional")}>
-            <Input
-              type="password"
+            <PasswordInput
               value={server.token ?? ""}
               onChange={(e) => setServer({ token: e.target.value || null })}
               placeholder={t("hostDialog.frpOptional")}

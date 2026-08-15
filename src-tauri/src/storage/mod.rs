@@ -283,6 +283,19 @@ impl Store {
         self.query_hosts(true)
     }
 
+    /// Hosts with their real (decrypted) secrets inlined. Used by the multi-device
+    /// sync push so credentials travel to the other device instead of the
+    /// `__saved__` sentinel. The vault column stores sealed ciphertext, so we must
+    /// `reveal_secret` per host — `query_hosts(false)` would only return the blob.
+    pub fn list_hosts_for_sync(&self) -> AppResult<Vec<Host>> {
+        let mut hosts = self.query_hosts(true)?;
+        for h in &mut hosts {
+            h.password = self.reveal_secret(&h.id, "password")?;
+            h.passphrase = self.reveal_secret(&h.id, "passphrase")?;
+        }
+        Ok(hosts)
+    }
+
     /// Raw rows (secrets not masked). Only used internally, e.g. by the
     /// profile exporter — never exposed to the frontend.
     fn raw_hosts(&self) -> AppResult<Vec<Host>> {

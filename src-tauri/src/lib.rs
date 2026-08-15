@@ -683,8 +683,18 @@ async fn sync_fetch(
 // ===========================================================================
 
 #[tauri::command]
-fn db_list_hosts(state: State<'_, AppState>) -> AppResult<Vec<Host>> {
-    state.store.list_hosts()
+fn db_list_hosts(
+    state: State<'_, AppState>,
+    include_secrets: Option<bool>,
+) -> AppResult<Vec<Host>> {
+    // Default (no arg) = masked, exactly as the UI expects. Passing
+    // `include_secrets: true` inlines the real decrypted credentials so the
+    // sync push can carry them to other devices (see src/lib/sync.ts).
+    if include_secrets.unwrap_or(false) {
+        state.store.list_hosts_for_sync()
+    } else {
+        state.store.list_hosts()
+    }
 }
 
 #[tauri::command]

@@ -25,7 +25,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { Button, Input, Select } from "@/components/ui";
+import { Button, Input, PasswordInput, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
@@ -681,8 +681,7 @@ export function Settings() {
                   />
                 </Row>
                 <Row title={t("settings.accPassword")}>
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={accPass}
                     onChange={(e) => setAccPass(e.target.value)}
                     className="font-mono text-[12px]"
@@ -998,8 +997,7 @@ export function Settings() {
               />
             </Row>
             <Row title={t("settings.apiKey")} desc={t("settings.apiKeyHint")}>
-              <Input
-                type="password"
+              <PasswordInput
                 value={settings.ai.apiKey}
                 onChange={(e) => setAi("apiKey", e.target.value)}
                 className="font-mono text-[12px]"

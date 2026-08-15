@@ -1,7 +1,8 @@
-import { X } from "lucide-react";
+import { Eye, EyeOff, X } from "lucide-react";
 import {
   forwardRef,
   useEffect,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -104,6 +105,40 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ),
 );
 Input.displayName = "Input";
+
+// --- PasswordInput ---------------------------------------------------------
+
+export const PasswordInput = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement>
+>(({ className, type, ...props }, ref) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        ref={ref}
+        type={show ? "text" : "password"}
+        className={cn("pr-9 [&::-ms-clear]:hidden [&::-ms-reveal]:hidden", className)}
+        {...props}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setShow((v) => !v)}
+        aria-label={show ? "隐藏密码" : "显示密码"}
+        title={show ? "隐藏密码" : "显示密码"}
+        className={cn(
+          "absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded",
+          "text-subtle transition-colors hover:bg-fg/5 hover:text-fg",
+          "focus:outline-none focus:ring-1 focus:ring-accent/40",
+        )}
+      >
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
+  );
+});
+PasswordInput.displayName = "PasswordInput";
 
 // --- Select ----------------------------------------------------------------
 

@@ -300,7 +300,8 @@ export const wslFs = {
 // --- Storage ---------------------------------------------------------------
 
 export const db = {
-  listHosts: () => call<Host[]>("db_list_hosts"),
+  listHosts: (includeSecrets = false) =>
+    call<Host[]>("db_list_hosts", { includeSecrets }),
   saveHost: (host: Host) => call<Host>("db_save_host", { host }),
   deleteHost: (id: string) => call<void>("db_delete_host", { id }),
 
