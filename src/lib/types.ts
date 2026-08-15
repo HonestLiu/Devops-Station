@@ -421,6 +421,33 @@ export interface SerialLogEntry {
 
 export type AIProviderKind = "openai" | "ollama" | "custom";
 
+/** Per-tool approval-notification toggles (driven by installed permission hooks). */
+export interface ApprovalHookTools {
+  /** Claude Code (`~/.claude/settings.json` hooks). */
+  claude: boolean;
+  /** OpenAI Codex (`~/.codex/hooks.json`). */
+  codex: boolean;
+  /** OpenCode (`~/.config/opencode/plugins`). */
+  opencode: boolean;
+}
+
+/**
+ * Approval-notification settings for vibecoding CLIs. The primary detection
+ * path is per-tool permission HOOKS (exact — the tool tells us it is waiting),
+ * replacing the old terminal-output regex scan. `scanFallback` keeps the scan
+ * as an opt-in compatibility mode (off by default).
+ */
+export interface ApprovalSettings {
+  /** Master switch: run the local hook listener and surface approvals. */
+  enabled: boolean;
+  /** Local HTTP port the hook scripts POST to (default 47890). */
+  port: number;
+  /** Per-tool enable toggles. */
+  tools: ApprovalHookTools;
+  /** Legacy terminal-output regex scan (off by default). */
+  scanFallback: boolean;
+}
+
 /** Persisted AI configuration (stored under the `ai` key of AppSettings). */
 export interface AISettings {
   provider: AIProviderKind;
@@ -493,10 +520,13 @@ export interface PermRequest {
   sessionId: string;
   /** e.g. "Claude Code", "Codex", "Coding Agent". */
   tool: string;
-  /** ANSI-stripped, truncated prompt text. */
+  /** ANSI-stripped, truncated prompt text / command. */
   snippet: string;
   /** Unix epoch millis when detected. */
   ts: number;
+  /** `"hook"` — the tool's own permission hook fired (primary, exact);
+   *  `"scan"` — legacy terminal-output regex scan (opt-in compat). */
+  source: "hook" | "scan";
 }
 
 // --- J-Link (SEGGER debug probe) ---------------------------------------------

@@ -374,10 +374,15 @@ pub struct SessionClosed {
 #[serde(rename_all = "camelCase")]
 pub struct PermRequest {
     pub session_id: String,
-    /// Human label of the tool we think is asking (e.g. "Claude Code").
+    /// Human label of the tool that is asking (e.g. "Claude Code").
     pub tool: String,
-    /// The prompt text we captured (ANSI stripped, truncated).
+    /// The prompt text / command we captured (ANSI stripped, truncated).
     pub snippet: String,
     /// Unix epoch millis when the prompt was detected.
     pub ts: u64,
+    /// Where the detection came from:
+    ///   - `"hook"` — the tool's own permission hook/plugin fired (exact, no
+    ///     false positives; this is the primary path).
+    ///   - `"scan"` — legacy terminal-output regex scan (opt-in compatibility).
+    pub source: String,
 }

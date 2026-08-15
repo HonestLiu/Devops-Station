@@ -138,16 +138,41 @@ fn last_alert() -> &'static Mutex<HashMap<String, AlertStamp>> {
 /// TUI that echoes the user's keystrokes into its own prompt box can produce a
 /// genuinely different-looking frame on every keystroke; the signature-based
 /// dedup below catches the common case, and this cooldown guarantees we can
-/// never storm the OS notification centre even in the worst case.
-const ALERT_COOLDOWN: Duration = Duration::from_secs(3);
+/// never storm the OS notification centre even in the worst case. 8s (was 3s):
+/// long enough to absorb a slow typist's keystroke-rate re-renders, short
+/// enough that a genuinely new approval a few seconds later still notifies.
+const ALERT_COOLDOWN: Duration = Duration::from_secs(8);
 
 /// Global switch for native OS notifications triggered by approval prompts.
 /// The frontend toggles this via `set_approval_notifications`.
 static APPROVAL_NOTIFICATIONS_ENABLED: AtomicBool = AtomicBool::new(true);
 
+/// Whether the *legacy terminal-output regex scan* is active. The primary
+/// detection path is now per-tool permission HOOKS (see perm_hook.rs) — the
+/// tool itself tells us it is waiting, which has zero false positives. The
+/// scan remains as an opt-in compatibility fallback (Settings → 审批通知 →
+/// 兼容模式), OFF by default.
+static SCAN_FALLBACK: AtomicBool = AtomicBool::new(false);
+
 /// Enable or disable native OS notifications for agent/CLI approval prompts.
 pub fn set_approval_notifications(enabled: bool) {
     APPROVAL_NOTIFICATIONS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Enable or disable the legacy terminal-output scan (default: off).
+pub fn set_scan_fallback(enabled: bool) {
+    SCAN_FALLBACK.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether the legacy scan is active (used to gate the scan path's OS toast).
+#[allow(dead_code)]
+pub fn scan_fallback_enabled() -> bool {
+    SCAN_FALLBACK.load(Ordering::Relaxed)
+}
+
+/// Whether OS notifications for approval prompts are enabled.
+pub fn approval_notifications_enabled() -> bool {
+    APPROVAL_NOTIFICATIONS_ENABLED.load(Ordering::Relaxed)
 }
 
 /// Same-prompt redraws within this window are deduplicated. 300s is long
@@ -164,25 +189,38 @@ fn cheap_hit(text: &str) -> bool {
 
 /// Stable dedup signature for an approval prompt.
 ///
-/// We take the *exact span the first matching rule captured* — the approval
-/// phrase itself — rather than the head of the whole chunk. That span is what a
-/// coding-agent TUI keeps stable across redraws (cursor movement, option
-/// highlight, spinner, and re-echoed keystrokes all live *outside* the matched
-/// phrase), so two frames of the same pending approval produce the same
-/// signature and collapse to a single notification. The signature is lowercased
-/// and internally whitespace-collapsed so purely cosmetic re-renders (case /
-/// spacing) also dedup. Falls back to the head of the cleaned text if, for some
-/// reason, no rule span is recoverable (it shouldn't happen — we only reach
-/// here after a rule matched).
+/// We use the **whole line that first matched a rule**, normalised (lowercase,
+/// whitespace-collapsed, every digit → `#`, capped at 120 chars) — NOT the
+/// exact matched span and NOT the head of the chunk.
+///
+/// Why a whole line? An agent TUI redraws its approval box on every frame
+/// (spinner, cursor, option highlight, and — critically — the user's keystrokes
+/// echoed into the tool's own input box). The approval *line itself* stays
+/// stable across those redraws while the user's typed characters live on other
+/// lines, so the signature is stable and two frames of the same pending
+/// approval collapse to one notification. Different approvals (different
+/// command / option text on that line) produce different signatures, so a *new*
+/// approval is never swallowed inside a previous one's window. Digit folding
+/// absorbs cosmetic re-renders (line numbers, ports, timers); cap keeps the map
+/// key small. Falls back to the head of the cleaned text if, for some reason,
+/// no rule line is recoverable (it shouldn't happen — we only reach here after
+/// a rule matched).
 fn prompt_signature(cleaned: &str) -> String {
-    let span = rules()
-        .iter()
-        .find_map(|r| r.re.find(cleaned).map(|m| m.as_str().to_string()))
+    let line = cleaned
+        .lines()
+        .find(|l| rules().iter().any(|r| r.re.is_match(l)))
+        .map(|l| l.to_string())
         .unwrap_or_else(|| cleaned.chars().take(120).collect());
-    span.split_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ")
+    let collapsed: String = line
         .to_ascii_lowercase()
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ");
+    collapsed
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '#' } else { c })
+        .take(120)
+        .collect()
 }
 
 /// Per session last-attributed specific tool (e.g. "Claude Code"). When the
@@ -247,7 +285,28 @@ fn attribute_tool(text: &str) -> &'static str {
 /// emit a `perm-request` event and raise an OS notification — at most once per
 /// `ALERT_WINDOW` per session, and with the OS notification raised off the hot path.
 pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
+    // Legacy scan path — off by default now that per-tool HOOKS are the primary
+    // detection mechanism. Keeping this gate here means the scan can be
+    // re-enabled from Settings as a compatibility fallback without touching the
+    // four transport call sites.
+    if !SCAN_FALLBACK.load(Ordering::Relaxed) {
+        return;
+    }
+
     let raw = String::from_utf8_lossy(chunk);
+
+    // Keystroke echoes arrive as tiny chunks ("n", "np", "npm") with no
+    // whitespace/punctuation — a real approval prompt is always a full phrase.
+    // Suppressing them here is the first line of defence against "typing a
+    // command re-triggers the notification". A prompt like Aider's "commit?"
+    // (short, but punctuated) still passes.
+    {
+        let t = raw.trim();
+        if t.len() < 5 && !t.contains([' ', '?', ':', '.', ',', '!']) {
+            return;
+        }
+    }
+
     if !cheap_hit(&raw) {
         return;
     }
@@ -361,6 +420,7 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         tool: tool.to_string(),
         snippet: snippet.clone(),
         ts,
+        source: "scan".to_string(),
     };
     // In-app bell + history (frontend listens on this event). Throttled to once
     // per ALERT_WINDOW, so this can no longer flood the webview main thread.

@@ -9,6 +9,8 @@ export interface PermItem {
   snippet: string;
   /** Detection timestamp (epoch ms). */
   ts: number;
+  /** `"hook"` (tool's own permission hook — exact) or `"scan"` (legacy regex). */
+  source: "hook" | "scan";
 }
 
 interface PermState {
@@ -23,36 +25,67 @@ interface PermState {
 
 /** Requests older than this are auto-dropped — a stale prompt has long since resolved. */
 const EXPIRE_MS = 3 * 60_000;
-/** A second identical prompt from the same session within this window is a refresh, not new. */
-const DEDUPE_MS = 15_000;
+/**
+ * One approval per session per this window, no matter how many times the
+ * backend re-detects the same TUI prompt (it re-renders on every keystroke).
+ * The backend already dedupes by signature, but a frame that changes enough to
+ * produce a different signature every keypress would otherwise flood the bell.
+ */
+const SESSION_WINDOW_MS = 30_000;
+/** A dismissed entry stays "seen" for this long, so a re-detected prompt that
+ *  the user already closed doesn't immediately come back. */
+const DISMISSED_MS = 30_000;
+
+/** Collapse a prompt into a stable identity: whitespace/digits/quoted values
+ *  vary across TUI redraws, the question text does not. */
+function fingerprint(snippet: string): string {
+  return snippet
+    .replace(/\s+/g, " ")
+    .replace(/[0-9]+/g, "#")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '"…"')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "'…'")
+    .trim()
+    .slice(0, 120)
+    .toLowerCase();
+}
+
+/** Last-seen per (session, fingerprint) — first detection in the window wins. */
+const lastSeen = new Map<string, number>();
+/** Fingerprints the user dismissed — suppressed until the window lapses. */
+const dismissed = new Map<string, number>();
 
 export const usePermStore = create<PermState>((set, get) => ({
   items: [],
   unseen: 0,
 
   push: (p) => {
-    // Frontend gate: drop anything that doesn't look like a real interactive
-    // approval prompt. The Rust `perm` scanner is intentionally broad (so it
-    // catches Claude Code, Codex, Aider, … alike), which means it can also
-    // match Claude Code's startup release-notes / changelog banner ("|" table
-    // rows, `Documented `claude remote-control`` etc.) and produce noisy
-    // "Approval needed" toasts. The INTERACTIVE_RE test here is the *strict*
-    // signal of "the program is blocked on the user" — apply it so release
-    // notes never reach the bell or the OS toast.
-    if (!isWaitingForInput(p.snippet)) {
+    // Frontend gate — only for the legacy SCAN source. A scan matches on
+    // "approval-shaped" output and can fire on banners / release notes / plain
+    // text, so we require the strict "blocked on the user" signal
+    // (INTERACTIVE_RE). HOOK-sourced events are emitted by the tool itself the
+    // moment it needs approval — they are exact by construction and must NOT
+    // be filtered (a hook snippet is the command, which usually contains no
+    // interactive-prompt marker).
+    if (p.source !== "hook" && !isWaitingForInput(p.snippet)) {
       return;
     }
+
     const now = Date.now();
+    const fp = fingerprint(p.snippet);
+    const sessionKey = `${p.sessionId}|${fp}`;
+
+    // User dismissed this exact prompt recently → stay quiet (the TUI may keep
+    // re-emitting it while it is still on screen).
+    if ((dismissed.get(sessionKey) ?? 0) > now - DISMISSED_MS) return;
+
+    // First detection of this prompt in the session window wins; a re-render
+    // with the same fingerprint inside the window updates nothing (keeps the
+    // original timestamp so the bell shows when it first appeared).
+    const prev = lastSeen.get(sessionKey) ?? 0;
+    if (now - prev < SESSION_WINDOW_MS) return;
+    lastSeen.set(sessionKey, now);
+
     const live = get().items.filter((i) => now - i.ts < EXPIRE_MS);
-
-    const dup = live.find(
-      (i) => i.sessionId === p.sessionId && i.snippet === p.snippet && now - i.ts < DEDUPE_MS,
-    );
-    if (dup) {
-      set({ items: live.map((i) => (i.id === dup.id ? { ...i, ts: p.ts } : i)) });
-      return;
-    }
-
     const item: PermItem = { ...p, id: crypto.randomUUID() };
     set({
       items: [item, ...live].slice(0, 40),
@@ -60,7 +93,24 @@ export const usePermStore = create<PermState>((set, get) => ({
     });
   },
 
-  dismiss: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
+  dismiss: (id) => {
+    const item = get().items.find((i) => i.id === id);
+    if (item) {
+      // Remember what was dismissed so the same prompt re-detected during the
+      // window (TUI still on screen) doesn't pop straight back.
+      const key = `${item.sessionId}|${fingerprint(item.snippet)}`;
+      dismissed.set(key, Date.now());
+    }
+    set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+  },
+
   markSeen: () => set({ unseen: 0 }),
-  clear: () => set({ items: [] }),
+  clear: () => {
+    // Clearing the list counts as dismissing everything in it.
+    const now = Date.now();
+    for (const i of get().items) {
+      dismissed.set(`${i.sessionId}|${fingerprint(i.snippet)}`, now);
+    }
+    set({ items: [], unseen: 0 });
+  },
 }));

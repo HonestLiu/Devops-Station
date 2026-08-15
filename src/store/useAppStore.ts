@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
-import type { AISettings, ThemeId } from "@/lib/types";
+import type { AISettings, ApprovalSettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink";
 
@@ -42,6 +42,8 @@ export interface AppSettings {
   approveShortcut: string;
   /** Whether to raise native OS notifications for agent/CLI approval prompts. */
   approvalNotifications: boolean;
+  /** HOOK-based approval detection (primary) + legacy scan compat switch. */
+  approval: ApprovalSettings;
   /** Check GitHub Releases for a newer version a few seconds after launch. */
   autoCheckUpdates: boolean;
   /** When a newer version is found during the automatic startup check, download
@@ -75,6 +77,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: "ctrl+shift+Enter",
   approvalNotifications: true,
+  approval: {
+    enabled: true,
+    port: 47890,
+    tools: { claude: true, codex: true, opencode: true },
+    scanFallback: false,
+  },
   autoCheckUpdates: true,
   autoDownloadUpdates: false,
   ai: {
@@ -166,6 +174,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         // the user never turned off. Merge field-by-field so every key falls
         // back to its default.
         ai: { ...DEFAULT_SETTINGS.ai, ...((stored as Partial<AppSettings>).ai ?? {}) },
+        // `approval` is a doubly-nested object (tools) — merge field-by-field
+        // so a persisted older `approval` shape can never clobber new keys.
+        approval: {
+          ...DEFAULT_SETTINGS.approval,
+          ...((stored as Partial<AppSettings>).approval ?? {}),
+          tools: {
+            ...DEFAULT_SETTINGS.approval.tools,
+            ...(((stored as Partial<AppSettings>).approval as ApprovalSettings | undefined)?.tools ?? {}),
+          },
+        },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);
       // Persist the repair so it isn't re-detected on every startup.

@@ -10,6 +10,7 @@ mod kb;
 mod local_fs;
 mod notify;
 mod perm;
+mod perm_hook;
 mod pty;
 mod serial;
 mod ssh;
@@ -605,6 +606,12 @@ fn set_approval_notifications(enabled: bool) {
     crate::perm::set_approval_notifications(enabled);
 }
 
+/// Enable or disable the legacy terminal-output approval scan (compat mode).
+#[tauri::command]
+fn set_scan_fallback(enabled: bool) {
+    crate::perm::set_scan_fallback(enabled);
+}
+
 // ===========================================================================
 // Storage
 // ===========================================================================
@@ -715,13 +722,81 @@ pub fn run() {
             // "Windows PowerShell") by registering our Start Menu shortcut +
             // AUMID on Windows. Safe no-op on other platforms / release builds
             // that already ship the shortcut via the installer.
+            // Probe files (absolute path, independent of home_dir/debug_log)
+            // to pinpoint exactly where setup stops. GUI binaries have no
+            // console, so eprintln! is invisible.
+            let probe = |tag: &str| {
+                let p = format!(
+                    "{}/.devops-station/hooks/setup_{tag}.txt",
+                    std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into())
+                );
+                let _ = std::fs::write(&p, format!("{tag} {}\n", std::process::id()));
+            };
+            probe("enter");
             crate::notify::register_aumid();
+            probe("aumid");
 
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("cannot resolve app data dir: {e}"))?;
-            let store = Store::new(&data_dir)?;
+            let data_dir = match app.path().app_data_dir() {
+                Ok(d) => d,
+                Err(e) => {
+                    probe(&format!("data_dir_err_{e:?}"));
+                    return Err(format!("cannot resolve app data dir: {e}").into());
+                }
+            };
+            probe("data_dir");
+            crate::perm_hook::debug_log("setup: before Store::new");
+            let store = match Store::new(&data_dir) {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::perm_hook::debug_log(&format!("setup: Store::new FAILED: {e}"));
+                    probe(&format!("store_err_{e:?}"));
+                    return Err(format!("store init failed: {e}").into());
+                }
+            };
+            probe("store_ok");
+            crate::perm_hook::debug_log("setup: store ok");
+            crate::perm_hook::debug_log(&format!("setup: data_dir={}", data_dir.display()));
+
+            // Start the approval-HOOK listener right away, reading the persisted
+            // settings (enabled / port). This makes the listener independent of
+            // frontend timing — previously it was only started by a frontend
+            // effect, so a stale build or a frontend that never ran the effect
+            // left approval hooks POSTing into a dead port.
+            match store.get_settings() {
+                Ok(settings) => {
+                    probe("get_settings_ok");
+                    let approval = settings
+                        .get("approval")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let enabled = approval
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let port = approval
+                        .get("port")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(47890) as u16;
+                    probe(&format!("approval_enabled{enabled}_port{port}"));
+                    crate::perm_hook::debug_log(&format!(
+                        "setup: approval={approval} enabled={enabled} port={port}"
+                    ));
+                    if enabled && port > 0 {
+                        let handle = app.handle().clone();
+                        // block_on (not spawn): guarantees the listener starts
+                        // before setup returns, immune to task-scheduling quirks.
+                        let r = tauri::async_runtime::block_on(
+                            crate::perm_hook::perm_hook_start(handle, port),
+                        );
+                        probe(&format!("start_result_{r:?}"));
+                        crate::perm_hook::debug_log("setup: listener started (block_on)");
+                    }
+                }
+                Err(e) => {
+                    probe(&format!("get_settings_err_{e:?}"));
+                    crate::perm_hook::debug_log(&format!("setup: get_settings failed: {e}"));
+                }
+            }
 
             app.manage(AppState {
                 ssh: SshManager::default(),
@@ -809,6 +884,12 @@ pub fn run() {
             ai_clear_inflight,
             notify_show,
             set_approval_notifications,
+            set_scan_fallback,
+            perm_hook::perm_hook_start,
+            perm_hook::perm_hook_stop,
+            perm_hook::perm_hook_install,
+            perm_hook::perm_hook_uninstall,
+            perm_hook::perm_hook_status,
             fonts::list_fonts,
             fonts::import_font,
             fonts::list_imported_fonts,

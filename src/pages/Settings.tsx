@@ -1,35 +1,53 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Activity,
   Bell,
   Bot,
+  CheckCircle2,
   Cpu,
   Database,
   Download,
   Keyboard,
+  Loader2,
   Monitor,
   Palette,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Terminal,
+  Trash2,
   Type,
   Upload,
+  Wrench,
 } from "lucide-react";
 
 import { Button, Input, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
-import { notify, profile } from "@/lib/api";
+import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
 import { formatShortcut } from "@/lib/shortcut";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
-import { useAppStore, type AppSettings, type Language } from "@/store/useAppStore";
+import { useAppStore, DEFAULT_SETTINGS, type AppSettings, type Language } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { CheckForUpdatesButton } from "@/components/UpdateDialog";
-import type { AIProviderKind, AISettings, ThemeId } from "@/lib/types";
+import type {
+  AIProviderKind,
+  AISettings,
+  ApprovalHookTools,
+  ApprovalSettings,
+  ThemeId,
+} from "@/lib/types";
+
+/** Tools with installable permission hooks, shown in Settings → 审批通知. */
+const HOOK_TOOLS: { id: keyof ApprovalHookTools; label: string; config: string }[] = [
+  { id: "claude", label: "Claude Code", config: "~/.claude/settings.json" },
+  { id: "codex", label: "Codex", config: "~/.codex/hooks.json" },
+  { id: "opencode", label: "OpenCode", config: "~/.config/opencode/plugins" },
+];
 
 // --- Toggle switch ---------------------------------------------------------
 // Premium-looking on/off control used for every boolean setting. Local to this
@@ -243,6 +261,83 @@ export function Settings() {
 
   const setAi = <K extends keyof AISettings>(k: K, v: AISettings[K]) =>
     void updateSetting("ai", { ...settings.ai, [k]: v });
+
+  const setApproval = <K extends keyof ApprovalSettings>(k: K, v: ApprovalSettings[K]) =>
+    void updateSetting("approval", {
+      ...(settings.approval ?? DEFAULT_SETTINGS.approval),
+      [k]: v,
+    });
+  const setApprovalTool = (tool: keyof ApprovalHookTools, v: boolean) =>
+    void updateSetting("approval", {
+      ...(settings.approval ?? DEFAULT_SETTINGS.approval),
+      tools: {
+        ...(settings.approval?.tools ?? DEFAULT_SETTINGS.approval.tools),
+        [tool]: v,
+      },
+    });
+
+  // --- Approval hooks (per-tool install / status) --------------------------
+  const [hookStatus, setHookStatus] = useState<Record<string, HookStatus | null>>({});
+  const [busyTool, setBusyTool] = useState<string | null>(null);
+  const [hookMsg, setHookMsg] = useState<string | null>(null);
+
+  const refreshHooks = useCallback(async () => {
+    const next: Record<string, HookStatus | null> = {};
+    await Promise.all(
+      HOOK_TOOLS.map(async (tool) => {
+        try {
+          next[tool.id] = await permHook.status(tool.id);
+        } catch {
+          next[tool.id] = null;
+        }
+      }),
+    );
+    setHookStatus(next);
+  }, []);
+  useEffect(() => {
+    void refreshHooks();
+  }, [refreshHooks]);
+
+  const toggleHook = async (tool: (typeof HOOK_TOOLS)[number]) => {
+    setBusyTool(tool.id);
+    setHookMsg(null);
+    try {
+      const st = hookStatus[tool.id];
+      setHookMsg(
+        st?.installed
+          ? await permHook.uninstall(tool.id)
+          : await permHook.install(tool.id, settings.approval.port),
+      );
+      await refreshHooks();
+    } catch (e) {
+      setHookMsg(String(e));
+    } finally {
+      setBusyTool(null);
+    }
+  };
+
+  const uninstallAllHooks = async () => {
+    setBusyTool("all");
+    setHookMsg(null);
+    try {
+      const results = await Promise.all(
+        HOOK_TOOLS.map(async (tool) => {
+          try {
+            if (hookStatus[tool.id]?.installed) {
+              return await permHook.uninstall(tool.id);
+            }
+            return `${tool.label}：${t("settings.hookNotInstalled")}`;
+          } catch (e) {
+            return `${tool.label}：${String(e)}`;
+          }
+        }),
+      );
+      setHookMsg(results.join("\n"));
+      await refreshHooks();
+    } finally {
+      setBusyTool(null);
+    }
+  };
 
   // --- Data export / import ------------------------------------------------
   const [includeSecrets, setIncludeSecrets] = useState(false);
@@ -671,6 +766,137 @@ export function Settings() {
                 label={t("settings.approvalNotifications")}
               />
             </Row>
+
+            {/* Approval detection via per-tool permission HOOKS (primary path) */}
+            <Row
+              title={t("settings.approvalHooks")}
+              desc={t("settings.approvalHooksHint")}
+            >
+              <Switch
+                checked={settings.approval.enabled}
+                onChange={(v) => setApproval("enabled", v)}
+                label={t("settings.approvalHooks")}
+              />
+            </Row>
+
+            {settings.approval.enabled && (
+              <>
+                <Row title={t("settings.approvalHookPort")} desc={t("settings.approvalHookPortHint")}>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={settings.approval.port}
+                      onChange={(e) => setApproval("port", Number(e.target.value) || 47890)}
+                      className="w-28"
+                    />
+                    <span className="text-[11px] text-subtle">
+                      127.0.0.1:{settings.approval.port}/approval
+                    </span>
+                  </div>
+                </Row>
+
+                {HOOK_TOOLS.map((tool) => {
+                  const st = hookStatus[tool.id];
+                  const installed = !!st?.installed;
+                  return (
+                    <Row key={tool.id} title={tool.label} desc={tool.config}>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={settings.approval.tools?.[tool.id] ?? false}
+                          onChange={(v) => setApprovalTool(tool.id, v)}
+                          label={`${tool.label} ${t("settings.approvalToolRemind")}`}
+                        />
+                        <Button
+                          size="sm"
+                          variant={installed ? "secondary" : "primary"}
+                          disabled={busyTool !== null}
+                          onClick={() => void toggleHook(tool)}
+                          title={
+                            installed
+                              ? t("settings.hookUninstallTitle")
+                              : t("settings.hookInstallTitle")
+                          }
+                        >
+                          {busyTool === tool.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : installed ? (
+                            <Wrench size={12} />
+                          ) : (
+                            <ShieldCheck size={12} />
+                          )}
+                          {busyTool === tool.id
+                            ? t("settings.hookBusy")
+                            : installed
+                              ? t("settings.hookUninstall")
+                              : t("settings.hookInstall")}
+                        </Button>
+                        <span
+                          className={cn(
+                            "flex items-center gap-1 text-[11px]",
+                            installed ? "text-success" : "text-subtle",
+                          )}
+                        >
+                          {st == null ? (
+                            "—"
+                          ) : installed ? (
+                            <>
+                              <CheckCircle2 size={11} /> {t("settings.hookInstalled")}
+                            </>
+                          ) : st.toolDetected ? (
+                            t("settings.hookNotInstalled")
+                          ) : (
+                            t("settings.hookToolMissing")
+                          )}
+                        </span>
+                      </div>
+                    </Row>
+                  );
+                })}
+
+                {HOOK_TOOLS.some((tool) => hookStatus[tool.id]?.installed) && (
+                  <Row
+                    title={t("settings.hookUninstallAll")}
+                    desc={t("settings.hookUninstallAllHint")}
+                  >
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busyTool !== null}
+                      onClick={() => void uninstallAllHooks()}
+                      title={t("settings.hookUninstallAllTitle")}
+                    >
+                      {busyTool === "all" ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={12} />
+                      )}
+                      {busyTool === "all" ? t("settings.hookBusy") : t("settings.hookUninstallAll")}
+                    </Button>
+                  </Row>
+                )}
+
+                {hookMsg && (
+                  <Row title={t("settings.hookResult")} full>
+                    <span className="break-all font-mono text-[11px] leading-relaxed text-muted">
+                      {hookMsg}
+                    </span>
+                  </Row>
+                )}
+
+                <Row
+                  title={t("settings.approvalScanFallback")}
+                  desc={t("settings.approvalScanFallbackHint")}
+                >
+                  <Switch
+                    checked={settings.approval.scanFallback}
+                    onChange={(v) => setApproval("scanFallback", v)}
+                    label={t("settings.approvalScanFallback")}
+                  />
+                </Row>
+              </>
+            )}
           </Section>
 
           {/* Updates */}

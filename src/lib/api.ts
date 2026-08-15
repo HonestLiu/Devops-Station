@@ -424,3 +424,36 @@ export const notify = {
   setApprovalNotifications: (enabled: boolean) =>
     call<void>("set_approval_notifications", { enabled }),
 };
+
+// --- Approval permission hooks (primary detection path) ----------------------
+
+export interface HookStatus {
+  /** Whether our hook is currently installed for the tool. */
+  installed: boolean;
+  /** Whether the tool's config file exists (tool appears present). */
+  toolDetected: boolean;
+  /** The config path we manage. */
+  configPath: string;
+}
+
+/**
+ * Local approval endpoint + per-tool permission hooks (Claude Code / Codex /
+ * OpenCode). The hooks fire exactly when the tool needs approval and POST to
+ * `127.0.0.1:{port}/approval`; no more terminal-output regex scanning.
+ */
+export const permHook = {
+  /** Start the local listener (idempotent for the same port). */
+  start: (port: number) => call<void>("perm_hook_start", { port }),
+  /** Stop the local listener. */
+  stop: () => call<void>("perm_hook_stop"),
+  /** Install the notify hook for a tool (`claude` | `codex` | `opencode`). */
+  install: (tool: string, port: number) =>
+    call<string>("perm_hook_install", { tool, port }),
+  /** Remove our hook from a tool's config. */
+  uninstall: (tool: string) => call<string>("perm_hook_uninstall", { tool }),
+  /** Query whether our hook is installed / the tool is present. */
+  status: (tool: string) => call<HookStatus>("perm_hook_status", { tool }),
+  /** Enable/disable the legacy terminal-output scan (compat mode, default off). */
+  setScanFallback: (enabled: boolean) =>
+    call<void>("set_scan_fallback", { enabled }),
+};

@@ -40,6 +40,7 @@ import { useContextMenu, type MenuItem } from "./store/useContextMenu";
 import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import { checkForUpdate } from "./lib/updater";
+import { permHook } from "./lib/api";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { approveWaitingNow } from "./lib/quickApprove";
 import { matchesShortcut } from "./lib/shortcut";
@@ -228,6 +229,21 @@ export default function App() {
     };
   }, []);
 
+  // Approval HOOK service lifecycle: keep the local listener and the legacy
+  // scan switch in sync with Settings. Started once settings have loaded so the
+  // persisted port/toggles take effect; re-applied on any change.
+  const settingsLoaded = useAppStore((s) => s.settingsLoaded);
+  const approval = useAppStore((s) => s.settings.approval);
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    void permHook.setScanFallback(approval.scanFallback).catch(() => undefined);
+    if (approval.enabled) {
+      void permHook.start(approval.port).catch(() => undefined);
+    } else {
+      void permHook.stop().catch(() => undefined);
+    }
+  }, [settingsLoaded, approval.enabled, approval.port, approval.scanFallback]);
+
   // Quick approval shortcut (configurable in Settings → Shortcuts): sends Enter
   // to the session that is currently waiting on an agent CLI approval prompt
   // (Claude Code, Codex, …), confirming the highlighted "Yes" option without
@@ -267,7 +283,6 @@ export default function App() {
   // there's nothing new (the dialog only opens if an update is found). Guarded so
   // React StrictMode's double-mount in dev doesn't fire it twice, and respects the
   // "Automatically check for updates on startup" setting once settings are loaded.
-  const settingsLoaded = useAppStore((s) => s.settingsLoaded);
   const autoCheckUpdates = useAppStore((s) => s.settings.autoCheckUpdates);
   const didAutoCheck = useRef(false);
   useEffect(() => {
