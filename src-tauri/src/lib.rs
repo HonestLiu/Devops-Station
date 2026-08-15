@@ -238,6 +238,16 @@ async fn sftp_write(
 }
 
 #[tauri::command]
+async fn sftp_read_bytes(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+) -> AppResult<String> {
+    let session = state.ssh.get(&session_id).await?;
+    ssh::sftp::read_bytes(&session, &remote_path).await
+}
+
+#[tauri::command]
 async fn sftp_set_perms(
     state: State<'_, AppState>,
     session_id: String,
@@ -898,6 +908,7 @@ pub fn run() {
             sftp_stat,
             sftp_read,
             sftp_write,
+            sftp_read_bytes,
             sftp_set_perms,
             remote_metrics,
             local_metrics,

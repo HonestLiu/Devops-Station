@@ -32,6 +32,7 @@ import {
 import type { RemoteFile, TransferProgress } from "@/lib/types";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
+import { RemoteFilePreview } from "./RemoteFilePreview";
 
 // `open`/`save` resolve to real local filesystem paths inside Tauri. In a bare
 // browser preview they reject, which we catch and surface as a hint.
@@ -74,6 +75,9 @@ export function SftpPanel({
   const [transfers, setTransfers] = useState<Record<string, TransferProgress>>({});
   const [selected, setSelected] = useState<string | undefined>();
   const [showHidden, setShowHidden] = useState(false);
+
+  // Remote-file preview (images, PDF, video, audio, Markdown, text).
+  const [preview, setPreview] = useState<RemoteFile | null>(null);
 
   // Auto-follow: when on, the panel tracks the terminal's working directory
   // (reported over OSC 7 by the shell). Manual navigation pauses following.
@@ -284,6 +288,15 @@ export function SftpPanel({
                 void download(f);
               },
             },
+            {
+              id: "preview",
+              label: "预览",
+              icon: <Eye size={14} />,
+              onClick: () => {
+                closeCtx();
+                setPreview(f);
+              },
+            },
           ]),
       {
         id: "rename",
@@ -479,7 +492,7 @@ export function SftpPanel({
                 <tr
                   key={f.path}
                   onClick={() => setSelected(f.path === selected ? undefined : f.path)}
-                  onDoubleClick={() => (f.isDir ? navigate(f.path) : void download(f))}
+                  onDoubleClick={() => (f.isDir ? navigate(f.path) : setPreview(f))}
                   onContextMenu={(e) => onFileContextMenu(e, f)}
                   className={cn(
                     "group cursor-pointer border-b border-border/50 hover:bg-hover",
@@ -505,6 +518,18 @@ export function SftpPanel({
                   </td>
                   <td className="pr-2 text-right">
                     <span className="invisible flex justify-end gap-1 group-hover:visible">
+                      {!f.isDir && (
+                        <button
+                          className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+                          title="预览"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreview(f);
+                          }}
+                        >
+                          <Eye size={13} />
+                        </button>
+                      )}
                       {!f.isDir && (
                         <button
                           className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
@@ -572,6 +597,17 @@ export function SftpPanel({
             );
           })}
         </div>
+      )}
+
+      {/* Remote-file preview (images, PDF, video, audio, Markdown, text) */}
+      {preview && (
+        <RemoteFilePreview
+          sessionId={sessionId}
+          path={preview.path}
+          name={preview.name}
+          onClose={() => setPreview(null)}
+          onDownload={() => void download(preview)}
+        />
       )}
     </div>
   );

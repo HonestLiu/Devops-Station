@@ -357,6 +357,13 @@ export const en: Record<keyof typeof zh, string> = {
   "sftp.goToHosts": "Go to Hosts to add one",
   "sftp.connectVia": "Connect via SFTP",
   "sftp.pickHost": "Pick a saved SSH host to open its file system",
+  "sftp.preview": "Preview",
+  "sftp.previewTitle": "Preview — {name}",
+  "sftp.previewEdit": "Edit",
+  "sftp.previewDownloadInstead": "Download to view",
+  "sftp.previewTooLarge": "File is too large to preview inline — download it to view locally.",
+  "sftp.previewUnsupported": "This file type can't be previewed yet — download it to open with another app.",
+  "sftp.previewReadError": "Read failed: {msg}",
 
   // --- terminal / split -----------------------------------------------------
   "term.copy": "Copy",

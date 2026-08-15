@@ -85,6 +85,11 @@ export const sftp = {
   /** Read a remote text file for inline editing (server enforces a size cap). */
   read: (sessionId: string, remotePath: string) =>
     call<string>("sftp_read", { sessionId, remotePath }),
+  /** Read a remote file's raw bytes as base64 for in-app preview (images, PDF,
+   *  video, audio). Server enforces a size cap and returns an error for files
+   *  that are too large to preview inline. */
+  readBytes: (sessionId: string, remotePath: string) =>
+    call<string>("sftp_read_bytes", { sessionId, remotePath }),
   /** Overwrite a remote file with text content. */
   write: (sessionId: string, remotePath: string, content: string) =>
     call<void>("sftp_write", { sessionId, remotePath, content }),

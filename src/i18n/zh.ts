@@ -366,6 +366,13 @@ export const zh = {
   "sftp.goToHosts": "前往主机列表添加",
   "sftp.connectVia": "通过 SFTP 连接",
   "sftp.pickHost": "选择一个已保存的 SSH 主机以打开其文件系统",
+  "sftp.preview": "预览",
+  "sftp.previewTitle": "预览 — {name}",
+  "sftp.previewEdit": "编辑",
+  "sftp.previewDownloadInstead": "下载以查看",
+  "sftp.previewTooLarge": "文件过大，无法内联预览，请下载到本地查看。",
+  "sftp.previewUnsupported": "此文件类型暂不支持预览，可下载到本地用其他程序打开。",
+  "sftp.previewReadError": "读取失败：{msg}",
 
   // --- terminal / split -----------------------------------------------------
   "term.copy": "复制",

@@ -34,10 +34,12 @@ import { sftp } from "@/lib/api";
 import { localFs } from "@/lib/api";
 import { Bar, Button } from "@/components/ui";
 import { RemoteFileEditor } from "./RemoteFileEditor";
+import { RemoteFilePreview } from "./RemoteFilePreview";
 import { PermsDialog } from "./PermsDialog";
 import { cn, formatBytes, formatMtime, parentPath } from "@/lib/utils";
 import { explainFile, diffFiles } from "@/ai/tasks";
 import { useSessionStore } from "@/store/useSessionStore";
+import { useT } from "@/i18n";
 import type { LocalEntry, RemoteFile, TransferProgress } from "@/lib/types";
 
 interface DragItem {
@@ -62,6 +64,8 @@ interface DragState {
  * mousedown → move past threshold → floating preview → mouseup commits.
  */
 export function SftpDualPanel({ sessionId }: { sessionId: string }) {
+  const t = useT();
+
   // --- Remote pane state ---
   const [rPath, setRPath] = useState("/");
   const [rFiles, setRFiles] = useState<RemoteFile[]>([]);
@@ -95,6 +99,9 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   // --- Inline remote-file editor + permission dialog ---
   const [editing, setEditing] = useState<{ path: string; name: string } | null>(null);
   const [permTarget, setPermTarget] = useState<RemoteFile | null>(null);
+
+  // --- Remote-file preview (images, PDF, video, audio, Markdown, text) ---
+  const [preview, setPreview] = useState<{ path: string; name: string } | null>(null);
 
   // Remembers the source/target of each transfer so a failed one can be resumed
   // from the last acknowledged byte offset.
@@ -621,7 +628,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                       onDoubleClick={() =>
                         f.isDir
                           ? void loadRemote(f.path)
-                          : setEditing({ path: f.path, name: f.name })
+                          : setPreview({ path: f.path, name: f.name })
                       }
                       title={
                         f.isDir
@@ -640,6 +647,18 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                         {formatMtime(f.modified)}
                       </span>
                       <span className="invisible flex shrink-0 items-center gap-0.5 group-hover:visible">
+                        {!f.isDir && (
+                          <button
+                            className={cn(rowActionBtn, "hover:text-accent")}
+                            title={t("sftp.preview")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreview({ path: f.path, name: f.name });
+                            }}
+                          >
+                            <Eye size={13} />
+                          </button>
+                        )}
                         {!f.isDir && (
                           <button
                             className={cn(rowActionBtn, "hover:text-accent")}
@@ -861,6 +880,18 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
           name={editing.name}
           onClose={() => setEditing(null)}
           onSaved={() => void loadRemote(rPathRef.current)}
+          onDownload={(p, n) => startDownload(p, n, lPathRef.current)}
+        />
+      )}
+
+      {/* Remote-file preview (images, PDF, video, audio, Markdown, text) */}
+      {preview && (
+        <RemoteFilePreview
+          sessionId={sessionId}
+          path={preview.path}
+          name={preview.name}
+          onClose={() => setPreview(null)}
+          onEdit={(p, n) => setEditing({ path: p, name: n })}
           onDownload={(p, n) => startDownload(p, n, lPathRef.current)}
         />
       )}

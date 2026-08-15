@@ -3,6 +3,7 @@
 use std::io::SeekFrom;
 use std::path::Path;
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -13,6 +14,11 @@ use crate::types::{RemoteFile, RemoteFileMeta};
 
 /// Cap on inline file editing — files larger than this must be downloaded.
 const EDIT_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Cap on in-app binary previews (images, PDF, video, audio). Beyond this we
+/// don't pull the file through the IPC channel base64 — the UI falls back to a
+/// plain download instead.
+const PREVIEW_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 const CHUNK: usize = 64 * 1024;
 
@@ -275,6 +281,39 @@ pub async fn write_string(
     remote.flush().await?;
     remote.shutdown().await?;
     Ok(())
+}
+
+/// Read a remote file's raw bytes as base64 for in-app preview (images, PDF,
+/// video, audio). Capped by `PREVIEW_MAX_BYTES` so we never pull a huge file
+/// through the IPC channel; the UI falls back to a download beyond that.
+pub async fn read_bytes(session: &SshSession, remote_path: &str) -> AppResult<String> {
+    let sftp = session.sftp().await?;
+    let size = sftp.metadata(remote_path).await?.size.unwrap_or(0);
+    if size > PREVIEW_MAX_BYTES {
+        return Err(AppError::Sftp(format!(
+            "file is {size} bytes — too large to preview inline (limit {}). Download it instead.",
+            PREVIEW_MAX_BYTES
+        )));
+    }
+
+    let mut remote = sftp.open(remote_path).await?;
+    let mut buf = vec![0u8; CHUNK];
+    let mut data = Vec::with_capacity(size.min(PREVIEW_MAX_BYTES) as usize);
+    loop {
+        let n = remote.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        if data.len() + n > PREVIEW_MAX_BYTES as usize {
+            remote.shutdown().await?;
+            return Err(AppError::Sftp(
+                "file is too large to preview inline. Download it instead.".into(),
+            ));
+        }
+        data.extend_from_slice(&buf[..n]);
+    }
+    remote.shutdown().await?;
+    Ok(B64.encode(data))
 }
 
 /// Change a remote file's mode and/or ownership.
