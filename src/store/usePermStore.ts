@@ -41,11 +41,21 @@ const EXPIRE_MS = 3 * 60_000;
  * backend re-detects the same TUI prompt (it re-renders on every keystroke).
  * The backend already dedupes by signature, but a frame that changes enough to
  * produce a different signature every keypress would otherwise flood the bell.
+ * SCAN-source only: HOOK events are precise one-shot notifications and must
+ * NOT be collapsed by this window (see push).
  */
 const SESSION_WINDOW_MS = 30_000;
 /** A dismissed entry stays "seen" for this long, so a re-detected prompt that
- *  the user already closed doesn't immediately come back. */
+ *  the user already closed doesn't immediately come back. SCAN-source only. */
 const DISMISSED_MS = 30_000;
+/**
+ * HOOK-source dedup window: the tool fires the event once per approval, so the
+ * only thing this guards against is a near-identical duplicate POST (a hook
+ * running twice, the plugin re-emitting the same ask). Anything more would
+ * swallow a *second, real* approval of the same command in the same session —
+ * the exact "bell only shows the first one" report.
+ */
+const HOOK_DEDUP_MS = 2_500;
 
 /** Collapse a prompt into a stable identity: whitespace/digits/quoted values
  *  vary across TUI redraws, the question text does not. */
@@ -96,18 +106,33 @@ export const usePermStore = create<PermState>((set, get) => ({
 
     const now = Date.now();
     const fp = fingerprint(p.snippet);
-    const sessionKey = `${p.sessionId}|${fp}`;
 
-    // User dismissed this exact prompt recently → stay quiet (the TUI may keep
-    // re-emitting it while it is still on screen).
-    if ((dismissed.get(sessionKey) ?? 0) > now - DISMISSED_MS) return;
+    // Opportunistically drop expired dedup/dismiss entries (bounded memory).
+    for (const [k, ts] of dismissed) {
+      if (ts < now - DISMISSED_MS) dismissed.delete(k);
+    }
+    for (const [k, ts] of lastSeen) {
+      if (ts < now - 60_000) lastSeen.delete(k);
+    }
 
-    // First detection of this prompt in the session window wins; a re-render
-    // with the same fingerprint inside the window updates nothing (keeps the
-    // original timestamp so the bell shows when it first appeared).
-    const prev = lastSeen.get(sessionKey) ?? 0;
-    if (now - prev < SESSION_WINDOW_MS) return;
-    lastSeen.set(sessionKey, now);
+    if (p.source === "hook") {
+      // Precise event from the tool itself: every approval must reach the bell.
+      // Only collapse a true duplicate emission within a sub-second window.
+      const dupKey = `h|${p.sessionId}|${fp}`;
+      const prevDup = lastSeen.get(dupKey) ?? 0;
+      if (now - prevDup < HOOK_DEDUP_MS) return;
+      lastSeen.set(dupKey, now);
+    } else {
+      // SCAN source: legacy heuristics. Strict prompt gate already applied
+      // above; additionally ignore re-detections of a prompt the user already
+      // handled (dismissed) or within the per-session flood window (TUI
+      // redraws re-emit the same frame many times).
+      const sessionKey = `${p.sessionId}|${fp}`;
+      if ((dismissed.get(sessionKey) ?? 0) > now - DISMISSED_MS) return;
+      const prev = lastSeen.get(sessionKey) ?? 0;
+      if (now - prev < SESSION_WINDOW_MS) return;
+      lastSeen.set(sessionKey, now);
+    }
 
     // Link the request to a local terminal session: the tab that was active
     // when it arrived is the one running the agent CLI (a hook's session id is
@@ -138,6 +163,11 @@ export const usePermStore = create<PermState>((set, get) => ({
       // window (TUI still on screen) doesn't pop straight back.
       const key = `${item.sessionId}|${fingerprint(item.snippet)}`;
       dismissed.set(key, Date.now());
+      // Dismissing the entry means the user has dealt with it — clear the tab's
+      // "waiting" badge (and hook marker) so the hourglass doesn't linger.
+      if (item.targetSessionId) {
+        useSessionStore.getState().markSettled(item.targetSessionId);
+      }
     }
     set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
   },

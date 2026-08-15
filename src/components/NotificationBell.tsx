@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Bell, BellRing, Check, ShieldCheck, X } from "lucide-react";
+import { Bell, BellRing, Check, ShieldCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useT, type TKey } from "@/i18n";
 import { usePermStore, type PermItem } from "@/store/usePermStore";
-import { useTabsStore } from "@/store/useTabsStore";
-import { approveSession } from "@/lib/quickApprove";
+import { approveSession, rejectSession } from "@/lib/quickApprove";
 
 function timeAgo(
   t: (key: TKey, params?: Record<string, string | number>) => string,
@@ -21,22 +20,23 @@ function timeAgo(
 
 function Row({ item }: { item: PermItem }) {
   const t = useT();
-  const focusBySession = useTabsStore((s) => s.focusBySession);
   const dismiss = usePermStore((s) => s.dismiss);
 
   // HOOK events carry the agent's own session id, which no local tab owns —
   // target the linked local session when we have one.
   const localSid = item.targetSessionId ?? item.sessionId;
 
-  const jump = () => {
-    focusBySession(localSid);
-    dismiss(item.id);
-  };
-
   const approve = () => {
     // Send Enter to the waiting session (confirms the highlighted "Yes" option),
     // then drop the entry so the bell reflects it as handled.
     void approveSession(localSid);
+    dismiss(item.id);
+  };
+
+  const reject = () => {
+    // Send Escape — cancels the pending request in Claude Code / Codex /
+    // OpenCode menus. Then drop the entry as handled.
+    void rejectSession(localSid);
     dismiss(item.id);
   };
 
@@ -66,10 +66,11 @@ function Row({ item }: { item: PermItem }) {
           <Check size={12} /> {t("perm.approve")}
         </button>
         <button
-          onClick={jump}
-          className="flex items-center justify-center gap-1 rounded-md bg-hover py-1 text-[11px] font-medium text-muted transition-colors hover:bg-border hover:text-fg"
+          onClick={reject}
+          title={t("perm.rejectHint")}
+          className="flex items-center justify-center gap-1 rounded-md bg-danger/10 py-1 text-[11px] font-medium text-danger transition-colors hover:bg-danger/20"
         >
-          {t("perm.jumpToTerminal")} <ArrowRight size={12} />
+          <X size={12} /> {t("perm.reject")}
         </button>
       </div>
     </div>

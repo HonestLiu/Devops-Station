@@ -6,13 +6,15 @@ import { usePermStore } from "@/store/usePermStore";
 import type { Tab } from "@/lib/types";
 
 /**
- * Quick-approval support for vibecoding CLI prompts (Claude Code, Codex, …).
+ * Quick-approval / quick-rejection for vibecoding CLI prompts (Claude Code,
+ * Codex, …).
  *
  * Approval UIs are keyboard-driven: the first option ("Yes") is highlighted and
  * Enter confirms it — for Claude Code's "Do you want to proceed?" menu, Codex's
  * "› 1. Yes, proceed (y)" and most other agent CLIs. So "approve" is simply
- * "send Enter to the waiting session". No option indices, no tool-specific
- * logic needed.
+ * "send Enter to the waiting session". Rejection is "send Escape": the de-facto
+ * cancel key for ink-style TUI menus (Claude Code, Codex, OpenCode all cancel
+ * the pending request on Esc). No option indices, no tool-specific logic.
  */
 
 /** Whether a session currently looks like it's waiting for approval/input. */
@@ -42,9 +44,9 @@ function sessionHasTab(sessionId: string): boolean {
 }
 
 /**
- * Pick the session to approve. Priority:
+ * Pick the session to approve/reject. Priority:
  *   1. A waiting session inside the *active* tab (text heuristic or HOOK
- *      marker) — the user is looking at it, approve that one.
+ *      marker) — the user is looking at it, act on that one.
  *   2. The local session linked to the most recent approval event (≤30s) —
  *      covers agent TUIs whose prompt text never matches the regex, and cases
  *      where the user switched tabs before pressing the shortcut.
@@ -80,31 +82,47 @@ export function findApproveTarget(): string | undefined {
   return active?.sessionId || undefined;
 }
 
-/** Send Enter to the right transport for a session's tab kind. */
-function writeEnter(tab: Tab, sessionId: string): Promise<void> {
-  const data = textToBase64("\r");
-  if (tab.kind === "ssh") return ssh.write(sessionId, data);
-  if (tab.kind === "serial") return serial.write(sessionId, data);
-  if (tab.kind === "ble") return ble.write(sessionId, data);
+/** Find the tab owning a session, if any. */
+function findTab(sessionId: string): Tab | undefined {
+  return useTabsStore.getState().tabs.find(
+    (t) =>
+      t.sessionId === sessionId || !!t.panes?.some((p) => p.sessionId === sessionId),
+  );
+}
+
+/** Send raw data to the right transport for a session's tab kind. */
+function writeData(tab: Tab, sessionId: string, data: string): Promise<void> {
+  const b64 = textToBase64(data);
+  if (tab.kind === "ssh") return ssh.write(sessionId, b64);
+  if (tab.kind === "serial") return serial.write(sessionId, b64);
+  if (tab.kind === "ble") return ble.write(sessionId, b64);
   // local / wsl / frp are all PTY-backed.
-  return pty.write(sessionId, data);
+  return pty.write(sessionId, b64);
 }
 
 /**
- * Approve the waiting session: find its tab (by sessionId, in the focused pane
- * or the tab itself) and send Enter. Returns false if the session isn't found
- * or isn't waiting.
+ * Approve a session: find its tab and send Enter (confirms the highlighted
+ * "Yes" option). Returns false if the session has no live tab. The bell button
+ * is an explicit user action, so this does NOT require the session to still be
+ * flagged waiting — the entry may outlive the 30s HOOK marker.
  */
 export async function approveSession(sessionId: string): Promise<boolean> {
-  if (!isWaiting(sessionId)) return false;
-  const tab = useTabsStore
-    .getState()
-    .tabs.find(
-      (t) =>
-        t.sessionId === sessionId || !!t.panes?.some((p) => p.sessionId === sessionId),
-    );
+  const tab = findTab(sessionId);
   if (!tab) return false;
-  await writeEnter(tab, sessionId);
+  await writeData(tab, sessionId, "\r");
+  useSessionStore.getState().markSettled(sessionId);
+  return true;
+}
+
+/**
+ * Reject a session: send Escape, the universal cancel key for agent TUI
+ * approval menus. Returns false if the session has no live tab.
+ */
+export async function rejectSession(sessionId: string): Promise<boolean> {
+  const tab = findTab(sessionId);
+  if (!tab) return false;
+  await writeData(tab, sessionId, "\x1b");
+  useSessionStore.getState().markSettled(sessionId);
   return true;
 }
 
@@ -118,16 +136,20 @@ export async function approveWaitingNow(): Promise<boolean> {
 
   const sid = findApproveTarget();
   if (!sid) return false;
-  // Unlike approveSession (bell button — only for sessions actually flagged as
-  // waiting), the shortcut may target the active tab as a last resort, so we
-  // don't gate on isWaiting here; we only require the session to exist.
-  const tab = useTabsStore
-    .getState()
-    .tabs.find(
-      (t) =>
-        t.sessionId === sid || !!t.panes?.some((p) => p.sessionId === sid),
-    );
+  const tab = findTab(sid);
   if (!tab) return false;
-  await writeEnter(tab, sid);
+  await writeData(tab, sid, "\r");
+  useSessionStore.getState().markSettled(sid);
+  return true;
+}
+
+/** Reject whatever is waiting right now (reserved for future shortcuts). */
+export async function rejectWaitingNow(): Promise<boolean> {
+  const sid = findApproveTarget();
+  if (!sid) return false;
+  const tab = findTab(sid);
+  if (!tab) return false;
+  await writeData(tab, sid, "\x1b");
+  useSessionStore.getState().markSettled(sid);
   return true;
 }
