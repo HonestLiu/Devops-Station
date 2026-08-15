@@ -313,13 +313,20 @@ export const mqtt = {
    *  to reveal a stored credential server-side. Returns the session id. */
   connect: (config: MqttConnectConfig) => call<string>("mqtt_connect", { config }),
   disconnect: (id: string) => call<void>("mqtt_disconnect", { id }),
-  /** `payload` is base64 (binary-safe). */
-  publish: (id: string, topic: string, payload: string, qos: number, retain: boolean) =>
-    call<void>("mqtt_publish", { id, topic, payload, qos, retain }),
-  subscribe: (id: string, topic: string, qos: number) =>
-    call<void>("mqtt_subscribe", { id, topic, qos }),
-  unsubscribe: (id: string, topic: string) =>
-    call<void>("mqtt_unsubscribe", { id, topic }),
+  /** `payload` is base64 (binary-safe). `hostId` persists the publish form. */
+  publish: (
+    id: string,
+    topic: string,
+    payload: string,
+    qos: number,
+    retain: boolean,
+    hostId?: string | null,
+  ) => call<void>("mqtt_publish", { id, topic, payload, qos, retain, hostId: hostId ?? null }),
+  /** `hostId` persists the subscription so it survives tab close / syncs. */
+  subscribe: (id: string, topic: string, qos: number, hostId?: string | null) =>
+    call<void>("mqtt_subscribe", { id, topic, qos, hostId: hostId ?? null }),
+  unsubscribe: (id: string, topic: string, hostId?: string | null) =>
+    call<void>("mqtt_unsubscribe", { id, topic, hostId: hostId ?? null }),
 
   onMessage: (id: string, cb: (m: MqttMessage) => void): Promise<UnlistenFn> =>
     listen<MqttMessage>(`mqtt-message-${id}`, (e) => cb(e.payload)),
@@ -328,7 +335,8 @@ export const mqtt = {
 };
 
 export const mqttConnections = {
-  list: () => call<MqttConnection[]>("mqtt_list_connections"),
+  list: (includeSecrets = false) =>
+    call<MqttConnection[]>("mqtt_list_connections", { includeSecrets }),
   save: (conn: MqttConnection) => call<MqttConnection>("mqtt_save_connection", { conn }),
   delete: (id: string) => call<void>("mqtt_delete_connection", { id }),
 };

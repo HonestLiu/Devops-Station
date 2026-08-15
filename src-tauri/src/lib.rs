@@ -827,11 +827,18 @@ async fn mqtt_publish(
     payload: String,
     qos: u8,
     retain: bool,
+    host_id: Option<String>,
 ) -> AppResult<()> {
     let bytes = B64
         .decode(&payload)
         .map_err(|e| AppError::Mqtt(format!("bad base64 payload: {e}")))?;
-    state.mqtt.publish(&app, &id, &topic, &bytes, qos, retain).await
+    state.mqtt.publish(&app, &id, &topic, &bytes, qos, retain).await?;
+    // Persist the publish form so it is restored on reconnect / on other devices.
+    if let Some(h) = host_id {
+        let decoded = String::from_utf8_lossy(&bytes).to_string();
+        state.store.set_mqtt_publish_pref(&h, &topic, qos, retain, &decoded)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -840,8 +847,13 @@ async fn mqtt_subscribe(
     id: String,
     topic: String,
     qos: u8,
+    host_id: Option<String>,
 ) -> AppResult<()> {
-    state.mqtt.subscribe(&id, &topic, qos).await
+    state.mqtt.subscribe(&id, &topic, qos).await?;
+    if let Some(h) = host_id {
+        state.store.add_mqtt_subscription(&h, &topic, qos)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -849,13 +861,21 @@ async fn mqtt_unsubscribe(
     state: State<'_, AppState>,
     id: String,
     topic: String,
+    host_id: Option<String>,
 ) -> AppResult<()> {
-    state.mqtt.unsubscribe(&id, &topic).await
+    state.mqtt.unsubscribe(&id, &topic).await?;
+    if let Some(h) = host_id {
+        state.store.remove_mqtt_subscription(&h, &topic)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
-async fn mqtt_list_connections(state: State<'_, AppState>) -> AppResult<Vec<MqttConnection>> {
-    state.store.list_mqtt_connections()
+async fn mqtt_list_connections(
+    state: State<'_, AppState>,
+    include_secrets: Option<bool>,
+) -> AppResult<Vec<MqttConnection>> {
+    state.store.list_mqtt_connections(include_secrets.unwrap_or(false))
 }
 
 #[tauri::command]

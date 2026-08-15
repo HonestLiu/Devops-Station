@@ -311,6 +311,10 @@ export interface MqttConnection {
   insecureSkipVerify: boolean;
   createdAt?: number | null;
   updatedAt?: number | null;
+  /** Persisted subscriptions (restored on reconnect / on other synced devices). */
+  subscriptions?: { topic: string; qos: number }[];
+  /** Persisted publish form. */
+  publish?: { topic: string; qos: number; retain: boolean; payload: string };
 }
 
 /** Parameters for opening a live MQTT session. */

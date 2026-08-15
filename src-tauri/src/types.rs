@@ -418,6 +418,30 @@ pub struct MqttConnectConfig {
     pub insecure_skip_verify: bool,
 }
 
+/// A single persisted subscription on a connection.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttStoredSub {
+    pub topic: String,
+    pub qos: u8,
+}
+
+/// Persisted publish settings for a connection (so the publish form is
+/// restored on reconnect / on another synced device).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MqttPublishPref {
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub qos: u8,
+    #[serde(default)]
+    pub retain: bool,
+    /// Last payload (kept for convenience; may be empty).
+    #[serde(default)]
+    pub payload: String,
+}
+
 /// A persisted MQTT connection profile. Mirrors MQTTX's connection model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -440,6 +464,12 @@ pub struct MqttConnection {
     pub insecure_skip_verify: bool,
     pub created_at: Option<i64>,
     pub updated_at: Option<i64>,
+    /// Persisted subscriptions (None → leave whatever is stored untouched).
+    #[serde(default)]
+    pub subscriptions: Option<Vec<MqttStoredSub>>,
+    /// Persisted publish form (None → leave whatever is stored untouched).
+    #[serde(default)]
+    pub publish: Option<MqttPublishPref>,
 }
 
 /// A single inbound or outbound MQTT packet, streamed to the frontend.

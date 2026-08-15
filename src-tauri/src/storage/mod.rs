@@ -11,7 +11,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::types::{Host, HostKind, MqttConnection, QuickCommand};
+use crate::types::{Host, HostKind, MqttConnection, MqttPublishPref, MqttStoredSub, QuickCommand};
 use crypto::Vault;
 
 const SCHEMA: &str = r#"
@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS mqtt_connections (
     insecure_skip_verify INTEGER NOT NULL DEFAULT 0,
     created_at           INTEGER NOT NULL,
     updated_at           INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mqtt_prefs (
+    conn_id         TEXT PRIMARY KEY,
+    subscriptions   TEXT NOT NULL DEFAULT '[]',
+    publish         TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -439,21 +445,37 @@ impl Store {
 
     // -- MQTT connections ---------------------------------------------------
 
-    pub fn list_mqtt_connections(&self) -> AppResult<Vec<MqttConnection>> {
+    pub fn list_mqtt_connections(&self, include_secrets: bool) -> AppResult<Vec<MqttConnection>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, protocol, host, port, client_id, username, password,
-                    save_password, clean, keep_alive, connect_timeout, reconnect,
-                    path, insecure_skip_verify, created_at, updated_at
-             FROM mqtt_connections ORDER BY name COLLATE NOCASE",
+            "SELECT c.id, c.name, c.protocol, c.host, c.port, c.client_id, c.username, c.password,
+                    c.save_password, c.clean, c.keep_alive, c.connect_timeout, c.reconnect,
+                    c.path, c.insecure_skip_verify, c.created_at, c.updated_at,
+                    COALESCE(p.subscriptions, '[]') AS subscriptions,
+                    COALESCE(p.publish, '{}') AS publish
+             FROM mqtt_connections c
+             LEFT JOIN mqtt_prefs p ON p.conn_id = c.id
+             ORDER BY c.name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |row| {
+            let id: String = row.get(0)?;
             let password_raw: Option<String> = row.get(7)?;
-            let password = password_raw
-                .filter(|s| !s.is_empty())
-                .map(|_| "__saved__".to_string());
+            let password = if include_secrets {
+                password_raw
+                    .filter(|s| !s.is_empty())
+                    .and_then(|sealed| self.vault.open(&sealed).ok())
+            } else {
+                password_raw
+                    .filter(|s| !s.is_empty())
+                    .map(|_| "__saved__".to_string())
+            };
+            let subs_raw: String = row.get(17)?;
+            let subscriptions: Vec<MqttStoredSub> = serde_json::from_str(&subs_raw)
+                .unwrap_or_default();
+            let pub_raw: String = row.get(18)?;
+            let publish: MqttPublishPref = serde_json::from_str(&pub_raw).unwrap_or_default();
             Ok(MqttConnection {
-                id: row.get(0)?,
+                id,
                 name: row.get(1)?,
                 protocol: row.get(2)?,
                 host: row.get(3)?,
@@ -470,6 +492,8 @@ impl Store {
                 insecure_skip_verify: row.get::<_, i64>(14)? != 0,
                 created_at: row.get(15)?,
                 updated_at: row.get(16)?,
+                subscriptions: Some(subscriptions),
+                publish: Some(publish),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -515,7 +539,109 @@ impl Store {
         )?;
 
         conn.password = (!password_col.is_empty()).then(|| "__saved__".to_string());
+
+        // Persist subscription / publish preferences only when they are
+        // explicitly provided (Some). The connection manager page saves a
+        // profile without these fields (None) — in that case we keep whatever
+        // is already stored so we don't wipe live subscriptions.
+        if conn.subscriptions.is_some() || conn.publish.is_some() {
+            let (existing_subs, existing_pub) = self.get_mqtt_prefs(&conn.id)?;
+            let subs = conn.subscriptions.clone().unwrap_or(existing_subs);
+            let pub_pref = conn.publish.clone().unwrap_or(existing_pub);
+            self.conn.lock().execute(
+                "INSERT INTO mqtt_prefs (conn_id, subscriptions, publish)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(conn_id) DO UPDATE SET
+                    subscriptions = excluded.subscriptions,
+                    publish = excluded.publish",
+                params![
+                    conn.id,
+                    serde_json::to_string(&subs).unwrap_or_else(|_| "[]".to_string()),
+                    serde_json::to_string(&pub_pref).unwrap_or_else(|_| "{}".to_string()),
+                ],
+            )?;
+        }
+
         Ok(conn)
+    }
+
+    /// Read a connection's stored subscriptions + publish preferences.
+    fn get_mqtt_prefs(&self, id: &str) -> AppResult<(Vec<MqttStoredSub>, MqttPublishPref)> {
+        let conn = self.conn.lock();
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT subscriptions, publish FROM mqtt_prefs WHERE conn_id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (subs_raw, pub_raw) = row.unwrap_or_default();
+        let subscriptions: Vec<MqttStoredSub> = subs_raw
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let publish: MqttPublishPref = pub_raw
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        Ok((subscriptions, publish))
+    }
+
+    /// Add or replace a subscription on a connection (idempotent by topic).
+    pub fn add_mqtt_subscription(&self, conn_id: &str, topic: &str, qos: u8) -> AppResult<()> {
+        let (mut subs, pub_pref) = self.get_mqtt_prefs(conn_id)?;
+        if let Some(s) = subs.iter_mut().find(|s| s.topic == topic) {
+            s.qos = qos;
+        } else {
+            subs.push(MqttStoredSub {
+                topic: topic.to_string(),
+                qos,
+            });
+        }
+        self.write_mqtt_prefs(conn_id, &subs, &pub_pref)
+    }
+
+    /// Remove a subscription from a connection.
+    pub fn remove_mqtt_subscription(&self, conn_id: &str, topic: &str) -> AppResult<()> {
+        let (mut subs, pub_pref) = self.get_mqtt_prefs(conn_id)?;
+        subs.retain(|s| s.topic != topic);
+        self.write_mqtt_prefs(conn_id, &subs, &pub_pref)
+    }
+
+    /// Update the persisted publish form of a connection.
+    pub fn set_mqtt_publish_pref(
+        &self,
+        conn_id: &str,
+        topic: &str,
+        qos: u8,
+        retain: bool,
+        payload: &str,
+    ) -> AppResult<()> {
+        let (subs, mut pub_pref) = self.get_mqtt_prefs(conn_id)?;
+        pub_pref.topic = topic.to_string();
+        pub_pref.qos = qos;
+        pub_pref.retain = retain;
+        pub_pref.payload = payload.to_string();
+        self.write_mqtt_prefs(conn_id, &subs, &pub_pref)
+    }
+
+    fn write_mqtt_prefs(
+        &self,
+        conn_id: &str,
+        subs: &[MqttStoredSub],
+        pub_pref: &MqttPublishPref,
+    ) -> AppResult<()> {
+        self.conn.lock().execute(
+            "INSERT INTO mqtt_prefs (conn_id, subscriptions, publish)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(conn_id) DO UPDATE SET
+                subscriptions = excluded.subscriptions,
+                publish = excluded.publish",
+            params![
+                conn_id,
+                serde_json::to_string(subs).unwrap_or_else(|_| "[]".to_string()),
+                serde_json::to_string(pub_pref).unwrap_or_else(|_| "{}".to_string()),
+            ],
+        )?;
+        Ok(())
     }
 
     pub fn delete_mqtt_connection(&self, id: &str) -> AppResult<()> {

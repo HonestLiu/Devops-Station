@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   ArrowDownToLine,
@@ -155,10 +155,15 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   const t = useT();
   const sessionId = tab.sessionId;
   const patch = useTabsStore((s) => s.patch);
+  const hostId = tab.mqtt?.id;
 
   const [messages, setMessages] = useState<MqttMessage[]>([]);
   const [status, setStatus] = useState<MqttStatus | null>(null);
-  const [subs, setSubs] = useState<Sub[]>([]);
+  // Seed subscriptions/publish form from the persisted connection profile so
+  // they survive a tab close and sync across devices.
+  const [subs, setSubs] = useState<Sub[]>(
+    (tab.mqtt?.subscriptions ?? []).map((s) => ({ topic: s.topic, qos: s.qos })),
+  );
 
   // subscription input
   const [showSubInput, setShowSubInput] = useState(false);
@@ -167,10 +172,10 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   const [subErr, setSubErr] = useState<string | undefined>();
 
   // publisher
-  const [pubTopic, setPubTopic] = useState("");
-  const [pubPayload, setPubPayload] = useState("");
-  const [pubQos, setPubQos] = useState(0);
-  const [pubRetain, setPubRetain] = useState(false);
+  const [pubTopic, setPubTopic] = useState(tab.mqtt?.publish?.topic ?? "");
+  const [pubPayload, setPubPayload] = useState(tab.mqtt?.publish?.payload ?? "");
+  const [pubQos, setPubQos] = useState(tab.mqtt?.publish?.qos ?? 0);
+  const [pubRetain, setPubRetain] = useState(tab.mqtt?.publish?.retain ?? false);
   const [pubErr, setPubErr] = useState<string | undefined>();
   const [pubFormat, setPubFormat] = useState<PayloadFormat>("text");
 
@@ -202,11 +207,26 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
     };
   }, [sessionId]);
 
+  // Keep the latest subscriptions in a ref so a reconnect can re-subscribe them.
+  const subsRef = useRef(subs);
+  subsRef.current = subs;
+
+  // Whenever the session becomes connected (initial connect or a reconnect),
+  // restore the persisted subscriptions so they survive a tab close and sync
+  // across devices.
+  useEffect(() => {
+    if (status?.status === "connected" && sessionId) {
+      for (const sub of subsRef.current) {
+        mqtt.subscribe(sessionId, sub.topic, sub.qos, hostId).catch(() => undefined);
+      }
+    }
+  }, [status?.status, sessionId, hostId]);
+
   const subscribe = async () => {
     if (!sessionId || !subTopic.trim()) return;
     setSubErr(undefined);
     try {
-      await mqtt.subscribe(sessionId, subTopic.trim(), subQos);
+      await mqtt.subscribe(sessionId, subTopic.trim(), subQos, hostId);
       setSubs((s) =>
         s.some((x) => x.topic === subTopic.trim()) ? s : [...s, { topic: subTopic.trim(), qos: subQos }],
       );
@@ -219,7 +239,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
 
   const unsubscribe = async (topic: string) => {
     if (!sessionId) return;
-    await mqtt.unsubscribe(sessionId, topic).catch(() => undefined);
+    await mqtt.unsubscribe(sessionId, topic, hostId).catch(() => undefined);
     setSubs((s) => s.filter((x) => x.topic !== topic));
   };
 
@@ -228,7 +248,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
     setPubErr(undefined);
     try {
       const bytes = payloadToBytes(pubFormat, pubPayload);
-      await mqtt.publish(sessionId, pubTopic.trim(), bytesToBase64(bytes), pubQos, pubRetain);
+      await mqtt.publish(sessionId, pubTopic.trim(), bytesToBase64(bytes), pubQos, pubRetain, hostId);
     } catch (e) {
       setPubErr((e as Error).message);
     }

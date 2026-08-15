@@ -19,9 +19,9 @@
 import { useAppStore, DEFAULT_SETTINGS } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { tFrom } from "@/i18n";
-import { db } from "@/lib/api";
+import { db, mqttConnections } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
-import type { Host, QuickCommand } from "@/lib/types";
+import type { Host, MqttConnection, QuickCommand } from "@/lib/types";
 
 /** Settings keys shared across platforms. Everything else stays device-local. */
 export const SYNC_SETTING_KEYS = [
@@ -50,6 +50,9 @@ export interface SyncData {
   settings: Record<string, unknown>;
   hosts: Host[];
   quickCommands: QuickCommand[];
+  /** MQTT connections (incl. persisted subscriptions + publish form, and
+   *  decrypted passwords) so they work seamlessly on every synced device. */
+  mqttConnections: MqttConnection[];
 }
 
 export interface Profile {
@@ -130,9 +133,13 @@ async function collectSyncData(): Promise<SyncData> {
   const s = useAppStore.getState().settings;
   const { quickCommands } = useHostsStore.getState();
   const hosts = await db.listHosts(true);
+  // MQTT connections are pulled WITH their decrypted credentials + persisted
+  // subscriptions/publish form, exactly like hosts (plaintext-at-rest is an
+  // accepted tradeoff on the user's own sync server).
+  const mqttConns = await mqttConnections.list(true);
   const settings: Record<string, unknown> = {};
   for (const k of SYNC_SETTING_KEYS) settings[k] = s[k];
-  return { settings, hosts, quickCommands };
+  return { settings, hosts, quickCommands, mqttConnections: mqttConns };
 }
 
 /** Push the current local state to the server (last-write-wins). */
@@ -209,6 +216,22 @@ export async function applySyncData(data: Partial<SyncData>): Promise<void> {
       if (!remoteCommands.some((r) => r.id === c.id)) await hs.deleteQuickCommand(c.id);
     }
     for (const c of remoteCommands) await hs.saveQuickCommand(c);
+  }
+
+  // MQTT connections: same reconcile + re-seal logic as hosts. A plaintext
+  // password arriving from sync must be sealed into this device's own vault, so
+  // force `savePassword` on — otherwise `save_mqtt_connection` drops it.
+  if (data.mqttConnections !== undefined) {
+    const localMqtt = await mqttConnections.list(false);
+    const remoteMqtt = data.mqttConnections as MqttConnection[];
+    for (const c of localMqtt) {
+      if (!remoteMqtt.some((r) => r.id === c.id)) await mqttConnections.delete(c.id);
+    }
+    for (const c of remoteMqtt) {
+      const hasPlainSecret =
+        typeof c.password === "string" && c.password.length > 0 && c.password !== "__saved__";
+      await mqttConnections.save(hasPlainSecret ? { ...c, savePassword: true } : c);
+    }
   }
 }
 
