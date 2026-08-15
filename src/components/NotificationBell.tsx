@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bell, BellRing, Check, ShieldCheck, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -86,6 +87,18 @@ export function NotificationBell() {
 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Fixed-position coordinates for the portal panel, computed from the bell's
+  // bounding rect. Required because the collapsed sidebar is `overflow-hidden`,
+  // which would otherwise clip an in-flow `absolute` dropdown.
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+
+  const computePos = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos({ left: r.right + 8, bottom: window.innerHeight - r.bottom });
+  };
 
   // Auto-expire stale entries so the badge count stays honest.
   useEffect(() => {
@@ -98,20 +111,48 @@ export function NotificationBell() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Close on outside click.
+  // Close on outside click / Escape; keep position in sync with the bell.
   useEffect(() => {
     if (!open) return;
+    computePos();
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        (ref.current && ref.current.contains(target)) ||
+        (panelRef.current && panelRef.current.contains(target))
+      ) {
+        return;
+      }
+      setOpen(false);
+      setPos(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setPos(null);
+      }
+    };
+    const onResize = () => computePos();
     window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const toggle = () => {
     setOpen((v) => {
       const next = !v;
-      if (next) markSeen();
+      if (next) {
+        computePos();
+        markSeen();
+      } else {
+        setPos(null);
+      }
       return next;
     });
   };
@@ -121,6 +162,7 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         onClick={toggle}
         title={t("perm.title")}
         className={cn(
@@ -138,33 +180,40 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && (
-        <div className="absolute bottom-0 left-full z-50 ml-2 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
-          <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
-            <span className="text-[12px] font-semibold text-fg">{t("perm.title")}</span>
-            {hasItems && (
-              <button
-                onClick={clear}
-                className="text-[10px] text-subtle transition-colors hover:text-danger"
-              >
-                {t("perm.clearAll")}
-              </button>
-            )}
-          </div>
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ left: pos.left, bottom: pos.bottom }}
+            className="fixed z-[100] flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+          >
+            <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+              <span className="text-[12px] font-semibold text-fg">{t("perm.title")}</span>
+              {hasItems && (
+                <button
+                  onClick={clear}
+                  className="text-[10px] text-subtle transition-colors hover:text-danger"
+                >
+                  {t("perm.clearAll")}
+                </button>
+              )}
+            </div>
 
-          <div className="flex-1 overflow-y-auto p-2">
-            {hasItems ? (
-              <div className="flex flex-col gap-1.5">
-                {items.map((it) => (
-                  <Row key={it.id} item={it} />
-                ))}
-              </div>
-            ) : (
-              <p className="px-2 py-6 text-center text-[11px] text-subtle">{t("perm.empty")}</p>
-            )}
-          </div>
-        </div>
-      )}
+            <div className="flex-1 overflow-y-auto p-2">
+              {hasItems ? (
+                <div className="flex flex-col gap-1.5">
+                  {items.map((it) => (
+                    <Row key={it.id} item={it} />
+                  ))}
+                </div>
+              ) : (
+                <p className="px-2 py-6 text-center text-[11px] text-subtle">{t("perm.empty")}</p>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
