@@ -1,4 +1,5 @@
 import { AlertTriangle, Loader2, RotateCw } from "lucide-react";
+import { useRef } from "react";
 
 import { Button } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
@@ -95,6 +96,10 @@ export function SplitView({ tab }: { tab: Tab }) {
     count >= 3 && "grid grid-cols-2 grid-rows-2",
   );
 
+  // Auto-restart is rate-limited: if the freshly spawned shell immediately hits
+  // the same ConPTY break, we must not loop reconnect → break → reconnect.
+  const lastAutoRestart = useRef<Record<string, number>>({});
+
   const handleClosed = (paneId: string, info: SessionClosed) => {
     // The ConPTY pipe broke while the shell process is still alive (a child
     // TUI like OpenCode exiting via rapid double Ctrl+C can tear down the whole
@@ -102,7 +107,14 @@ export function SplitView({ tab }: { tab: Tab }) {
     // respawn the shell in place so the tab comes back to a fresh prompt
     // instead of a fatal "连接已关闭" overlay.
     if (info.restart) {
-      void reconnect(tab.id);
+      const now = Date.now();
+      if (now - (lastAutoRestart.current[tab.id] ?? 0) < 3000) return; // no loop
+      lastAutoRestart.current[tab.id] = now;
+      // Defer out of the closed-event handler: the old xterm must fully tear
+      // down (dispose + React unmount) BEFORE the new shell mounts, otherwise
+      // the remount can leave the new terminal in a broken state (e.g. mouse
+      // selection stops working).
+      queueMicrotask(() => void reconnect(tab.id));
       return;
     }
     const current = useTabsStore.getState().tabs.find((tt) => tt.id === tab.id);
