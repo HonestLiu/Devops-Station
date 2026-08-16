@@ -73,10 +73,11 @@ if (!target) {
   console.error(`[release] invalid version: ${target}`);
   process.exit(1);
 }
-if (target === current) {
-  console.error(`[release] version ${target} equals the current version; nothing to release`);
-  process.exit(1);
-}
+// Version already set in package.json (e.g. a previous run bumped it but died
+// before committing) → skip the npm version step and release the existing
+// version. This makes re-running `npm run release -- 0.1.18` after a failure
+// work instead of erroring with "equals the current version".
+const alreadyBumped = target === current;
 
 // --- sanity: the tag must not already exist ------------------------------------
 try {
@@ -97,9 +98,13 @@ if (!skipChecks) {
 }
 
 // --- bump version (sync-version.mjs runs via the "version" lifecycle script) ---
-console.log("\n[release] bumping version…");
-run(`npm version ${target} --no-git-tag-version`);
-run("node scripts/sync-version.mjs"); // belt-and-suspenders, idempotent
+if (alreadyBumped) {
+  console.log(`\n[release] version ${target} already set in package.json; skipping bump`);
+} else {
+  console.log("\n[release] bumping version…");
+  run(`npm version ${target} --no-git-tag-version`);
+  run("node scripts/sync-version.mjs"); // belt-and-suspenders, idempotent
+}
 
 const ver = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 if (ver !== target) {
@@ -110,7 +115,15 @@ if (ver !== target) {
 // --- build commit message --------------------------------------------------------
 let msg = message;
 if (!msg) {
-  const lastTag = out(`git describe --tags --abbrev=0 2>/dev/null || true`);
+  // `git describe` fails on a repo with no tags yet — catch it (POSIX `|| true`
+  // is NOT valid under cmd.exe, which npm uses on Windows, and was breaking the
+  // script on this very line).
+  let lastTag = "";
+  try {
+    lastTag = out("git describe --tags --abbrev=0");
+  } catch {
+    /* no tags yet — walk the whole history */
+  }
   const range = lastTag ? `${lastTag}..HEAD` : "HEAD";
   const subjects = out(`git log --oneline --no-merges ${range}`)
     .split("\n")

@@ -1,6 +1,6 @@
 [package]
 name = "devops-station"
-version = "0.1.17"
+version = "0.1.18"
 description = "Modern cross-platform DevOps workspace: SSH + SFTP + Serial + Monitoring"
 authors = ["Hones"]
 edition = "2021"
