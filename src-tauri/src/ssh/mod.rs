@@ -280,12 +280,16 @@ impl SshManager {
                 .disconnect(Disconnect::ByApplication, "host key check failed", "en")
                 .await;
             let fp = fingerprint.lock().clone();
-            let msg = if host_key_status == "mismatch" {
-                format!("HOST_KEY_MISMATCH|{}|{}|{}", cfg.hostname, cfg.port, fp)
-            } else {
-                format!("HOST_KEY_UNKNOWN|{}|{}|{}", cfg.hostname, cfg.port, fp)
-            };
-            return Err(AppError::Ssh(msg));
+            return Err(AppError::HostKey {
+                kind: if host_key_status == "mismatch" {
+                    "MISMATCH".into()
+                } else {
+                    "UNKNOWN".into()
+                },
+                host: cfg.hostname.clone(),
+                port: cfg.port,
+                fingerprint: fp,
+            });
         }
 
         // --- interactive PTY channel ---

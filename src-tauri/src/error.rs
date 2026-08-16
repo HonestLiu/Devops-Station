@@ -9,6 +9,16 @@ pub enum AppError {
     #[error("SSH error: {0}")]
     Ssh(String),
 
+    /// Host-key trust prompt raised by the SSH layer. The message is a
+    /// pipe-delimited token that the frontend parses to show a trust modal.
+    #[error("HOST_KEY_{kind}|{host}|{port}|{fingerprint}")]
+    HostKey {
+        kind: String,
+        host: String,
+        port: u16,
+        fingerprint: String,
+    },
+
     #[error("SFTP error: {0}")]
     Sftp(String),
 

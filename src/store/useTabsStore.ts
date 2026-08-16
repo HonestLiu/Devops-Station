@@ -13,6 +13,7 @@ import type {
   MqttConnection,
   SerialOpenConfig,
   SshConnectConfig,
+  SshConnectResult,
   Tab,
   TermPane,
   WslLaunchConfig,
@@ -40,6 +41,28 @@ function lang(
   params?: Record<string, string | number>,
 ): string {
   return tFrom(useAppStore.getState().settings.language, key, params);
+}
+
+/** Connect to an SSH host, prompting the user to trust an unknown/changed key. */
+async function connectSshWithHostKeyPrompt(
+  config: SshConnectConfig,
+): Promise<SshConnectResult> {
+  try {
+    return await ssh.connect(config);
+  } catch (err) {
+    const msg = (err as Error).message;
+    const m = /HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
+    if (!m) throw err;
+    const [, kind, host, portStr, fp] = m;
+    const trust = await useHostKeyStore.getState().request({
+      host,
+      port: Number(portStr),
+      fingerprint: fp,
+      mismatch: kind === "MISMATCH",
+    });
+    if (!trust) throw err;
+    return await ssh.connect({ ...config, trustHostKey: true });
+  }
 }
 
 interface TabsState {
@@ -178,7 +201,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     }));
 
     try {
-      const result = await ssh.connect(config);
+      const result = await connectSshWithHostKeyPrompt(config);
       get().patch(id, {
         status: "connected",
         sessionId: result.sessionId,
@@ -186,34 +209,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
-      const msg = (err as Error).message;
-      // Unknown / changed host key → ask the user, then reconnect trusting it.
-      const m = /^HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
-      if (m) {
-        const [, kind, host, portStr, fp] = m;
-        const trust = await useHostKeyStore.getState().request({
-          host,
-          port: Number(portStr),
-          fingerprint: fp,
-          mismatch: kind === "MISMATCH",
-        });
-        if (trust) {
-          try {
-            const result = await ssh.connect({ ...config, trustHostKey: true });
-            get().patch(id, {
-              status: "connected",
-              sessionId: result.sessionId,
-              cwd: result.homeDir,
-              fingerprint: result.serverKeyFingerprint,
-            });
-            return id;
-          } catch (e2) {
-            get().patch(id, { status: "error", error: (e2 as Error).message });
-            return id;
-          }
-        }
-      }
-      get().patch(id, { status: "error", error: msg });
+      get().patch(id, { status: "error", error: (err as Error).message });
     }
     return id;
   },
@@ -252,7 +248,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     }));
 
     try {
-      const result = await ssh.connect(config);
+      const result = await connectSshWithHostKeyPrompt(config);
       get().patch(id, {
         status: "connected",
         sessionId: result.sessionId,
@@ -260,34 +256,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
-      const msg = (err as Error).message;
-      // Unknown / changed host key → ask the user, then reconnect trusting it.
-      const m = /^HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
-      if (m) {
-        const [, kind, host, portStr, fp] = m;
-        const trust = await useHostKeyStore.getState().request({
-          host,
-          port: Number(portStr),
-          fingerprint: fp,
-          mismatch: kind === "MISMATCH",
-        });
-        if (trust) {
-          try {
-            const result = await ssh.connect({ ...config, trustHostKey: true });
-            get().patch(id, {
-              status: "connected",
-              sessionId: result.sessionId,
-              cwd: result.homeDir,
-              fingerprint: result.serverKeyFingerprint,
-            });
-            return id;
-          } catch (e2) {
-            get().patch(id, { status: "error", error: (e2 as Error).message });
-            return id;
-          }
-        }
-      }
-      get().patch(id, { status: "error", error: msg });
+      get().patch(id, { status: "error", error: (err as Error).message });
     }
     return id;
   },
@@ -763,7 +732,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       } else if (tab.kind === "frp" && tab.frp) {
         get().patch(id, { status: "connected", sessionId: syncPane(await frp.spawn(tab.frp, 120, 32)) });
       } else if (tab.kind === "sftp" && tab.sftpConfig) {
-        const result = await ssh.connect(tab.sftpConfig);
+        const result = await connectSshWithHostKeyPrompt(tab.sftpConfig);
         get().patch(id, {
           status: "connected",
           sessionId: result.sessionId,
@@ -800,7 +769,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         }
       } else if (tab.kind === "ssh" && tab.sshConfig) {
         // Reconnect the focused pane (or the whole tab when not split).
-        const result = await ssh.connect(tab.sshConfig);
+        const result = await connectSshWithHostKeyPrompt(tab.sshConfig);
         const paneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
         if (paneId && tab.panes) get().patchPane(id, paneId, { status: "connected", sessionId: result.sessionId });
         get().patch(id, {

@@ -28,7 +28,6 @@ use crate::ssh::SshSession;
 use crate::storage::Store;
 use crate::types::{ForwardType, PortForwardRule, PortForwardStatus};
 
-const ST_CONNECTING: &str = "connecting";
 const ST_ACTIVE: &str = "active";
 const ST_ERROR: &str = "error";
 
@@ -71,12 +70,10 @@ impl PortForwardManager {
 
         let session_id = session.id.clone();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
-        let mut bound_port: Option<u16> = None;
-        let mut status = ST_CONNECTING.to_string();
-        let error: Option<String> = None;
-        let mut task: Option<tauri::async_runtime::JoinHandle<()>> = None;
 
-        match rule.forward_type {
+        // Each arm returns the live state; this avoids dead initial assignments
+        // and makes it obvious that the success path is always active.
+        let (bound_port, status, task) = match rule.forward_type {
             ForwardType::Local | ForwardType::Dynamic => {
                 let bind = (rule.local_host.clone(), rule.local_port);
                 let listener = match TcpListener::bind(bind).await {
@@ -93,14 +90,14 @@ impl PortForwardManager {
                         });
                     }
                 };
-                bound_port = Some(listener.local_addr()?.port());
-                status = ST_ACTIVE.to_string();
-                task = Some(tauri::async_runtime::spawn(forward_accept_loop(
+                let bound_port = Some(listener.local_addr()?.port());
+                let task = tauri::async_runtime::spawn(forward_accept_loop(
                     listener,
                     stop_rx,
                     session.clone(),
                     rule.clone(),
-                )));
+                ));
+                (bound_port, ST_ACTIVE.to_string(), Some(task))
             }
             ForwardType::Remote => {
                 // Register the local target so the client handler can bridge any
@@ -115,10 +112,7 @@ impl PortForwardManager {
                     .tcpip_forward(rule.remote_host.clone(), rule.remote_port as u32)
                     .await
                 {
-                    Ok(assigned) => {
-                        bound_port = Some(assigned as u16);
-                        status = ST_ACTIVE.to_string();
-                    }
+                    Ok(assigned) => (Some(assigned as u16), ST_ACTIVE.to_string(), None),
                     Err(e) => {
                         session
                             .remote_forwards
@@ -134,14 +128,14 @@ impl PortForwardManager {
                     }
                 }
             }
-        }
+        };
 
         let rt = ForwardRuntime {
             rule: rule.clone(),
             session: session.clone(),
             session_id: session_id.clone(),
             status: status.clone(),
-            error: error.clone(),
+            error: None,
             bound_port,
             stop: Some(stop_tx),
             task,
@@ -151,7 +145,7 @@ impl PortForwardManager {
         Ok(PortForwardStatus {
             id: rule.id.clone(),
             status,
-            error,
+            error: None,
             bound_port,
         })
     }
