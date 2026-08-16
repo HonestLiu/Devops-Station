@@ -705,7 +705,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   reconnect: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
     if (!tab) return;
-    get().patch(id, { status: "connecting", error: undefined, sessionId: undefined });
+    // Keep the previous sessionId: the Terminal component hot-swaps to the new
+    // session when it lands (screen + scrollback survive), instead of unmounting
+    // and wiping the terminal on every reconnect.
+    get().patch(id, { status: "connecting", error: undefined });
 
     try {
       const syncPane = (sessionId: string) => {
@@ -795,7 +798,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         });
       }
     } catch (err) {
-      get().patch(id, { status: "error", error: (err as Error).message });
+      // Clear the session id so the workspace overlay surfaces the failure —
+      // otherwise the frozen old terminal would keep rendering with no feedback.
+      get().patch(id, { status: "error", error: (err as Error).message, sessionId: undefined });
     }
   },
 }));

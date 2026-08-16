@@ -258,7 +258,27 @@ impl PtyManager {
                 const READ_ERR_RETRY_LIMIT: u32 = 200;
                 loop {
                     match reader.read(&mut buf) {
-                        Ok(0) => break, // clean EOF: the child closed the tty
+                        Ok(0) => {
+                            // A child TUI (OpenCode, …) exiting can transiently
+                            // EOF the ConPTY master *while the shell is still
+                            // alive*. Give the console a short grace window
+                            // before declaring the pipe dead — but when the EOF
+                            // is permanent (reads keep returning 0), the session
+                            // is unrecoverable and we fall through to the
+                            // restart logic below.
+                            let child_alive = session2
+                                .child
+                                .lock()
+                                .try_wait()
+                                .map(|w| w.is_none())
+                                .unwrap_or(false);
+                            if child_alive && read_errs < READ_ERR_RETRY_LIMIT {
+                                read_errs += 1;
+                                std::thread::sleep(Duration::from_millis(50));
+                                continue;
+                            }
+                            break;
+                        }
                         Ok(n) => {
                             read_errs = 0;
                             // Buffered until the terminal attaches, so the

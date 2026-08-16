@@ -232,6 +232,13 @@ export function Terminal(props: TerminalProps) {
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const closedRef = useRef(false);
+  // Latest session id, readable from mount-once effects (ResizeObserver,
+  // highlighter) without re-running them on every session hot-swap.
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
+  // How many sessions this terminal surface has attached. 0 = first attach
+  // (fresh xterm), >0 = hot-swap after a reconnect (drop alt buffer + clear).
+  const attachCountRef = useRef(0);
   // Recent decoded output for the lightweight proactive-error scan. We keep a
   // small tail so cross-chunk errors are still caught without scanning forever.
   const recentRef = useRef("");
@@ -243,6 +250,18 @@ export function Terminal(props: TerminalProps) {
   // Kept in a ref so a changing callback never re-runs the session effect.
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+
+  // Transport API is derived from the transport kind; shared by the mount-once
+  // surface effect (resize) and the per-session attach effect.
+  const api = useMemo<TransportApi>(
+    () =>
+      transport === "ssh"
+        ? ssh
+        : transport === "pty"
+          ? pty
+          : (dataLink(transport === "ble" ? "ble" : "serial") as unknown as TransportApi),
+    [transport],
+  );
 
   // Whether THIS terminal is the one the user is currently working in (active
   // tab + focused pane). All tab workspaces stay mounted (inactive tabs are
@@ -383,16 +402,14 @@ export function Terminal(props: TerminalProps) {
   const [dragActive, setDragActive] = useState(false);
 
   // --- lifecycle ----------------------------------------------------------
+  // (A) The xterm surface is created ONCE on mount and kept alive across
+  // session hot-swaps. A reconnect after a ConPTY break (a child TUI like
+  // OpenCode exited and orphaned the shell) only re-attaches a new session in
+  // (B) below — the terminal is NOT torn down and rebuilt, so the screen and
+  // scrollback survive ("重新加载终端" no more).
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-
-    const api: TransportApi =
-      transport === "ssh"
-        ? ssh
-        : transport === "pty"
-          ? pty
-          : (dataLink(transport === "ble" ? "ble" : "serial") as unknown as TransportApi);
 
     const term = new XTerm({
       fontFamily,
@@ -468,7 +485,8 @@ export function Terminal(props: TerminalProps) {
         .getState()
         .tabs.find(
           (tt) =>
-            tt.sessionId === sessionId || !!tt.panes?.some((p) => p.sessionId === sessionId),
+            tt.sessionId === sessionRef.current ||
+            !!tt.panes?.some((p) => p.sessionId === sessionRef.current),
         )?.hostId;
       const host = hostId ? useHostsStore.getState().hosts.find((h) => h.id === hostId) : undefined;
       const hostEnabled = host?.keywordEnabled;
@@ -485,6 +503,57 @@ export function Terminal(props: TerminalProps) {
       }
     });
     const unsubHosts = useHostsStore.subscribe(() => applyHighlightRules());
+
+    termRef.current = term;
+    fitRef.current = fit;
+
+    // Resize observer lives on the surface (A) so it survives hot-swaps; it
+    // reads the latest session id from the ref instead of closing over one.
+    const ro = new ResizeObserver(() => {
+      try {
+        fit.fit();
+        const dims = term.rows && term.cols ? { cols: term.cols, rows: term.rows } : null;
+        const sid = sessionRef.current;
+        if (dims && sid && (transport === "ssh" || transport === "pty")) {
+          void api.resize(sid, dims.cols, dims.rows).catch(() => undefined);
+        }
+      } catch {
+        /* fit can throw if the element isn't measurable yet */
+      }
+    });
+    ro.observe(host);
+
+    return () => {
+      term.textarea?.removeEventListener("paste", onPaste, true);
+      ro.disconnect();
+      unsubSettings?.();
+      unsubHosts?.();
+      highlighter?.dispose();
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // (B) Session attach — re-runs whenever the session id changes, which is how
+  // a reconnect hot-swaps the terminal to the freshly spawned shell without
+  // rebuilding the xterm instance.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !sessionId) return;
+
+    // Hot-swap (not the first attach): drop back to the main buffer and clear
+    // the visible screen (scrollback survives) so the new shell's banner
+    // starts clean instead of painting over the dead TUI's alternate-screen
+    // residue.
+    if (attachCountRef.current > 0) {
+      term.write("\x1b[?1049l\x1b[H\x1b[2J");
+    }
+    attachCountRef.current += 1;
+    closedRef.current = false;
+    recentRef.current = "";
+    waitingRef.current = false;
 
     // For SSH sessions, capture the remote shell's working directory via the
     // OSC 7 sequence (file://host/path) that we ask the shell to emit on every
@@ -503,10 +572,6 @@ export function Terminal(props: TerminalProps) {
         return true;
       });
     }
-
-    termRef.current = term;
-    fitRef.current = fit;
-    closedRef.current = false;
 
     // Expose the xterm instance so other surfaces (AI "explain selection",
     // command palette) can read the current selection.
@@ -673,19 +738,6 @@ export function Terminal(props: TerminalProps) {
       }
     })();
 
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-        const dims = term.rows && term.cols ? { cols: term.cols, rows: term.rows } : null;
-        if (dims && (transport === "ssh" || transport === "pty")) {
-          void api.resize(sessionId, dims.cols, dims.rows).catch(() => undefined);
-        }
-      } catch {
-        /* fit can throw if the element isn't measurable yet */
-      }
-    });
-    ro.observe(host);
-
     // Drag a local file onto the terminal to insert its (quoted) path at the
     // prompt. Skipped for serial sessions where a path is meaningless. The Tauri
     // drag event is window-global (same pattern as the SFTP/WSL panels); only
@@ -725,18 +777,10 @@ export function Terminal(props: TerminalProps) {
       disposed = true;
       dragDisposed = true;
       unDrag?.();
-      ro.disconnect();
       onData.dispose();
       onSel.dispose();
-      term.textarea?.removeEventListener("paste", onPaste, true);
       oscDisposable?.dispose();
-      unsubSettings?.();
-      unsubHosts?.();
-      highlighter?.dispose();
       for (const stop of unlisteners) stop();
-      term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
       unregisterTerminal(sessionId);
       if (transport === "ssh") useSessionStore.getState().clearCwd(sessionId);
     };
