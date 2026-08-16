@@ -9,6 +9,7 @@ import {
   getTargetSession,
   getTerminalTypeDescription,
   injectCommandLines,
+  extractTool,
 } from "./terminalAi";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { completeText, streamChat } from "./client";
@@ -77,28 +78,7 @@ export function listHostSessions(): HostSessionMeta[] {
   return out;
 }
 
-/**
- * Extract a shell command from a model turn. We accept either the explicit
- * `TOOL:bash` marker OR — as a fallback for models that forget the marker — any
- * fenced ```bash block in the reply (mirrors the single-host loop).
- */
-function extractTool(text: string): string | null {
-  const marker = text.search(/TOOL:\s*bash/i);
-  if (marker >= 0) {
-    const tail = text.slice(marker);
-    const fence = tail.match(/```(?:bash)?\s*\n([\s\S]*?)```/);
-    if (fence) return fence[1].trim();
-    const rest = tail
-      .replace(/^TOOL:\s*bash\s*/i, "")
-      .split(/\n\s*\n/)[0]
-      ?.trim();
-    return rest || null;
-  }
-  const fence = text.match(/```(?:bash)?\s*\n([\s\S]*?)```/);
-  if (fence) return fence[1].trim();
-  return null;
-}
-
+/** The model signals the task is complete with a lone `DONE:` line. */
 function isDone(text: string): boolean {
   return /^DONE:/m.test(text);
 }

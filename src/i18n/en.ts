@@ -789,7 +789,7 @@ export const en: Record<keyof typeof zh, string> = {
   "ai.agentTypedForReviewDetail": "(command typed into the current terminal; press Enter to run, then start the agent again to continue)",
   "ai.agentRepeatStopDetail": "(the model kept re-issuing the same command — stopped to avoid a loop)",
   "ai.agentSummary": "Summary",
-  "ai.agentNeedTool": "(you did not emit a command in the TOOL:bash format, nor end with DONE:. Please output the command in that exact format, or finish with DONE: when done.)",
+  "ai.agentNeedTool": "(you did not emit a command in the TOOL:bash / TOOL:powershell / TOOL:cmd format, nor end with DONE:. Please output the command in that exact format, or finish with DONE: when done.)",
   "ai.openInFileManager": "Open in file manager",
   "ai.copyPath": "Copy path",
   "ai.openTerminalHere": "Open a new terminal in this directory",

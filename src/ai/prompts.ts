@@ -41,7 +41,10 @@ accomplish a goal on the connected host by running shell commands and observing 
 
 Available tool (you must use this exact format so the app can execute it):
 - To run a shell command, output a line exactly like:  TOOL:bash
-  followed by the command(s) on the next lines inside a single fenced bash block.
+  followed by the command(s) on the next lines inside a single fenced code block.
+  "bash" here is a generic marker — it does NOT mean the shell is bash. On a
+  PowerShell / cmd terminal you may instead write TOOL:powershell, TOOL:ps, or
+  TOOL:cmd, and tag the block powershell or cmd; the app runs any of them.
 - After the app runs it, it will paste the command output back to you as a tool result.
 - When the goal is fully accomplished, respond with a single line:  DONE:
   followed by a short human-readable summary (no tool call).

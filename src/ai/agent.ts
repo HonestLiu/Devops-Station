@@ -1,7 +1,7 @@
 import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { buildContext } from "./context";
-import { getTargetSession, getTerminalTypeDescription, injectCommandLines, writeToTerminal } from "./terminalAi";
+import { getTargetSession, getTerminalTypeDescription, injectCommandLines, writeToTerminal, extractTool } from "./terminalAi";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { useAiAgent, type AgentStep } from "./useAiAgent";
 import { useAiStore, currentProvider } from "./useAiStore";
@@ -20,32 +20,6 @@ type Role = "system" | "user" | "assistant";
 interface Turn {
   role: Role;
   content: string;
-}
-
-/**
- * Extract a shell command from a model turn. We accept either the explicit
- * `TOOL:bash` marker OR — as a fallback for models that forget the marker — any
- * fenced ```bash block in the reply. This keeps commands flowing into the
- * terminal even when a weaker/local model answers in prose instead of the
- * exact convention.
- */
-function extractTool(text: string): string | null {
-  const marker = text.search(/TOOL:\s*bash/i);
-  if (marker >= 0) {
-    const tail = text.slice(marker);
-    const fence = tail.match(/```(?:bash)?\s*\n([\s\S]*?)```/);
-    if (fence) return fence[1].trim();
-    // Fallback: take everything after the marker up to the next blank line.
-    const rest = tail
-      .replace(/^TOOL:\s*bash\s*/i, "")
-      .split(/\n\s*\n/)[0]
-      ?.trim();
-    return rest || null;
-  }
-  // No marker: still honor a fenced bash block if the model produced one.
-  const fence = text.match(/```(?:bash)?\s*\n([\s\S]*?)```/);
-  if (fence) return fence[1].trim();
-  return null;
 }
 
 function isDone(text: string): boolean {

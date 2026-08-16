@@ -254,6 +254,61 @@ export async function injectCommandLines(
   }
 }
 
+/**
+ * Tool markers the agent accepts. `TOOL:bash` is the canonical marker the prompt
+ * asks for, but on a Windows/PowerShell terminal a model may (reasonably) reach
+ * for `TOOL:powershell` / `TOOL:ps` / `TOOL:cmd` instead — every one is accepted
+ * so an agent run never silently degrades to "just text" on PowerShell.
+ */
+const TOOL_MARKER = /TOOL:\s*(?:bash|powershell|pwsh|ps|cmd|shell|sh)\s*/i;
+
+/** A standalone ``` / ```lang fence line, or a bare `TOOL:xxx` marker line. */
+function isMetaLine(line: string): boolean {
+  const l = line.trim();
+  if (/^`{3,}\w*$/.test(l)) return true;
+  return /^TOOL:\s*(?:bash|powershell|pwsh|ps|cmd|shell|sh)\s*$/i.test(l);
+}
+
+/**
+ * Strip stray fence / `TOOL:` / blank lines that could slip past the primary
+ * extraction (the defensive net for a partially-malformed block). Real content
+ * lines keep their indentation so multi-line PowerShell blocks still parse.
+ */
+function cleanCommand(cmd: string): string | null {
+  const kept = cmd
+    .split("\n")
+    .filter((raw) => raw.trim() !== "" && !isMetaLine(raw));
+  const out = kept.join("\n").trim();
+  return out || null;
+}
+
+/**
+ * Extract a shell command from a model turn.
+ *
+ * Accepts the explicit `TOOL:` marker (any shell family) OR — as a fallback for
+ * models that forget the marker — any fenced code block whatever its language
+ * label (`bash`, `powershell`, `ps`, `cmd`, `sh`, …). Previously only
+ * `TOOL:bash` and ```bash fences were honored: on a PowerShell terminal a model
+ * labels its block ```powershell (or writes TOOL:powershell / TOOL:cmd), the
+ * command was rejected, and the agent answered in prose forever — "only outputs
+ * text". This keeps commands flowing into the terminal on every shell.
+ */
+export function extractTool(text: string): string | null {
+  const marker = text.search(TOOL_MARKER);
+  if (marker >= 0) {
+    const tail = text.slice(marker);
+    const fence = tail.match(/```[^\n`]*\s*\n([\s\S]*?)```/);
+    if (fence) return cleanCommand(fence[1]);
+    // Fallback: everything after the marker up to the next blank line.
+    const rest = tail.replace(TOOL_MARKER, "").split(/\n\s*\n/)[0]?.trim();
+    return cleanCommand(rest ?? "");
+  }
+  // No marker: still honor a fenced block if the model produced one.
+  const fence = text.match(/```[^\n`]*\s*\n([\s\S]*?)```/);
+  if (fence) return cleanCommand(fence[1]);
+  return null;
+}
+
 export const EXPLAIN_SYSTEM =
   "You are a senior Linux / embedded ops engineer. The user selected text from their terminal. " +
   "If it is a shell command, explain concisely what it does, its key flags, and any risks " +

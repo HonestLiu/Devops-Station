@@ -797,7 +797,7 @@ export const zh = {
   "ai.agentTypedForReviewDetail": "（命令已键入当前终端，按 Enter 即可运行，随后可再次发起 Agent 让其继续）",
   "ai.agentRepeatStopDetail": "（检测到模型重复下发相同命令，已停止以避免死循环）",
   "ai.agentSummary": "结论",
-  "ai.agentNeedTool": "（你没有用 TOOL:bash 格式给出要执行的命令，也没有以 DONE: 结束。请严格按格式输出命令，或确实完成时以 DONE: 收尾。）",
+  "ai.agentNeedTool": "（你没有用 TOOL:bash / TOOL:powershell / TOOL:cmd 格式给出要执行的命令，也没有以 DONE: 结束。请严格按格式输出命令，或确实完成时以 DONE: 收尾。）",
   "ai.openInFileManager": "在文件管理器中打开",
   "ai.copyPath": "复制路径",
   "ai.openTerminalHere": "在此目录打开新终端",
