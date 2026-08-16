@@ -5,6 +5,7 @@ import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
 import { useHostKeyStore } from "@/store/useHostKeyStore";
 import { useHostsStore } from "@/store/useHostsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import type {
   BleOpenConfig,
   FrpConfig,
@@ -723,9 +724,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       } else if (tab.kind === "local") {
         // Reuse the previously resolved shell so a user-picked shell (e.g. fish,
         // zsh) survives a reconnect instead of falling back to the OS default.
+        // Also restart where the user was: the OLD session's live cwd (OSC 7
+        // keeps cwdBySession current as they `cd`, unlike the tab's stale
+        // initial cwd) — so an auto-restart after a broken terminal session
+        // lands back in the same directory instead of the shell's default.
+        const liveCwd = tab.sessionId
+          ? useSessionStore.getState().cwdBySession[tab.sessionId]
+          : undefined;
         get().patch(id, {
           status: "connected",
-          sessionId: syncPane(await pty.spawn(120, 32, tab.shell)),
+          sessionId: syncPane(await pty.spawn(120, 32, tab.shell, liveCwd ?? tab.cwd)),
         });
       } else if (tab.kind === "wsl" && tab.wsl) {
         get().patch(id, { status: "connected", sessionId: syncPane(await wsl.spawn(tab.wsl, 120, 32)) });
