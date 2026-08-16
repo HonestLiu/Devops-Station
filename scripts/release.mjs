@@ -36,7 +36,20 @@ const flag = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const versionArg = args.find((a) => !a.startsWith("-"));
+// Positional args = anything that is not a flag and not the *value* of a flag
+// (-m/--message/--remote). A multi-line -m message must never be read as the
+// version, so we skip flag values while collecting positionals.
+const positional = [];
+for (let i = 0; i < args.length; i++) {
+  const a = args[i];
+  if (a === "-m" || a === "--message" || a === "--remote") {
+    i++; // skip the flag's value
+    continue;
+  }
+  if (a.startsWith("-")) continue;
+  positional.push(a);
+}
+const versionArg = positional[0];
 const message = flag("-m") ?? flag("--message");
 const remote = flag("--remote") ?? "github";
 const skipChecks = args.includes("--skip-checks");

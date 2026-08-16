@@ -261,7 +261,7 @@ pub async fn perm_hook_start(app: AppHandle, port: u16) -> Result<(), String> {
     // best-effort (a running Claude Code may transiently lock the script file;
     // the next app start will retry).
     let _ = write_hook_script(actual);
-    let _ = write_opencode_plugin(actual);
+    let _ = sync_opencode_plugin(actual);
     debug_log(&format!("hook scripts synced to port {actual}"));
 
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -371,7 +371,17 @@ fn handle_conn(app: AppHandle, mut stream: TcpStream) {
                 ts,
                 source: "hook".to_string(),
             };
-            let _ = app.emit("perm-request", &payload);
+            // In-app bell entry. Log the outcome so a "toast OK but bell empty"
+            // report can be diagnosed from server.log instead of guessed at.
+            match app.emit("perm-request", &payload) {
+                Ok(()) => debug_log(&format!(
+                    "POST /approval tool={tool} -> perm-request emitted (snippet: {})",
+                    snippet.chars().take(60).collect::<String>()
+                )),
+                Err(e) => debug_log(&format!(
+                    "POST /approval tool={tool} -> perm-request emit FAILED: {e}"
+                )),
+            }
             // OS notification (same switch as the scan path).
             if crate::perm::approval_notifications_enabled() {
                 let app2 = app.clone();
@@ -763,15 +773,47 @@ fn opencode_plugin_path() -> PathBuf {
     opencode_plugins_dir().join(OPENCODE_PLUGIN_NAME)
 }
 
-/// Write the OpenCode plugin JS (with the current port baked in). No-op when
-/// the plugin is not installed yet.
+/// Write the OpenCode plugin JS (with the current port baked in). Always
+/// writes — this is the *install* step, so the file must be created even when
+/// it does not exist yet. (The old behaviour no-op'd when the file was missing,
+/// which meant a first-time install wrote the config.json reference but never
+/// created the plugin file — status then reported "not installed" and OpenCode
+/// never loaded the plugin.)
 fn write_opencode_plugin(port: u16) -> Result<(), String> {
     let plugin = opencode_plugin_path();
-    if !plugin.exists() {
-        return Ok(());
+    if let Some(parent) = plugin.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建 OpenCode 插件目录失败：{e}"))?;
     }
     let js = OPENCODE_PLUGIN_JS.replace("{port}", &port.to_string());
     std::fs::write(&plugin, js).map_err(|e| format!("写入 OpenCode 插件失败：{e}"))
+}
+
+/// Re-sync the port inside an *already installed* OpenCode plugin. No-op unless
+/// the plugin file exists **or** `~/.config/opencode/config.json` still
+/// references it — the latter self-heals the broken state where a stale install
+/// left the config entry behind without the plugin file.
+fn sync_opencode_plugin(port: u16) -> Result<(), String> {
+    let plugin = opencode_plugin_path();
+    let referenced = opencode_config_path()
+        .exists()
+        .then(|| read_json(&opencode_config_path()).ok())
+        .flatten()
+        .map(|c| {
+            c.get("plugin")
+                .and_then(|p| p.as_array())
+                .map(|arr| {
+                    let reference =
+                        format!("file://{}", plugin.to_string_lossy().replace('\\', "/"));
+                    arr.iter()
+                        .any(|p| p.as_str() == Some(reference.as_str()))
+                })
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if !plugin.exists() && !referenced {
+        return Ok(());
+    }
+    write_opencode_plugin(port)
 }
 
 fn install_opencode(port: u16) -> Result<String, String> {

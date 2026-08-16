@@ -181,11 +181,13 @@ export function NotificationBell() {
       </button>
 
       {open &&
-        pos &&
         createPortal(
           <div
             ref={panelRef}
-            style={{ left: pos.left, bottom: pos.bottom }}
+            // `pos` is computed from the bell button's rect; if that ever fails
+            // (e.g. sidebar collapsed edge case) fall back to a fixed corner so
+            // the panel can never silently fail to appear.
+            style={pos ? { left: pos.left, bottom: pos.bottom } : { right: 12, top: 48 }}
             className="fixed z-[100] flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
           >
             <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">

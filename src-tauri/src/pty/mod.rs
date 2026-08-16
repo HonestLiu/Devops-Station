@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use parking_lot::Mutex;
@@ -240,15 +241,26 @@ impl PtyManager {
             .insert(session_id.clone(), session.clone());
 
         let sid = session_id.clone();
+        let session2 = session.clone();
         std::thread::Builder::new()
             .name(format!("pty-{sid}"))
             .spawn(move || {
                 let data_evt = data_event(&sid);
                 let mut buf = vec![0u8; 8192];
+                // Windows ConPTY quirk: when a child TUI (OpenCode, …) exits it
+                // can transiently break the master read handle *while the shell
+                // is still alive*. Declaring the session dead on the first read
+                // error made the terminal show "连接已关闭" whenever the user
+                // quit such a tool. Instead, keep retrying as long as the child
+                // process is still running; only give up after a generous grace
+                // window (200 × 50ms = 10s) of persistent errors.
+                let mut read_errs = 0u32;
+                const READ_ERR_RETRY_LIMIT: u32 = 200;
                 loop {
                     match reader.read(&mut buf) {
-                        Ok(0) | Err(_) => break,
+                        Ok(0) => break, // clean EOF: the child closed the tty
                         Ok(n) => {
+                            read_errs = 0;
                             // Buffered until the terminal attaches, so the
                             // shell banner and first prompt survive the gap.
                             if output.accept(&buf[..n]) {
@@ -261,6 +273,21 @@ impl PtyManager {
                                 );
                                 crate::perm::scan_and_emit(&app, &sid, &buf[..n]);
                             }
+                        }
+                        Err(e) => {
+                            let child_alive = session2
+                                .child
+                                .lock()
+                                .try_wait()
+                                .map(|w| w.is_none())
+                                .unwrap_or(false);
+                            if child_alive && read_errs < READ_ERR_RETRY_LIMIT {
+                                read_errs += 1;
+                                std::thread::sleep(Duration::from_millis(50));
+                                continue;
+                            }
+                            eprintln!("[pty-{sid}] read error after {read_errs} retries: {e}");
+                            break;
                         }
                     }
                 }
