@@ -18,7 +18,7 @@ import { localFs, pty } from "@/lib/api";
 import type { LocalEntry, Tab } from "@/lib/types";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useSessionStore } from "@/store/useSessionStore";
-import { Button, Input } from "@/components/ui";
+import { Input, SideIconButton } from "@/components/ui";
 
 // --- path helpers ----------------------------------------------------------
 
@@ -81,8 +81,11 @@ function cdInto(tab: Tab, path: string) {
 function RowHint({ depth, text, danger }: { depth: number; text: string; danger?: boolean }) {
   return (
     <div
-      className={cn("px-2 py-1 text-[11px]", danger ? "text-danger" : "text-subtle")}
-      style={{ paddingLeft: `${depth * 12 + 16}px` }}
+      className={cn(
+        "px-2 py-1 text-[11px] leading-relaxed",
+        danger ? "text-danger" : "text-subtle",
+      )}
+      style={{ paddingLeft: `${depth * 12 + 24}px` }}
     >
       {text}
     </div>
@@ -110,15 +113,15 @@ function FileRow({
       onDoubleClick={() => void localFs.open(entry.path)}
       title={entry.path}
       className={cn(
-        "group flex cursor-pointer items-center gap-1 border-b border-border/50 py-1 text-[12px] hover:bg-hover",
-        selected && "bg-accent/10",
+        "group mx-1 flex cursor-pointer items-center gap-1.5 rounded-md py-[3px] pl-1 pr-1 text-[12px] transition-colors hover:bg-hover",
+        selected && "bg-accent/10 hover:bg-accent/10",
       )}
-      style={{ paddingLeft: `${depth * 12 + 4}px` }}
+      style={{ paddingLeft: `${depth * 12 + 16}px` }}
     >
       <span className="w-4 shrink-0" />
-      <FileIcon size={14} className="shrink-0 text-subtle" />
+      <FileIcon size={14} className="shrink-0 text-subtle transition-colors group-hover:text-fg" />
       <span className="truncate font-mono text-fg">{entry.name}</span>
-      <div className="ml-auto hidden items-center gap-0.5 pr-1 group-hover:flex">
+      <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
         <button
           type="button"
           title="Open in default app"
@@ -126,7 +129,7 @@ function FileRow({
             e.stopPropagation();
             void localFs.open(entry.path);
           }}
-          className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted hover:bg-bg hover:text-fg"
         >
           <Play size={12} />
         </button>
@@ -137,7 +140,7 @@ function FileRow({
             e.stopPropagation();
             void localFs.reveal(entry.path);
           }}
-          className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted hover:bg-bg hover:text-fg"
         >
           <ExternalLink size={12} />
         </button>
@@ -213,6 +216,9 @@ function DirNode({
     };
   }, [expanded, path, reload]);
 
+  const selected =
+    selectedPath != null && normalizePath(selectedPath) === normalizePath(path);
+
   return (
     <div>
       <div
@@ -226,10 +232,10 @@ function DirNode({
         }}
         title={path}
         className={cn(
-          "group flex cursor-pointer items-center gap-1 border-b border-border/50 py-1 text-[12px] hover:bg-hover",
-          selectedPath != null && normalizePath(selectedPath) === normalizePath(path) && "bg-accent/10",
+          "group mx-1 flex cursor-pointer items-center gap-1.5 rounded-md py-[3px] pr-1 text-[12px] transition-colors hover:bg-hover",
+          selected && "bg-accent/10 hover:bg-accent/10",
         )}
-        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         <button
           type="button"
@@ -250,7 +256,7 @@ function DirNode({
           <Folder size={14} className="shrink-0 text-accent" />
         )}
         <span className="truncate font-mono text-fg">{name}</span>
-        <div className="ml-auto hidden items-center gap-0.5 pr-1 group-hover:flex">
+        <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
           <button
             type="button"
             title="Reveal in file manager"
@@ -258,7 +264,7 @@ function DirNode({
               e.stopPropagation();
               void localFs.reveal(path);
             }}
-            className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+            className="flex h-5 w-5 items-center justify-center rounded text-muted hover:bg-bg hover:text-fg"
           >
             <ExternalLink size={12} />
           </button>
@@ -382,38 +388,37 @@ export function FilesSidebar({ tab, onClose }: { tab: Tab; onClose: () => void }
 
   return (
     <aside className="relative flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-surface">
-      {/* Path / actions bar — mirrors the Wsl/Sftp panel's top bar */}
-      <div className="flex h-9 items-center gap-1 border-b border-border px-2.5">
-        <Button variant="ghost" size="sm" onClick={goHome} title="Home">
-          <Home size={14} />
-        </Button>
-        <Button variant="ghost" size="sm" onClick={goUp} title="Up">
-          <ArrowUp size={14} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setReload((r) => r + 1)}
-          title="Refresh"
-        >
-          <RefreshCw size={14} />
-        </Button>
-        <Button
-          variant={follow ? "primary" : "secondary"}
-          size="sm"
-          onClick={() => setFollow((v) => !v)}
-          disabled={!isLocal}
-          title={
+      {/* Header — same shape as the USB / AI side panels: chip + title + icon actions */}
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
+        <span className="icon-chip h-6 w-6 shrink-0">
+          <FolderOpen size={13} />
+        </span>
+        <span className="flex-1 truncate text-[12px] font-semibold text-fg">Files</span>
+        <SideIconButton
+          label={
             !isLocal
               ? "Follow only works for local shells — use the SFTP / WSL panel for remote files"
               : follow
                 ? "Following the terminal's directory — click to pause"
                 : "Paused — click to follow the terminal's directory"
           }
-        >
-          <LocateFixed size={13} />
-          {follow ? "Following" : "Follow"}
-        </Button>
+          onClick={() => setFollow((v) => !v)}
+          active={follow}
+          disabled={!isLocal}
+          icon={<LocateFixed size={14} />}
+        />
+        <SideIconButton
+          label="Refresh"
+          onClick={() => setReload((r) => r + 1)}
+          icon={<RefreshCw size={14} />}
+        />
+        <SideIconButton label="Close Files" onClick={onClose} icon={<X size={14} />} />
+      </div>
+
+      {/* Path bar — home / up / editable address */}
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
+        <SideIconButton label="Home" onClick={goHome} icon={<Home size={14} />} />
+        <SideIconButton label="Up" onClick={goUp} icon={<ArrowUp size={14} />} />
         <Input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
@@ -424,13 +429,10 @@ export function FilesSidebar({ tab, onClose }: { tab: Tab; onClose: () => void }
           placeholder="path or browse…"
           className="h-7 flex-1 px-2 font-mono text-[11px]"
         />
-        <Button variant="ghost" size="sm" onClick={() => onClose()} title="Close Files">
-          <X size={14} />
-        </Button>
       </div>
 
       {/* tree */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
         {rootPath ? (
           <DirNode
             key={`${rootPath}:${reload}`}
@@ -450,7 +452,7 @@ export function FilesSidebar({ tab, onClose }: { tab: Tab; onClose: () => void }
         )}
       </div>
 
-      <div className="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-subtle">
+      <div className="shrink-0 border-t border-border px-3 py-2 text-[10px] leading-relaxed text-subtle">
         Click a folder to <span className="text-fg">cd</span> the terminal into it. The panel
         follows your <span className="text-fg">cd</span>s when the link is active. Drag a file
         onto the terminal to insert its path.

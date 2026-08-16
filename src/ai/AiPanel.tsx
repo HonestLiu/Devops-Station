@@ -33,7 +33,7 @@ import { loadKnowledgeBase, kbChunkCount } from "./knowledgeBase";
 import { analyzeTerminal, parseSerialProtocol, monitoringInsight } from "./tasks";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useSessionStore } from "@/store/useSessionStore";
-import type { AIChatSession } from "@/lib/types";
+import type { AIChatMessage, AIChatSession } from "@/lib/types";
 
 function SessionList() {
   const t = useT();
@@ -112,34 +112,55 @@ function MessageView({
 }) {
   const t = useT();
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [selCopy, setSelCopy] = useState<{ x: number; y: number; text: string } | null>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
 
-  // Copy the whole conversation as plain text (role-labelled) for pasting into
-  // a terminal / issue tracker.
-  const copyChat = async () => {
-    const text = session.messages
-      .map(
-        (m) =>
-          `${m.role === "user" ? t("ai.you") : t("ai.assistant")}:\n${m.content}`,
-      )
-      .join("\n\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable — ignore */
-    }
-  };
+  // Frame-selection copy: when text inside the message area is drag-selected,
+  // float a small "copy" button above the selection (in addition to the
+  // per-bubble copy button), so the user can copy just part of a message.
+  useEffect(() => {
+    const onMouseUp = () => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() ?? "";
+      const inScope =
+        sel && sel.rangeCount > 0
+          ? scrollRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer as Node)
+          : false;
+      if (!sel || !text || !inScope) {
+        setSelCopy(null);
+        return;
+      }
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      setSelCopy({
+        x: Math.max(8, Math.min(rect.left, window.innerWidth - 150)),
+        y: rect.top,
+        text,
+      });
+    };
+    const onSelChange = () => {
+      const sel = window.getSelection();
+      if (!sel || !sel.toString().trim()) setSelCopy(null);
+    };
+    document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("selectionchange", onSelChange);
+    return () => {
+      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("selectionchange", onSelChange);
+    };
+  }, []);
 
   return (
     <div className="relative flex flex-1 min-h-0 flex-col">
       {/* `select-text` overrides the app-wide user-select:none so chat history
           can be drag-selected and copied. */}
-      <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 select-text">
+      <div
+        ref={scrollRef}
+        onScroll={() => setSelCopy(null)}
+        className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 select-text"
+      >
         {session.messages.length === 0 ? (
           <div className="m-auto flex flex-col items-center gap-4 px-6 py-8 text-center">
             <span className="icon-chip h-12 w-12">
@@ -181,57 +202,27 @@ function MessageView({
         ) : (
           <div className="mt-auto space-y-3">
             {session.messages.map((m) => (
-              <div
-                key={m.id}
-                className={cn("flex items-end gap-2", m.role === "user" ? "justify-end" : "justify-start")}
-              >
-                {m.role === "assistant" && (
-                  <span className="icon-chip h-6 w-6 shrink-0">
-                    <Sparkles size={12} />
-                  </span>
-                )}
-                <div
-                  className={cn(
-                    "max-w-[85%] px-3 py-2 text-[13px] leading-relaxed",
-                    m.role === "user"
-                      ? "rounded-2xl rounded-br-sm bg-accent/15 text-fg"
-                      : m.error
-                        ? "rounded-2xl rounded-bl-sm border border-danger/40 bg-danger/10 text-danger"
-                        : "rounded-2xl rounded-bl-sm border border-border/60 bg-elevated text-fg",
-                  )}
-                >
-                  {m.role === "assistant" ? (
-                    m.content ? (
-                      <Markdown content={m.content} onInsert={onInsert} onRun={onRun} />
-                    ) : (
-                      <span className="inline-flex gap-1 text-subtle">
-                        <Dot /> <Dot /> <Dot />
-                      </span>
-                    )
-                  ) : (
-                    <span className="whitespace-pre-wrap">{m.content}</span>
-                  )}
-                  {m.streaming && m.content && (
-                    <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
-                  )}
-                </div>
-              </div>
+              <MessageBubble key={m.id} m={m} onInsert={onInsert} onRun={onRun} />
             ))}
             <div ref={bottomRef} />
           </div>
         )}
       </div>
 
-      {/* Copy conversation — pinned to the bottom-right of the message area
-          (outside the scroll container so it never scrolls away). */}
-      {session.messages.length > 0 && (
+      {/* Frame-selection copy — floats above a drag-selection inside the chat */}
+      {selCopy && (
         <button
-          onClick={() => void copyChat()}
-          title={t("ai.copyConversation")}
-          className="absolute bottom-2 right-2 z-10 flex h-7 items-center gap-1.5 rounded-lg border border-border/70 bg-elevated px-2 text-[11px] text-muted shadow-md transition-colors hover:bg-hover hover:text-fg"
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            void navigator.clipboard.writeText(selCopy.text).catch(() => undefined);
+            setSelCopy(null);
+          }}
+          className="fixed z-50 flex h-7 items-center gap-1.5 rounded-lg border border-border bg-surface px-2 text-[11px] font-medium text-fg shadow-xl transition-colors hover:bg-hover"
+          style={{ left: selCopy.x, top: selCopy.y - 34 }}
         >
-          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-          {copied ? t("common.copied") : t("common.copy")}
+          <Copy size={12} />
+          {t("common.copy")}
         </button>
       )}
     </div>
@@ -240,6 +231,87 @@ function MessageView({
 
 function Dot() {
   return <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />;
+}
+
+/** One chat bubble with a per-message copy button (hover to reveal, copies the
+ *  message's raw text — Markdown for assistant turns, plain for user turns). */
+function MessageBubble({
+  m,
+  onInsert,
+  onRun,
+}: {
+  m: AIChatMessage;
+  onInsert?: (code: string) => void;
+  onRun?: (code: string) => void;
+}) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const text = m.content ?? "";
+    if (!text) return;
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => undefined);
+  };
+
+  return (
+    <div
+      className={cn(
+        "group relative flex items-end gap-2",
+        m.role === "user" ? "justify-end" : "justify-start",
+      )}
+    >
+      {m.role === "assistant" && (
+        <span className="icon-chip h-6 w-6 shrink-0">
+          <Sparkles size={12} />
+        </span>
+      )}
+      <div
+        className={cn(
+          "relative max-w-[85%] px-3 py-2 pr-8 text-[13px] leading-relaxed",
+          m.role === "user"
+            ? "rounded-2xl rounded-br-sm bg-accent/15 text-fg"
+            : m.error
+              ? "rounded-2xl rounded-bl-sm border border-danger/40 bg-danger/10 text-danger"
+              : "rounded-2xl rounded-bl-sm border border-border/60 bg-elevated text-fg",
+        )}
+      >
+        {m.role === "assistant" ? (
+          m.content ? (
+            <Markdown content={m.content} onInsert={onInsert} onRun={onRun} />
+          ) : (
+            <span className="inline-flex gap-1 text-subtle">
+              <Dot /> <Dot /> <Dot />
+            </span>
+          )
+        ) : (
+          <span className="whitespace-pre-wrap">{m.content}</span>
+        )}
+        {m.streaming && m.content && (
+          <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-accent align-middle" />
+        )}
+        {m.content && (
+          <button
+            type="button"
+            onClick={copy}
+            title={t("common.copy")}
+            aria-label={t("common.copy")}
+            className={cn(
+              "absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+              "text-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-fg",
+              copied && "text-success opacity-100",
+            )}
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Composer({
@@ -629,19 +701,9 @@ export function AiPanel() {
         className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-accent/50"
         title={t("ai.dragResize")}
       />
-      {/* Header */}
+      {/* Header — session-level chrome: title left, session actions right
+          (same shape as the Files / USB side panels: chip + title + icons) */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
-        <SideIconButton
-          label={showHistory ? t("ai.collapseHistory") : t("ai.showHistory")}
-          onClick={() => setShowHistory((v) => !v)}
-          active={showHistory}
-          icon={showHistory ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-        />
-        <SideIconButton
-          label={t("ai.newChat")}
-          onClick={() => useAiStore.getState().newSession()}
-          icon={<Plus size={14} />}
-        />
         <span className="icon-chip h-6 w-6 shrink-0">
           <MessageSquare size={12} />
         </span>
@@ -654,20 +716,26 @@ export function AiPanel() {
             {t("ai.contextOn")}
           </span>
         )}
-        {agentMode && (
-          <label
-            className="flex cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
-            title={t("ai.autoRunTitle")}
-          >
-            <input
-              type="checkbox"
-              checked={agentAuto}
-              onChange={(e) => setAgentAuto(e.target.checked)}
-              className="h-3 w-3 accent-[rgb(var(--c-accent))]"
-            />
-            {t("ai.autoRun")}
-          </label>
-        )}
+        <SideIconButton
+          label={showHistory ? t("ai.collapseHistory") : t("ai.showHistory")}
+          onClick={() => setShowHistory((v) => !v)}
+          active={showHistory}
+          icon={showHistory ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+        />
+        <SideIconButton
+          label={t("ai.newChat")}
+          onClick={() => useAiStore.getState().newSession()}
+          icon={<Plus size={14} />}
+        />
+        <SideIconButton
+          label={t("ai.closeEsc")}
+          onClick={() => togglePanel(false)}
+          icon={<X size={14} />}
+        />
+      </div>
+
+      {/* Toolbar — agent / multi-host / KB mode toggles + status */}
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2.5">
         <button
           onClick={() => setAgentMode((v) => !v)}
           className={toolBtn(agentMode)}
@@ -691,7 +759,7 @@ export function AiPanel() {
         </button>
         {kbState && (
           <span
-            className="max-w-[120px] truncate text-[10px] text-subtle"
+            className="max-w-[110px] truncate text-[10px] text-subtle"
             title={
               kbState.kind === "ready"
                 ? t("ai.kbChunks", { n: kbState.count })
@@ -707,11 +775,21 @@ export function AiPanel() {
                 : t("ai.kbErrorShort")}
           </span>
         )}
-        <SideIconButton
-          label={t("ai.closeEsc")}
-          onClick={() => togglePanel(false)}
-          icon={<X size={14} />}
-        />
+        <div className="flex-1" />
+        {agentMode && (
+          <label
+            className="flex shrink-0 cursor-pointer select-none items-center gap-1 text-[10px] text-muted"
+            title={t("ai.autoRunTitle")}
+          >
+            <input
+              type="checkbox"
+              checked={agentAuto}
+              onChange={(e) => setAgentAuto(e.target.checked)}
+              className="h-3 w-3 accent-[rgb(var(--c-accent))]"
+            />
+            {t("ai.autoRun")}
+          </label>
+        )}
       </div>
 
       {/* Body: history is a floating overlay so it never eats panel width */}

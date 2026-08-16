@@ -59,12 +59,14 @@ export function SideIconButton({
   label,
   onClick,
   active,
+  disabled,
   className,
 }: {
   icon: ReactNode;
   label: string;
   onClick?: () => void;
   active?: boolean;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
@@ -73,8 +75,10 @@ export function SideIconButton({
       onClick={onClick}
       title={label}
       aria-label={label}
+      disabled={disabled}
       className={cn(
         "flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:bg-hover hover:text-fg",
+        "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
         active && "bg-accent/15 text-accent",
         className,
       )}
