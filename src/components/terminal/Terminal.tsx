@@ -582,7 +582,16 @@ export function Terminal(props: TerminalProps) {
 
     const onData = term.onData((data) => {
       if (!interactiveRef.current || closedRef.current) return;
-      void api.write(sessionId, textToBase64(data));
+      // Bracketed-paste markers (ESC[200~ / ESC[201~) must never reach the
+      // backend. xterm.js wraps every paste with them once the shell asked for
+      // CSI ? 2004 h — but when the paste lands in a child program that never
+      // negotiated bracketed paste (a TUI running inside the shell, or a
+      // remote shell that doesn't support it), the markers leak into the
+      // command line as literal garbage (`^[[200~curl …` → zsh "bad pattern",
+      // `bash\x1b[201~` → "command not found: bash~"). Strip them so pastes
+      // always arrive as clean text.
+      const cleaned = data.replace(/\x1b\[200~|\x1b\[201~/g, "");
+      void api.write(sessionId, textToBase64(cleaned));
     });
 
     // --- attach handshake ---------------------------------------------------
