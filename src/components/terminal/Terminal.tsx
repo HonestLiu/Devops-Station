@@ -46,19 +46,31 @@ const SNIPPET_MENU: MenuItem[] = SNIPPET_GROUPS.map((g) => ({
 
 // --- Proactive error-diagnosis deduplication ----------------------------------
 //
-// The terminal data stream re-scans its 2000-char tail on *every* chunk, so a
-// single error line can be re-detected dozens of times as it scrolls, is
-// redrawn, or lingers in the window while other commands run. All deduplication
-// therefore happens HERE, at the only call site that feeds the two downstream
-// channels (auto-diagnose + "let AI fix" hint) — not in each channel's own
-// cooldown (the old approach keyed on `(sessionId, label)` with short windows,
-// so reconnecting to a new session id or the same error printing again after
-// 10s re-triggered everything).
+// Primary mechanism: **progressive / delta scanning**. On every data chunk we
+// scan ONLY the freshly-arrived text (plus a small boundary overlap so an error
+// split across a chunk boundary is not missed). Already-scanned content is never
+// re-examined, so an error line that lingers in the scrollback — or a keyword
+// that stays on screen while other commands run — can never re-trigger the
+// diagnosis. This is what the old "re-scan the whole 2000-char tail every chunk"
+// approach got wrong: the same line was re-detected dozens of times.
 //
-// The key is an error *fingerprint* (normalised snippet, see errorScan.ts), and
-// the window is global across terminals: "exit and reconnect" within the window
-// produces a new session id but the same error — which must NOT re-trigger.
-/** Any one error fingerprint is surfaced at most once per window, app-wide. */
+// Secondary safety net: a global error *fingerprint* window (see
+// shouldHandleError). It only matters for a *genuinely recurring* error — e.g.
+// the same failure printed again 70s later — and stops a burst from a single
+// glitch. The window is global (not per session) so "exit and reconnect" within
+// the window produces a new session id but the same error and must NOT
+// re-trigger.
+//
+// A third hard gate — `flushed` — prevents scanning the attach backlog (shell
+// banner, tail of a previous session, agent startup text) on mount/reconnect.
+//
+// Character sizes:
+//   RECENT_TAIL = 2000  → rolling buffer feeding the waiting-prompt badge.
+//   SCAN_OVERLAP = 320  → boundary overlap kept from the PREVIOUS buffer so a
+//                         line straddling a chunk boundary is still caught.
+/** Bytes of pre-chunk buffer kept as overlap for cross-chunk error lines. */
+const SCAN_OVERLAP = 320;
+/** Any one error fingerprint may recur at most once per this window, app-wide. */
 const ERROR_DEDUP_WINDOW_MS = 60_000;
 /** Cap before pruning stale entries so the map never grows unbounded. */
 const ERROR_DEDUP_MAX = 128;
@@ -517,22 +529,31 @@ export function Terminal(props: TerminalProps) {
           } else {
             term.write(bytes);
           }
+          // Decode once and snapshot `prevTail` (the rolling buffer BEFORE this
+          // chunk is appended) so the error scan below can examine only the new
+          // delta instead of re-scanning the whole tail — that is what stops
+          // already-seen content from re-triggering.
+          let text = "";
+          try {
+            text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+          } catch {
+            /* decode/scan must never break the terminal stream */
+          }
+          let prevTail = recentRef.current;
+          if (text) {
+            prevTail = recentRef.current; // snapshot BEFORE the append below
+            recentRef.current = (prevTail + text).slice(-2000);
+          }
           // (A) Waiting-for-input detection — ALWAYS on (not gated by the AI
           // error-hint setting): it drives the tab "waiting" badge, the bell
           // panel and the Ctrl+Shift+Enter quick-approval shortcut, all of
           // which must work even when the user disabled AI error hints.
-          try {
-            const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-            if (text) {
-              recentRef.current = (recentRef.current + text).slice(-2000);
-              const waiting = isWaitingForInput(recentRef.current);
-              if (waiting !== waitingRef.current) {
-                waitingRef.current = waiting;
-                useSessionStore.getState().setWaiting(sessionId, waiting);
-              }
+          if (text) {
+            const waiting = isWaitingForInput(recentRef.current);
+            if (waiting !== waitingRef.current) {
+              waitingRef.current = waiting;
+              useSessionStore.getState().setWaiting(sessionId, waiting);
             }
-          } catch {
-            /* decode/scan must never break the terminal stream */
           }
           // (B) Proactive error detection: scan decoded output for high-signal
           // errors. Two modes, both gated by Settings → AI:
@@ -542,24 +563,31 @@ export function Terminal(props: TerminalProps) {
           //     are on, so the operator never gets the click prompt *and* an
           //     auto-run for the same error.
           //
-          // Two hard gates prevent the "keyword → repeated triggers" reports:
-          //   1. Only scan AFTER the attach backlog has been flushed. While
-          //      `flushed` is false we are replaying buffered output from before
-          //      this terminal attached (a shell banner, the tail of a previous
-          //      session, an agent CLI's startup text) — none of it is a fresh
-          //      command error, and on "exit and reconnect" it was the #1 source
-          //      of an immediate duplicate diagnosis.
-          //   2. Deduplicate by error fingerprint with a global window. The
-          //      same error line is re-detected many times while it stays in
-          //      the 2000-char tail; only the first detection per window is
-          //      surfaced (to whichever channel is active).
+          // Hard gates that prevent the "keyword → repeated triggers" reports:
+          //   1. Only scan AFTER the attach backlog has been flushed (see above).
+          //   2. **Progressive delta scan** — we inspect only the freshly-arrived
+          //      text plus a SCAN_OVERLAP boundary from the previous buffer, never
+          //      the whole 2000-char tail. Each byte is therefore scanned exactly
+          //      once; an error line that lingers in the scrollback while other
+          //      commands run can never re-trigger, and the attach backlog is
+          //      almost entirely excluded (only its last ~320 chars overlap the
+          //      first live chunk).
+          //   3. A global error-fingerprint window (shouldHandleError) is a
+          //      secondary safety net for a *genuinely recurring* error so a
+          //      single glitch can't queue several diagnoses.
           const aiSettings = useAppStore.getState().settings.ai;
           if (
             flushed &&
+            text &&
             (aiSettings.errorHints || aiSettings.autoDiagnose)
           ) {
             try {
-              const hit = scanForError(recentRef.current);
+              // Only the new slice: boundary overlap from the previous buffer +
+              // this chunk. scanForError(…, 0) scans the whole slice (it is
+              // already bounded to one chunk) so a mid-slice error isn't cut off.
+              const overlap =
+                prevTail.length > SCAN_OVERLAP ? prevTail.slice(-SCAN_OVERLAP) : prevTail;
+              const hit = scanForError(overlap + text, 0);
               // High-signal shell errors (mistyped command, permission denied,
               // missing file) always surface, even if an interactive-prompt marker
               // (PSReadLine "did you mean" block, agent confirm dialog) is also on

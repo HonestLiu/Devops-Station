@@ -154,17 +154,25 @@ export function errorFingerprint(hit: ErrorHit): string {
 /**
  * Scan a chunk of terminal text for a high-signal error. Returns the first
  * matching line (trimmed, capped) with a short human label, or null.
+ *
+ * @param tailChars When > 0, only the last `tailChars` chars are inspected
+ *   (the classic "errors appear at the end of the stream" heuristic) — this is
+ *   what callers pass when scanning the whole rolling tail. Pass `0` (or omit)
+ *   to scan the *entire* string: the Terminal uses this for progressive
+ *   delta-scans, where the input is only the freshly-arrived slice (plus a
+ *   small boundary overlap) and is already bounded to a single chunk, so we
+ *   must not truncate it away or we'd miss an error sitting in the middle of
+ *   the new slice.
  */
-export function scanForError(text: string): ErrorHit | null {
+export function scanForError(text: string, tailChars = 800): ErrorHit | null {
   // Strip ANSI/OSC control bytes, then drop bare carriage returns: PSReadLine
   // re-renders the error line with "\r" cursor-returns, which would otherwise
   // split "not recognized as a cmdlet" into "not recognized\r as a cmdlet" and
   // defeat the substring regex on real Windows PowerShell output.
   const clean = stripAnsi(text).replace(/\r/g, "");
-  // Only inspect the tail — errors appear at the end of the stream and this
-  // keeps the per-chunk cost bounded.
-  const tail = clean.length > 800 ? clean.slice(-800) : clean;
-  const lines = tail.split(/\r?\n/);
+  // Only inspect the tail unless the caller wants the whole string (delta scan).
+  const body = tailChars > 0 && clean.length > tailChars ? clean.slice(-tailChars) : clean;
+  const lines = body.split(/\r?\n/);
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
