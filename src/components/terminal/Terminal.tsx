@@ -288,7 +288,7 @@ export function Terminal(props: TerminalProps) {
         icon: <ClipboardPaste size={14} />,
         onClick: () => {
           navigator.clipboard?.readText().then((t) => {
-            if (t) term.paste(t);
+            if (t) term.paste(t.replace(/^\r?\n/, "").replace(/\r?\n$/, ""));
           }).catch(() => undefined);
         },
       },
@@ -426,6 +426,27 @@ export function Terminal(props: TerminalProps) {
     );
     term.open(host);
     fit.fit();
+
+    // --- paste: append without auto-submitting ---------------------------------
+    // A copied line almost always carries a trailing newline. If we let xterm
+    // forward that newline straight to the PTY it is read as Enter, which
+    // submits the command already on the line *before* the pasted text is
+    // appended — i.e. `git remote add gitlab` runs on its own, then the URL is
+    // run as a separate (broken) command. We intercept the DOM paste in the
+    // capture phase (so xterm's own bubble-phase paste listener never fires —
+    // otherwise we'd get a double paste), strip one leading and one trailing
+    // newline (the copy artifacts) and re-feed the cleaned text through xterm
+    // so it lands at the cursor and waits for a deliberate Enter. Internal
+    // newlines are kept so multi-line pastes still work line-by-line.
+    const onPaste = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text/plain");
+      if (text == null) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const cleaned = text.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+      term.paste(cleaned);
+    };
+    term.textarea?.addEventListener("paste", onPaste, true);
 
     // Inline images (SIXEL / iTerm2 imgcat) — toggleable in Settings. The addon
     // needs `allowProposedApi` (already set above) and is a no-op until the
@@ -707,6 +728,7 @@ export function Terminal(props: TerminalProps) {
       ro.disconnect();
       onData.dispose();
       onSel.dispose();
+      term.textarea?.removeEventListener("paste", onPaste, true);
       oscDisposable?.dispose();
       unsubSettings?.();
       unsubHosts?.();
