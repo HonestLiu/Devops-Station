@@ -181,6 +181,7 @@ impl SerialManager {
                     session_id: sid.clone(),
                     reason,
                     exit_code: None,
+                    restart: None,
                 };
                 if output.accept_closed(&closed) {
                     let _ = app.emit(&closed_event(&sid), closed);

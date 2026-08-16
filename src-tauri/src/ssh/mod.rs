@@ -352,6 +352,7 @@ impl SshManager {
                 session_id: sid.clone(),
                 reason,
                 exit_code,
+                restart: None,
             };
             if output.accept_closed(&closed) {
                 let _ = app_for_task.emit(&closed_event(&sid), closed);

@@ -275,6 +275,11 @@ export interface SessionClosed {
   sessionId: string;
   reason: string;
   exitCode?: number | null;
+  /** PTY-only: true when the console (ConPTY) I/O pipe broke while the shell
+   *  process is still alive (e.g. OpenCode's rapid double Ctrl+C tore down the
+   *  pseudoconsole). The UI should restart the shell instead of showing the
+   *  fatal "connection closed" state. */
+  restart?: boolean;
 }
 
 /**

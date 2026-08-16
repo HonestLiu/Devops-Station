@@ -474,6 +474,13 @@ pub struct SessionClosed {
     pub session_id: String,
     pub reason: String,
     pub exit_code: Option<u32>,
+    /// PTY-only: `true` when the console (ConPTY) I/O pipe broke while the
+    /// shell process is *still running* — e.g. a child TUI (OpenCode, …) torn
+    /// down by a rapid double Ctrl+C can take the whole pseudoconsole with it,
+    /// orphaning the shell. The session is unrecoverable; the UI should restart
+    /// the shell in place instead of showing a fatal "connection closed" state.
+    #[serde(default)]
+    pub restart: Option<bool>,
 }
 
 /// Fired by the backend when a vibecoding CLI (Claude Code, Codex, …) appears to

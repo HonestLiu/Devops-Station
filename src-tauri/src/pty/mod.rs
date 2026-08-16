@@ -291,13 +291,34 @@ impl PtyManager {
                         }
                     }
                 }
+                // The ConPTY read can EOF (or error out past the retry window)
+                // while the shell process is STILL alive — a child TUI (OpenCode,
+                // …) exiting abruptly (e.g. rapid double Ctrl+C) can tear down
+                // the whole pseudoconsole pipe, orphaning the shell. That session
+                // is unrecoverable: signal the UI to restart the shell in place
+                // (restart = true) instead of showing a fatal "connection closed"
+                // overlay, and kill the orphan so it doesn't linger.
+                let child_alive = session2
+                    .child
+                    .lock()
+                    .try_wait()
+                    .map(|w| w.is_none())
+                    .unwrap_or(false);
                 let closed = SessionClosed {
                     session_id: sid.clone(),
-                    reason: exit_reason.into(),
+                    reason: if child_alive {
+                        "terminal I/O lost; restarting shell".into()
+                    } else {
+                        exit_reason.into()
+                    },
                     exit_code: None,
+                    restart: Some(child_alive),
                 };
                 if output.accept_closed(&closed) {
                     let _ = app.emit(&closed_event(&sid), closed);
+                }
+                if child_alive {
+                    let _ = session2.child.lock().kill();
                 }
             })
             .map_err(|e| AppError::Other(format!("cannot spawn pty thread: {e}")))?;

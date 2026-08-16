@@ -51,7 +51,11 @@ export function FrpWorkspace({ tab }: { tab: Tab }) {
               cursorBlink={tt.cursorBlink}
               cursorStyle={tt.cursorStyle}
               scrollback={tt.scrollback}
-              onClosed={(info) => patch(tab.id, { status: "closed", error: info.reason })}
+              onClosed={(info) =>
+                info.restart
+                  ? void reconnect(tab.id)
+                  : patch(tab.id, { status: "closed", error: info.reason })
+              }
             />
           )}
           {tab.status !== "connected" && <ConnectionOverlay tab={tab} />}

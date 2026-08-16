@@ -9,7 +9,7 @@ import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
-import type { Tab, TermPane } from "@/lib/types";
+import type { SessionClosed, Tab, TermPane } from "@/lib/types";
 
 /** Pane-level overlay: unlike ConnectionOverlay it reconnects THIS pane. */
 function PaneOverlay({ tab, pane }: { tab: Tab; pane: TermPane }) {
@@ -64,6 +64,7 @@ export function SplitView({ tab }: { tab: Tab }) {
   const patch = useTabsStore((s) => s.patch);
   const patchPane = useTabsStore((s) => s.patchPane);
   const focusPane = useTabsStore((s) => s.focusPane);
+  const reconnect = useTabsStore((s) => s.reconnect);
   const localShell = useAppStore((s) => s.settings.localShell);
 
   // SSH talks over ssh-* events; local/WSL/Frp sessions are PTY sessions.
@@ -94,12 +95,21 @@ export function SplitView({ tab }: { tab: Tab }) {
     count >= 3 && "grid grid-cols-2 grid-rows-2",
   );
 
-  const handleClosed = (paneId: string, reason: string) => {
+  const handleClosed = (paneId: string, info: SessionClosed) => {
+    // The ConPTY pipe broke while the shell process is still alive (a child
+    // TUI like OpenCode exiting via rapid double Ctrl+C can tear down the whole
+    // pseudoconsole, orphaning the shell). The session is unrecoverable —
+    // respawn the shell in place so the tab comes back to a fresh prompt
+    // instead of a fatal "连接已关闭" overlay.
+    if (info.restart) {
+      void reconnect(tab.id);
+      return;
+    }
     const current = useTabsStore.getState().tabs.find((tt) => tt.id === tab.id);
     if (current?.panes) {
-      patchPane(tab.id, paneId, { status: "closed", error: reason });
+      patchPane(tab.id, paneId, { status: "closed", error: info.reason });
     } else {
-      patch(tab.id, { status: "closed", error: reason });
+      patch(tab.id, { status: "closed", error: info.reason });
     }
   };
 
@@ -134,7 +144,7 @@ export function SplitView({ tab }: { tab: Tab }) {
                   cursorBlink={t.cursorBlink}
                   cursorStyle={t.cursorStyle}
                   scrollback={t.scrollback}
-                  onClosed={(info) => handleClosed(p.id, info.reason)}
+                  onClosed={(info) => handleClosed(p.id, info)}
                 />
               ) : count === 1 ? (
                 <ConnectionOverlay tab={tab} />
