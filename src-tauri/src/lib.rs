@@ -24,6 +24,8 @@ mod wsl;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::path::Path;
+use std::sync::Arc;
+
 use tauri::{AppHandle, Manager, State};
 
 use ble::BleManager;
@@ -31,7 +33,7 @@ use error::{AppError, AppResult};
 use mqtt::MqttManager;
 use pty::PtyManager;
 use serial::SerialManager;
-use ssh::{metrics::MetricsCache, SshManager};
+use ssh::{forward::PortForwardManager, metrics::MetricsCache, SshManager};
 use storage::{ProfileExportInfo, ProfileImportInfo, Store};
 use stream::Attached;
 use system::LocalMonitor;
@@ -43,7 +45,8 @@ pub struct AppState {
     ble: BleManager,
     mqtt: MqttManager,
     pty: PtyManager,
-    store: Store,
+    forward: PortForwardManager,
+    store: Arc<Store>,
     metrics: MetricsCache,
     local: LocalMonitor,
 }
@@ -76,7 +79,14 @@ async fn ssh_connect(
         let _ = state.store.touch_host(&host_id);
     }
 
-    state.ssh.connect(app, config).await
+    let result = state.ssh.connect(app, config.clone()).await?;
+    // Auto-start any port forwards flagged for this host.
+    if let Some(host_id) = &config.host_id {
+        if let Ok(session) = state.ssh.get(&result.session_id).await {
+            state.forward.start_auto_for(&session, host_id).await;
+        }
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -109,12 +119,86 @@ async fn ssh_exec(
 #[tauri::command]
 async fn ssh_disconnect(state: State<'_, AppState>, session_id: String) -> AppResult<()> {
     state.metrics.forget(&session_id).await;
+    state.forward.stop_for_session(&session_id).await;
     state.ssh.disconnect(&session_id).await
 }
 
 #[tauri::command]
 async fn ssh_sessions(state: State<'_, AppState>) -> AppResult<Vec<String>> {
     Ok(state.ssh.ids().await)
+}
+
+// ===========================================================================
+// SSH port forwarding
+// ===========================================================================
+
+#[tauri::command]
+async fn ssh_forward_list(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> AppResult<Vec<PortForwardStatus>> {
+    Ok(state.forward.list(&session_id).await)
+}
+
+#[tauri::command]
+async fn ssh_forward_start(
+    state: State<'_, AppState>,
+    session_id: String,
+    rule: PortForwardRule,
+) -> AppResult<PortForwardStatus> {
+    let session = state.ssh.get(&session_id).await?;
+    state.forward.start(session, rule).await
+}
+
+#[tauri::command]
+async fn ssh_forward_stop(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
+    state.forward.stop(&id).await
+}
+
+#[tauri::command]
+async fn ssh_forward_save(
+    state: State<'_, AppState>,
+    rule: PortForwardRule,
+) -> AppResult<PortForwardRule> {
+    state.store.save_port_forward(rule)
+}
+
+#[tauri::command]
+async fn ssh_forward_delete(
+    state: State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
+    state.forward.stop(&id).await?;
+    state.store.delete_port_forward(&id)
+}
+
+#[tauri::command]
+async fn ssh_forward_rules(
+    state: State<'_, AppState>,
+    host_id: String,
+) -> AppResult<Vec<PortForwardRule>> {
+    state.store.list_port_forwards(&host_id)
+}
+
+// ===========================================================================
+// Known hosts
+// ===========================================================================
+
+#[tauri::command]
+async fn ssh_known_hosts_list(state: State<'_, AppState>) -> AppResult<Vec<KnownHostEntry>> {
+    state.store.known_hosts_list()
+}
+
+#[tauri::command]
+async fn ssh_known_hosts_remove(
+    state: State<'_, AppState>,
+    host: String,
+    port: u16,
+) -> AppResult<()> {
+    state.store.known_hosts_remove(&host, port)
 }
 
 /// Called by the terminal once its event listener is live. Returns everything
@@ -959,13 +1043,15 @@ pub fn run() {
                 }
             }
 
+            let store = Arc::new(store);
             app.manage(AppState {
-                ssh: SshManager::default(),
+                ssh: SshManager::new(store.clone()),
                 serial: SerialManager::default(),
                 ble: BleManager::default(),
                 mqtt: MqttManager::default(),
                 pty: PtyManager::default(),
-                store,
+                forward: PortForwardManager::new(store.clone()),
+                store: store.clone(),
                 metrics: MetricsCache::default(),
                 local: LocalMonitor::new(),
             });
@@ -994,6 +1080,14 @@ pub fn run() {
             ssh_disconnect,
             ssh_sessions,
             ssh_attach,
+            ssh_forward_list,
+            ssh_forward_start,
+            ssh_forward_stop,
+            ssh_forward_save,
+            ssh_forward_delete,
+            ssh_forward_rules,
+            ssh_known_hosts_list,
+            ssh_known_hosts_remove,
             sftp_list,
             sftp_realpath,
             sftp_mkdir,

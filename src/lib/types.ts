@@ -19,6 +19,24 @@ export interface KeywordHighlightSettings {
   rules: KeywordHighlightRule[];
 }
 
+/** Known OS distributions for the host-list icon (see `DISTROS` in DistroIcon). */
+export type DistroId =
+  | "ubuntu"
+  | "debian"
+  | "centos"
+  | "fedora"
+  | "arch"
+  | "alpine"
+  | "amazon"
+  | "redhat"
+  | "rocky"
+  | "opensuse"
+  | "oracle"
+  | "kali"
+  | "almalinux"
+  | "rhel"
+  | "linux";
+
 export interface Host {
   id: string;
   name: string;
@@ -55,6 +73,8 @@ export interface Host {
   keywordRules?: KeywordHighlightRule[] | null;
   /** Whether this host uses keyword highlighting. null = follow the global toggle. */
   keywordEnabled?: boolean | null;
+  /** OS distribution id for the host-list icon (e.g. "ubuntu", "debian", "centos"). null = auto/generic. */
+  distro?: string | null;
 }
 
 export interface SshConnectConfig {
@@ -68,12 +88,54 @@ export interface SshConnectConfig {
   cols: number;
   rows: number;
   term: string;
+  /** Trust an unknown/changed host key and proceed (set after the user
+   *  explicitly accepts a host-key prompt). */
+  trustHostKey?: boolean;
 }
 
 export interface SshConnectResult {
   sessionId: string;
   serverKeyFingerprint: string;
   homeDir: string;
+  /** "verified" | "replaced" (newly trusted / overwritten). */
+  hostKeyStatus?: string;
+}
+
+/** SSH port-forward direction: local (-L), remote (-R), dynamic (-D). */
+export type ForwardType = "local" | "remote" | "dynamic";
+
+export interface PortForwardRule {
+  id: string;
+  hostId: string;
+  name: string;
+  type: ForwardType;
+  /** Local bind address (local/dynamic) or server bind address (remote). */
+  localHost: string;
+  localPort: number;
+  /** Remote target host (local) or server bind address (remote). */
+  remoteHost: string;
+  remotePort: number;
+  autoStart?: boolean;
+  sortOrder?: number;
+  updatedAt?: number | null;
+}
+
+export interface PortForwardStatus {
+  id: string;
+  /** "connecting" | "active" | "error" | "inactive" */
+  status: string;
+  error?: string | null;
+  /** The actually-bound port (useful when localPort was 0). */
+  boundPort?: number | null;
+}
+
+export interface KnownHostEntry {
+  host: string;
+  port: number;
+  keyType: string;
+  fingerprint: string;
+  firstSeen: number;
+  lastSeen: number;
 }
 
 export interface RemoteFile {

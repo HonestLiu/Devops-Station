@@ -1,3 +1,4 @@
+pub mod forward;
 pub mod metrics;
 pub mod sftp;
 
@@ -31,22 +32,60 @@ pub fn closed_event(session_id: &str) -> String {
 
 /// Trust-on-first-use handler.
 ///
-/// NOTE: `check_server_key` currently accepts every host key and simply records
-/// the fingerprint so the UI can show it. A real known_hosts check belongs here
-/// (`russh::keys::check_known_hosts`) — tracked as a follow-up, because it needs
-/// UI for the "unknown host, accept?" prompt.
+/// `check_server_key` verifies the server key against the known_hosts store and
+/// records the verdict (verified / new / replaced / mismatch) so `connect` can
+/// abort on an unknown or changed key and let the UI prompt the user. `new`
+/// keys are only written when `trust` is set (i.e. the user accepted the host).
 pub(crate) struct ClientHandler {
     fingerprint: Arc<parking_lot::Mutex<String>>,
+    host: String,
+    port: u16,
+    store: Arc<crate::storage::Store>,
+    trust: bool,
+    verdict: Arc<parking_lot::Mutex<Option<String>>>,
+    /// Local targets for remote (`-R`) forwards, keyed by the server bind port.
+    /// Shared with the session so the handler can bridge inbound connections.
+    remote_forwards: Arc<RwLock<std::collections::HashMap<u32, (String, u16)>>>,
 }
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(&mut self, server_public_key: &PublicKey) -> Result<bool, Self::Error> {
-        *self.fingerprint.lock() = server_public_key
-            .fingerprint(HashAlg::Sha256)
-            .to_string();
+        let key_type = server_public_key.algorithm().as_str().to_string();
+        let fp = server_public_key.fingerprint(HashAlg::Sha256).to_string();
+        *self.fingerprint.lock() = fp.clone();
+        let verdict = self
+            .store
+            .verify_host_key(&self.host, self.port, &key_type, &fp, self.trust);
+        *self.verdict.lock() = Some(verdict);
         Ok(true)
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: russh::client::ChannelOpenHandle,
+        _session: &mut russh::client::Session,
+    ) -> Result<(), Self::Error> {
+        let target = self.remote_forwards.read().await.get(&connected_port).cloned();
+        match target {
+            Some((lh, lp)) => {
+                reply.accept().await;
+                tauri::async_runtime::spawn(async move {
+                    if let Err(_e) = forward::bridge_forwarded(channel, lh, lp).await {
+                        // Bridge failed (local target down / SSH error).
+                    }
+                });
+                Ok(())
+            }
+            // No forward registered for this port → drop `reply` (auto-reject).
+            None => Ok(()),
+        }
     }
 }
 
@@ -65,6 +104,9 @@ pub struct SshSession {
     pub hostname: String,
     /// Holds the MOTD and first prompt until the terminal is listening.
     output: Arc<OutputBuffer>,
+    /// Local targets for remote (`-R`) forwards, keyed by the server bind port.
+    /// Shared with the client handler which bridges inbound connections.
+    pub remote_forwards: Arc<RwLock<std::collections::HashMap<u32, (String, u16)>>>,
 }
 
 impl SshSession {
@@ -149,12 +191,19 @@ impl SshSession {
 // Manager
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
 pub struct SshManager {
     sessions: RwLock<HashMap<String, Arc<SshSession>>>,
+    store: Arc<crate::storage::Store>,
 }
 
 impl SshManager {
+    pub fn new(store: Arc<crate::storage::Store>) -> Self {
+        Self {
+            sessions: RwLock::new(HashMap::new()),
+            store,
+        }
+    }
+
     pub async fn get(&self, id: &str) -> AppResult<Arc<SshSession>> {
         self.sessions
             .read()
@@ -190,6 +239,8 @@ impl SshManager {
     ) -> AppResult<SshConnectResult> {
         let session_id = uuid::Uuid::new_v4().to_string();
         let fingerprint = Arc::new(parking_lot::Mutex::new(String::new()));
+        let verdict = Arc::new(parking_lot::Mutex::new(None));
+        let remote_forwards = Arc::new(RwLock::new(std::collections::HashMap::new()));
 
         let config = Arc::new(client::Config {
             // Interactive sessions must not be garbage-collected while idle.
@@ -203,6 +254,12 @@ impl SshManager {
 
         let handler = ClientHandler {
             fingerprint: fingerprint.clone(),
+            host: cfg.hostname.clone(),
+            port: cfg.port,
+            store: self.store.clone(),
+            trust: cfg.trust_host_key,
+            verdict: verdict.clone(),
+            remote_forwards: remote_forwards.clone(),
         };
 
         let addr = (cfg.hostname.as_str(), cfg.port);
@@ -211,6 +268,25 @@ impl SshManager {
             .map_err(|e| AppError::Ssh(format!("cannot reach {}:{} — {e}", cfg.hostname, cfg.port)))?;
 
         authenticate(&mut handle, &cfg).await?;
+
+        // Host-key verification (known_hosts). Abort on an unknown or changed key
+        // unless the user explicitly trusted it; the UI then shows a prompt.
+        let host_key_status = verdict
+            .lock()
+            .clone()
+            .unwrap_or_else(|| "verified".to_string());
+        if host_key_status == "new" || host_key_status == "mismatch" {
+            let _ = handle
+                .disconnect(Disconnect::ByApplication, "host key check failed", "en")
+                .await;
+            let fp = fingerprint.lock().clone();
+            let msg = if host_key_status == "mismatch" {
+                format!("HOST_KEY_MISMATCH|{}|{}|{}", cfg.hostname, cfg.port, fp)
+            } else {
+                format!("HOST_KEY_UNKNOWN|{}|{}|{}", cfg.hostname, cfg.port, fp)
+            };
+            return Err(AppError::Ssh(msg));
+        }
 
         // --- interactive PTY channel ---
         let channel = handle.channel_open_session().await?;
@@ -229,6 +305,7 @@ impl SshManager {
             sftp: Mutex::new(None),
             hostname: cfg.hostname.clone(),
             output: output.clone(),
+            remote_forwards: remote_forwards.clone(),
         });
 
         self.sessions
@@ -288,6 +365,7 @@ impl SshManager {
             session_id,
             server_key_fingerprint: fp,
             home_dir,
+            host_key_status,
         })
     }
 }

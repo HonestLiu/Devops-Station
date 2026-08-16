@@ -47,6 +47,7 @@ import { checkForUpdate } from "./lib/updater";
 import { permHook } from "./lib/api";
 import { pullSyncData } from "./lib/sync";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { HostKeyPrompt } from "./components/HostKeyPrompt";
 import { approveWaitingNow } from "./lib/quickApprove";
 import { focusActiveTerminal } from "./ai/terminalBridge";
 import {
@@ -504,6 +505,7 @@ export default function App() {
       <CommandPalette />
       <ContextMenu />
       <UpdateDialog />
+      <HostKeyPrompt />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Globe, MonitorSmartphone, Plus, Server, TerminalSquare, Trash2 } from "lucide-react";
 
 import { DistroPicker } from "@/components/wsl/DistroPicker";
+import { DISTRO_LIST, DISTROS } from "@/components/DistroIcon";
 import { Button, Checkbox, Dialog, Field, Input, PasswordInput, Select } from "@/components/ui";
 import { isWindows } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
@@ -237,6 +238,19 @@ export function HostDialog({
                   placeholder={host.passphrase === SAVED ? t("hostDialog.phPwUnchanged") : t("hostDialog.phOptional")}
                   className="select-text"
                 />
+              </Field>
+              <Field label={t("hostDialog.osDistro")} className="col-span-2" hint={t("hostDialog.osDistroHint")}>
+                <Select
+                  value={host.distro ?? ""}
+                  onChange={(e) => patch({ distro: e.target.value || null })}
+                >
+                  <option value="">{t("hostDialog.osDistroAuto")}</option>
+                  {DISTRO_LIST.map((d) => (
+                    <option key={d} value={d}>
+                      {DISTROS[d].label}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </>
           )}

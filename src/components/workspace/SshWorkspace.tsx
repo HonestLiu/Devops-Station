@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Fingerprint, FolderClosed, FolderOpen, RotateCw } from "lucide-react";
+import { Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { SftpPanel } from "@/components/sftp/SftpPanel";
+import { PortForwardPanel } from "@/components/workspace/PortForwardPanel";
+import { KnownHostsDialog } from "@/components/workspace/KnownHostsDialog";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -12,6 +14,8 @@ import type { Tab } from "@/lib/types";
 export function SshWorkspace({ tab }: { tab: Tab }) {
   const t = useT();
   const [filesOpen, setFilesOpen] = useState(false);
+  const [pfOpen, setPfOpen] = useState(false);
+  const [khOpen, setKhOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const patch = useTabsStore((s) => s.patch);
   const splitPane = useTabsStore((s) => s.splitPane);
@@ -58,6 +62,25 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
             {t("ws.files")}
           </Button>
+          <Button
+            variant={pfOpen ? "primary" : "ghost"}
+            size="sm"
+            disabled={!connected}
+            onClick={() => setPfOpen((v) => !v)}
+            title={connected ? t("ws.portForwardTitle") : t("pf.needSession")}
+          >
+            <Network size={14} />
+            {t("ws.portForward")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setKhOpen(true)}
+            title={t("ws.knownHostsTitle")}
+          >
+            <KeyRound size={14} />
+            {t("ws.knownHosts")}
+          </Button>
           <div className="mx-1 h-4 w-px bg-border" />
           <SplitControls
             paneCount={paneCount}
@@ -81,7 +104,19 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
         {filesOpen && connected && tab.sessionId && (
           <SftpPanel sessionId={tab.sessionId} onClose={() => setFilesOpen(false)} />
         )}
+
+        {pfOpen && connected && tab.sessionId && (
+          <div className="w-[360px] shrink-0 border-l border-border">
+            <PortForwardPanel
+              sessionId={tab.sessionId}
+              hostId={tab.hostId}
+              onClose={() => setPfOpen(false)}
+            />
+          </div>
+        )}
       </div>
+
+      <KnownHostsDialog open={khOpen} onClose={() => setKhOpen(false)} />
     </div>
   );
 }

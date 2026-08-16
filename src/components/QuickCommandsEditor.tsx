@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 
 import { Badge, Button, Checkbox, Dialog, Field, Input, Select } from "@/components/ui";
+import { injectCommandLines, writeRawBytes } from "@/ai/terminalAi";
 import { useHostsStore } from "@/store/useHostsStore";
 import type { QuickCommand } from "@/lib/types";
 
@@ -49,6 +50,21 @@ export function QuickCommandsEditor({ onClose }: { onClose: () => void }) {
     };
     await save(next);
     resetForm();
+  };
+
+  /** One-click insert into the active terminal (text runs with Enter; hex sends raw bytes). */
+  const send = (c: QuickCommand) => {
+    if (c.isHex) {
+      const hex = c.value.replace(/\s+/g, "");
+      if (hex.length % 2 !== 0) return;
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i += 1) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      }
+      writeRawBytes(bytes);
+    } else {
+      void injectCommandLines(c.value, true);
+    }
   };
 
   return (
@@ -122,6 +138,9 @@ export function QuickCommandsEditor({ onClose }: { onClose: () => void }) {
               </div>
               <code className="block truncate text-[11px] text-subtle">{c.value}</code>
             </div>
+            <Button variant="ghost" size="sm" onClick={() => send(c)} title="Send to terminal">
+              <Play size={13} className="text-accent" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => startEdit(c)} title="Edit">
               <Pencil size={13} />
             </Button>

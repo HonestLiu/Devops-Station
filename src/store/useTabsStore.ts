@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { ble, frp, mqtt, pty, serial, ssh, wsl } from "@/lib/api";
 import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
+import { useHostKeyStore } from "@/store/useHostKeyStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import type {
   BleOpenConfig,
@@ -185,7 +186,34 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
-      get().patch(id, { status: "error", error: (err as Error).message });
+      const msg = (err as Error).message;
+      // Unknown / changed host key → ask the user, then reconnect trusting it.
+      const m = /^HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
+      if (m) {
+        const [, kind, host, portStr, fp] = m;
+        const trust = await useHostKeyStore.getState().request({
+          host,
+          port: Number(portStr),
+          fingerprint: fp,
+          mismatch: kind === "MISMATCH",
+        });
+        if (trust) {
+          try {
+            const result = await ssh.connect({ ...config, trustHostKey: true });
+            get().patch(id, {
+              status: "connected",
+              sessionId: result.sessionId,
+              cwd: result.homeDir,
+              fingerprint: result.serverKeyFingerprint,
+            });
+            return id;
+          } catch (e2) {
+            get().patch(id, { status: "error", error: (e2 as Error).message });
+            return id;
+          }
+        }
+      }
+      get().patch(id, { status: "error", error: msg });
     }
     return id;
   },
@@ -232,7 +260,34 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
-      get().patch(id, { status: "error", error: (err as Error).message });
+      const msg = (err as Error).message;
+      // Unknown / changed host key → ask the user, then reconnect trusting it.
+      const m = /^HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
+      if (m) {
+        const [, kind, host, portStr, fp] = m;
+        const trust = await useHostKeyStore.getState().request({
+          host,
+          port: Number(portStr),
+          fingerprint: fp,
+          mismatch: kind === "MISMATCH",
+        });
+        if (trust) {
+          try {
+            const result = await ssh.connect({ ...config, trustHostKey: true });
+            get().patch(id, {
+              status: "connected",
+              sessionId: result.sessionId,
+              cwd: result.homeDir,
+              fingerprint: result.serverKeyFingerprint,
+            });
+            return id;
+          } catch (e2) {
+            get().patch(id, { status: "error", error: (e2 as Error).message });
+            return id;
+          }
+        }
+      }
+      get().patch(id, { status: "error", error: msg });
     }
     return id;
   },

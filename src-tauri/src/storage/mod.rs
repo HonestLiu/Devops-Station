@@ -11,7 +11,10 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::types::{Host, HostKind, MqttConnection, MqttPublishPref, MqttStoredSub, QuickCommand};
+use crate::types::{
+    ForwardType, Host, HostKind, KnownHostEntry, MqttConnection, MqttPublishPref, MqttStoredSub,
+    PortForwardRule, QuickCommand,
+};
 use crypto::Vault;
 
 const SCHEMA: &str = r#"
@@ -100,7 +103,29 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE hosts ADD COLUMN wsl_cwd TEXT",
     "ALTER TABLE hosts ADD COLUMN frp_config TEXT",
     "ALTER TABLE hosts ADD COLUMN updated_at INTEGER",
+    "ALTER TABLE hosts ADD COLUMN distro TEXT",
     "ALTER TABLE quick_commands ADD COLUMN updated_at INTEGER",
+    "CREATE TABLE IF NOT EXISTS port_forwards (
+        id           TEXT PRIMARY KEY,
+        host_id      TEXT NOT NULL,
+        name         TEXT NOT NULL,
+        forward_type TEXT NOT NULL,
+        local_host   TEXT NOT NULL DEFAULT '127.0.0.1',
+        local_port   INTEGER NOT NULL,
+        remote_host  TEXT NOT NULL DEFAULT '',
+        remote_port  INTEGER NOT NULL DEFAULT 0,
+        auto_start   INTEGER NOT NULL DEFAULT 0,
+        sort_order   INTEGER NOT NULL DEFAULT 0,
+        updated_at   INTEGER
+    )",
+    "CREATE TABLE IF NOT EXISTS known_hosts (
+        host_port   TEXT PRIMARY KEY,
+        key_type    TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        first_seen  INTEGER NOT NULL,
+        last_seen   INTEGER NOT NULL
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_port_forwards_host ON port_forwards(host_id)",
 ];
 
 /// Apply [`MIGRATIONS`], ignoring the ones already present.
@@ -169,6 +194,19 @@ fn sanitize_font_name(name: &str) -> String {
             }
         })
         .collect()
+}
+
+/// Stable key for the known_hosts table: `"host:port"`.
+fn host_port_key(host: &str, port: u16) -> String {
+    format!("{host}:{port}")
+}
+
+/// Split a `"host:port"` key back into its parts (default port 22).
+fn parse_host_port(s: &str) -> (String, u16) {
+    match s.rsplit_once(':') {
+        Some((h, p)) => (h.to_string(), p.parse().unwrap_or(22)),
+        None => (s.to_string(), 22),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -252,7 +290,7 @@ impl Store {
             "SELECT id, name, kind, hostname, port, username, password, private_key_path,
                     passphrase, save_password, serial_port, baud_rate, data_bits, stop_bits,
                     parity, flow_control, color, tags, last_used, created_at,
-                    wsl_distro, wsl_user, wsl_cwd, frp_config, updated_at
+                    wsl_distro, wsl_user, wsl_cwd, frp_config, updated_at, distro
              FROM hosts
              ORDER BY COALESCE(last_used, 0) DESC, created_at DESC",
         )?;
@@ -300,6 +338,7 @@ impl Store {
                 wsl_cwd: row.get(22)?,
                 frp_config: row.get(23)?,
                 updated_at: row.get(24)?,
+                distro: row.get(25)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -358,9 +397,9 @@ impl Store {
                                 private_key_path, passphrase, save_password, serial_port,
                                 baud_rate, data_bits, stop_bits, parity, flow_control,
                                 color, tags, last_used, created_at,
-                                wsl_distro, wsl_user, wsl_cwd, frp_config, updated_at)
+                                wsl_distro, wsl_user, wsl_cwd, frp_config, updated_at, distro)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
-                     ?21,?22,?23,?24,?25)
+                     ?21,?22,?23,?24,?25,?26)
              ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name, kind=excluded.kind, hostname=excluded.hostname,
                 port=excluded.port, username=excluded.username, password=excluded.password,
@@ -371,7 +410,7 @@ impl Store {
                 flow_control=excluded.flow_control, color=excluded.color, tags=excluded.tags,
                 wsl_distro=excluded.wsl_distro, wsl_user=excluded.wsl_user,
                 wsl_cwd=excluded.wsl_cwd, frp_config=excluded.frp_config,
-                updated_at=excluded.updated_at",
+                updated_at=excluded.updated_at, distro=excluded.distro",
             params![
                 host.id,
                 host.name,
@@ -398,6 +437,7 @@ impl Store {
                 host.wsl_cwd,
                 host.frp_config,
                 host.updated_at,
+                host.distro,
             ],
         )?;
         drop(conn);
@@ -723,6 +763,206 @@ impl Store {
         self.conn
             .lock()
             .execute("DELETE FROM quick_commands WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // -- Port forwards ------------------------------------------------------
+
+    pub fn list_port_forwards(&self, host_id: &str) -> AppResult<Vec<PortForwardRule>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, host_id, name, forward_type, local_host, local_port, remote_host,
+                    remote_port, auto_start, sort_order, updated_at
+             FROM port_forwards WHERE host_id = ?1
+             ORDER BY sort_order ASC, name ASC",
+        )?;
+        let rows = stmt.query_map(params![host_id], |row| {
+            let ftype: String = row.get(3)?;
+            let forward_type = match ftype.as_str() {
+                "remote" => ForwardType::Remote,
+                "dynamic" => ForwardType::Dynamic,
+                _ => ForwardType::Local,
+            };
+            Ok(PortForwardRule {
+                id: row.get(0)?,
+                host_id: row.get(1)?,
+                name: row.get(2)?,
+                forward_type,
+                local_host: row.get(4)?,
+                local_port: row.get::<_, i64>(5)? as u16,
+                remote_host: row.get(6)?,
+                remote_port: row.get::<_, i64>(7)? as u16,
+                auto_start: row.get::<_, i64>(8)? != 0,
+                sort_order: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn save_port_forward(&self, mut rule: PortForwardRule) -> AppResult<PortForwardRule> {
+        if rule.id.is_empty() {
+            rule.id = Uuid::new_v4().to_string();
+        }
+        rule.updated_at = Some(chrono::Utc::now().timestamp());
+        if rule.local_host.is_empty() {
+            rule.local_host = "127.0.0.1".into();
+        }
+        self.conn.lock().execute(
+            "INSERT INTO port_forwards (id, host_id, name, forward_type, local_host, local_port,
+                                        remote_host, remote_port, auto_start, sort_order, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+             ON CONFLICT(id) DO UPDATE SET
+                host_id=excluded.host_id, name=excluded.name, forward_type=excluded.forward_type,
+                local_host=excluded.local_host, local_port=excluded.local_port,
+                remote_host=excluded.remote_host, remote_port=excluded.remote_port,
+                auto_start=excluded.auto_start, sort_order=excluded.sort_order,
+                updated_at=excluded.updated_at",
+            params![
+                rule.id,
+                rule.host_id,
+                rule.name,
+                rule.forward_type.as_str(),
+                rule.local_host,
+                rule.local_port as i64,
+                rule.remote_host,
+                rule.remote_port as i64,
+                rule.auto_start as i64,
+                rule.sort_order,
+                rule.updated_at,
+            ],
+        )?;
+        Ok(rule)
+    }
+
+    pub fn delete_port_forward(&self, id: &str) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Rules for a host that should start as soon as a session connects.
+    pub fn auto_start_port_forwards(&self, host_id: &str) -> AppResult<Vec<PortForwardRule>> {
+        Ok(self
+            .list_port_forwards(host_id)?
+            .into_iter()
+            .filter(|r| r.auto_start)
+            .collect())
+    }
+
+    // -- Known hosts --------------------------------------------------------
+
+    pub fn known_hosts_list(&self) -> AppResult<Vec<KnownHostEntry>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT host_port, key_type, fingerprint, first_seen, last_seen
+             FROM known_hosts ORDER BY host_port ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let host_port: String = row.get(0)?;
+            let (host, port) = parse_host_port(&host_port);
+            Ok(KnownHostEntry {
+                host,
+                port,
+                key_type: row.get(1)?,
+                fingerprint: row.get(2)?,
+                first_seen: row.get(3)?,
+                last_seen: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn known_hosts_find(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> AppResult<Option<(String, String)>> {
+        let conn = self.conn.lock();
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT key_type, fingerprint FROM known_hosts WHERE host_port = ?1",
+                params![host_port_key(host, port)],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Verify a server key against the known_hosts store.
+    ///
+    /// Returns `"verified"` (known + matching), `"new"` (unknown — caller should
+    /// prompt the user and reconnect with `trust`), `"replaced"` (newly trusted
+    /// or overwritten because `trust` was set), or `"mismatch"` (known key
+    /// changed — caller should abort unless `trust` was set).
+    pub fn verify_host_key(
+        &self,
+        host: &str,
+        port: u16,
+        key_type: &str,
+        fingerprint: &str,
+        trust: bool,
+    ) -> String {
+        let existing = self.known_hosts_find(host, port).ok().flatten();
+        match existing {
+            None => {
+                if trust {
+                    let _ = self.known_hosts_upsert(host, port, key_type, fingerprint);
+                    "replaced".into()
+                } else {
+                    "new".into()
+                }
+            }
+            Some((_, stored_fp)) => {
+                if stored_fp == fingerprint {
+                    let _ = self.known_hosts_touch(host, port);
+                    "verified".into()
+                } else if trust {
+                    let _ = self.known_hosts_upsert(host, port, key_type, fingerprint);
+                    "replaced".into()
+                } else {
+                    "mismatch".into()
+                }
+            }
+        }
+    }
+
+    fn known_hosts_upsert(
+        &self,
+        host: &str,
+        port: u16,
+        key_type: &str,
+        fingerprint: &str,
+    ) -> AppResult<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.lock().execute(
+            "INSERT INTO known_hosts (host_port, key_type, fingerprint, first_seen, last_seen)
+             VALUES (?1,?2,?3,?4,?4)
+             ON CONFLICT(host_port) DO UPDATE SET
+                key_type=excluded.key_type, fingerprint=excluded.fingerprint,
+                last_seen=excluded.last_seen",
+            params![host_port_key(host, port), key_type, fingerprint, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn known_hosts_remove(&self, host: &str, port: u16) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute(
+                "DELETE FROM known_hosts WHERE host_port = ?1",
+                params![host_port_key(host, port)],
+            )?;
+        Ok(())
+    }
+
+    pub fn known_hosts_touch(&self, host: &str, port: u16) -> AppResult<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn.lock().execute(
+            "UPDATE known_hosts SET last_seen = ?2 WHERE host_port = ?1",
+            params![host_port_key(host, port), now],
+        )?;
         Ok(())
     }
 

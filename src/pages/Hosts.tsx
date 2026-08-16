@@ -21,6 +21,7 @@ import {
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { HostDialog } from "@/components/HostDialog";
 import { QuickCommandsEditor } from "@/components/QuickCommandsEditor";
+import { DistroIcon } from "@/components/DistroIcon";
 import { parseSshCommand, hashColor, cn } from "@/lib/utils";
 import { isWindows } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
@@ -91,6 +92,7 @@ function HostRow({
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium text-fg">{h.name}</span>
           <Badge tone={h.kind === "serial" ? "warning" : "accent"}>{t(KIND_LABEL[h.kind])}</Badge>
+          <DistroIcon distro={h.distro} size={18} />
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-muted">
           <Icon size={12} className="shrink-0 text-subtle" />
@@ -347,6 +349,7 @@ export function Hosts() {
                   <Badge tone={h.kind === "serial" ? "warning" : "accent"}>
                     {t(KIND_LABEL[h.kind])}
                   </Badge>
+                  <DistroIcon distro={h.distro} size={18} />
                 </div>
                 <div className="mb-3 flex items-center gap-1.5 text-[12px] text-muted">
                   <Icon size={13} className="shrink-0 text-subtle" />

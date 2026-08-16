@@ -106,6 +106,11 @@ pub struct Host {
     /// (last-write-wins merge).
     #[serde(default)]
     pub updated_at: Option<i64>,
+
+    /// OS distribution id for the host-list icon (e.g. "ubuntu", "debian").
+    /// None = auto / generic Linux.
+    #[serde(default)]
+    pub distro: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +139,11 @@ pub struct SshConnectConfig {
     pub rows: u32,
     #[serde(default = "default_term")]
     pub term: String,
+    /// When true, a new/changed host key is trusted (written to known_hosts)
+    /// instead of aborting the connection. Set by the UI after the user
+    /// explicitly accepts an unknown/mismatched host key.
+    #[serde(default)]
+    pub trust_host_key: bool,
 }
 
 fn default_port() -> u16 {
@@ -155,6 +165,104 @@ pub struct SshConnectResult {
     pub session_id: String,
     pub server_key_fingerprint: String,
     pub home_dir: String,
+    /// Host-key verification outcome: "verified" (known + matching),
+    /// "replaced" (newly trusted or overwritten on `trustHostKey`), or
+    /// "unknown" / "mismatch" (connection aborted; the UI shows a prompt).
+    #[serde(default)]
+    pub host_key_status: String,
+}
+
+// ---------------------------------------------------------------------------
+// SSH port forwarding
+// ---------------------------------------------------------------------------
+
+/// Direction of a port forward, mirroring `ssh` `-L` / `-R` / `-D`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ForwardType {
+    /// `-L` local: listen locally, tunnel to a remote target over SSH.
+    Local,
+    /// `-R` remote: the server listens, tunnels inbound connections back to a
+    /// local target on this machine.
+    Remote,
+    /// `-D` dynamic: a local SOCKS5 proxy; the target is chosen per connection.
+    Dynamic,
+}
+
+impl ForwardType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ForwardType::Local => "local",
+            ForwardType::Remote => "remote",
+            ForwardType::Dynamic => "dynamic",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardRule {
+    pub id: String,
+    /// Saved host this rule belongs to (so it survives reconnects).
+    pub host_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub forward_type: ForwardType,
+    /// Local bind address (local/dynamic) or the server bind address (remote).
+    #[serde(default = "default_local_host")]
+    pub local_host: String,
+    /// Local bind port (local/dynamic) or the local target port (remote).
+    pub local_port: u16,
+    /// Remote target host (local) or the server bind address (remote). Ignored
+    /// for dynamic forwards.
+    #[serde(default)]
+    pub remote_host: String,
+    /// Remote target port (local) or the server bind port (remote).
+    #[serde(default)]
+    pub remote_port: u16,
+    /// Start automatically when a session for `host_id` connects.
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default)]
+    pub sort_order: i64,
+    /// Last write time (unix seconds).
+    #[serde(default)]
+    pub updated_at: Option<i64>,
+}
+
+fn default_local_host() -> String {
+    "127.0.0.1".into()
+}
+
+/// Live status of a running (or failed) forward, returned to the frontend.
+///
+/// `status` is derived from a *confirmed* real listener / server-forward result
+/// (never from a button click), following the Netcatty port-forward runtime
+/// model: active must mean a TCP port is actually bound or the server confirmed
+/// the forward.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardStatus {
+    pub id: String,
+    /// "connecting" | "active" | "error" | "inactive"
+    pub status: String,
+    #[serde(default)]
+    pub error: Option<String>,
+    /// The actual bound port (useful when `local_port` was 0 / dynamic).
+    #[serde(default)]
+    pub bound_port: Option<u16>,
+}
+
+/// One trusted host-key entry from the known_hosts store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostEntry {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub first_seen: i64,
+    pub last_seen: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

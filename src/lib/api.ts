@@ -7,7 +7,10 @@ import type {
   BleOpenConfig,
   Host,
   HostMetrics,
+  KnownHostEntry,
   LocalEntry,
+  PortForwardRule,
+  PortForwardStatus,
   QuickCommand,
   RemoteFile,
   RemoteFileMeta,
@@ -69,6 +72,23 @@ export const ssh = {
     listen<StreamChunk>(`ssh-data-${sessionId}`, (e) => cb(e.payload)),
   onClosed: (sessionId: string, cb: (info: SessionClosed) => void): Promise<UnlistenFn> =>
     listen<SessionClosed>(`ssh-closed-${sessionId}`, (e) => cb(e.payload)),
+
+  // --- Port forwarding ---
+  forwardList: (sessionId: string) =>
+    call<PortForwardStatus[]>("ssh_forward_list", { sessionId }),
+  forwardStart: (sessionId: string, rule: PortForwardRule) =>
+    call<PortForwardStatus>("ssh_forward_start", { sessionId, rule }),
+  forwardStop: (id: string) => call<void>("ssh_forward_stop", { id }),
+  forwardSave: (rule: PortForwardRule) =>
+    call<PortForwardRule>("ssh_forward_save", { rule }),
+  forwardDelete: (id: string) => call<void>("ssh_forward_delete", { id }),
+  forwardRules: (hostId: string) =>
+    call<PortForwardRule[]>("ssh_forward_rules", { hostId }),
+
+  // --- Known hosts ---
+  knownHostsList: () => call<KnownHostEntry[]>("ssh_known_hosts_list"),
+  knownHostsRemove: (host: string, port: number) =>
+    call<void>("ssh_known_hosts_remove", { host, port }),
 };
 
 // --- SFTP ------------------------------------------------------------------

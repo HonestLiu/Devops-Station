@@ -205,6 +205,21 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Write raw bytes into a terminal (used by hex-mode Quick Commands that send
+ * device / serial protocols). `bytes` are base64-encoded the same way the
+ * text path does, so the backend decodes them back to the exact octets.
+ */
+export function writeRawBytes(bytes: Uint8Array, sessionId?: string | null): void {
+  const target = resolveTarget(sessionId);
+  if (!target || bytes.length === 0) return;
+  const { sessionId: sid, kind } = target;
+  if (kind === "sftp") return;
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+  void writerFor(kind)(sid, btoa(bin));
+}
+
+/**
  * Write a command block into the terminal LINE BY LINE, so each command appears
  * and runs individually in the live terminal — exactly as if the operator typed
  * and pressed Enter on each line. With `execute=false` the lines are typed for
