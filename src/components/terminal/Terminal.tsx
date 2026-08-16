@@ -7,7 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ImageAddon } from "@xterm/addon-image";
 import type { ITheme } from "@xterm/xterm";
 import { KeywordHighlighter } from "./keywordHighlight";
-import { ClipboardPaste, Command, Copy, Eraser, Sparkles, TextSelect } from "lucide-react";
+import { ClipboardPaste, Command, Copy, Eraser, RotateCw, Sparkles, TextSelect } from "lucide-react";
 
 import { ssh, pty, localFs, notify } from "@/lib/api";
 import { dataLink } from "@/lib/dataLink";
@@ -70,6 +70,41 @@ const SNIPPET_MENU: MenuItem[] = SNIPPET_GROUPS.map((g) => ({
 //                         line straddling a chunk boundary is still caught.
 /** Bytes of pre-chunk buffer kept as overlap for cross-chunk error lines. */
 const SCAN_OVERLAP = 320;
+
+/**
+ * A TUI (opencode, …) that exits without cleaning up can leave the terminal's
+ * keyboard/mouse protocol enabled: kitty keyboard (ESC[>1u), modifyOtherKeys
+ * (ESC[>4m), bracketed paste (ESC[?2004h), focus reporting, mouse tracking.
+ * Typed keys then arrive as CSI sequences the shell can't parse — the classic
+ * "can't type after quitting a TUI" / endless-garbage symptom.
+ *
+ * `resetTuiModes` both checks xterm's private-mode state (`term.modes`) and
+ * forces every one of those modes off, so it works even when xterm.js never
+ * parsed the TUI's enable sequences in the first place.
+ */
+const TUI_RESET_SEQ =
+  "\x1b[<0u" + // kitty keyboard protocol: pop everything (0 = pop all)
+  "\x1b[>4;0m" + // modifyOtherKeys: off
+  "\x1b[?2004l" + // bracketed paste: off
+  "\x1b[?1l" + // application cursor keys: off
+  "\x1b[?1004l" + // focus reporting: off
+  "\x1b[?1000l" + "\x1b[?1002l" + "\x1b[?1003l" + // mouse tracking: off
+  "\x1b[?1006l"; // SGR mouse: off
+
+function resetTuiModes(term: XTerm) {
+  const m = term.modes;
+  // Force the xterm.js private modes off (checking first is a no-op guard,
+  // writing the sequences is what actually resets the state).
+  if (m.applicationCursorKeysMode) term.write("\x1b[?1l");
+  if (m.bracketedPasteMode) term.write("\x1b[?2004l");
+  if (m.sendFocusMode) term.write("\x1b[?1004l");
+  if (m.mouseTrackingMode !== "none") {
+    term.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
+  }
+  // Keyboard protocols that xterm may not track internally — write them
+  // anyway; they are no-ops when the mode was never enabled.
+  term.write("\x1b[<0u\x1b[>4;0m");
+}
 /** Any one error fingerprint may recur at most once per this window, app-wide. */
 const ERROR_DEDUP_WINDOW_MS = 60_000;
 /** Cap before pruning stale entries so the map never grows unbounded. */
@@ -334,6 +369,22 @@ export function Terminal(props: TerminalProps) {
           term.focus();
         },
       },
+      {
+        id: "reset",
+        label: t("term.reset"),
+        icon: <RotateCw size={14} />,
+        onClick: () => {
+          // Manual escape hatch for a terminal left in a weird mode by a TUI
+          // that exited uncleanly. term.reset() wipes every xterm.js mode;
+          // the reset sequences also reach the remote shell (restores its
+          // stty/readline state). Scrollback is cleared too — this is the
+          // nuclear option, so the label says so.
+          term.reset();
+          term.clear();
+          term.focus();
+          void api.write(sessionId, textToBase64(TUI_RESET_SEQ + "\x1b[?1049l\x1b[H\x1b[2J")).catch(() => undefined);
+        },
+      },
     ];
 
     // When the user has box-selected text, surface the same AI actions the
@@ -569,6 +620,13 @@ export function Terminal(props: TerminalProps) {
           if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
           useSessionStore.getState().setCwd(sessionId, path);
         }
+        // A shell prompt means whatever TUI was running (opencode, …) has
+        // exited. TUIs often leave keyboard/mouse protocol modes enabled
+        // (kitty keyboard, modifyOtherKeys, bracketed paste, focus reporting,
+        // mouse tracking); typed keys then arrive as CSI sequences the shell
+        // can't parse — the "can't type / endless garbage after quitting a
+        // TUI" symptom. Reset those modes directly on the xterm instance.
+        resetTuiModes(term);
         return true;
       });
     }

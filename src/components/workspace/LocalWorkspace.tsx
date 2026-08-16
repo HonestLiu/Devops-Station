@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FolderClosed, FolderOpen, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
-import { FilesSidebar } from "@/components/FilesSidebar";
+import { FileBrowserPanel, createLocalAdapter } from "@/components/files/FileBrowserPanel";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -21,6 +21,9 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
   const [filesOpen, setFilesOpen] = useState(false);
   const connected = tab.status === "connected" && !!tab.sessionId;
+  // Stable adapter: recreating it per render would re-trigger the panel's
+  // load effect and bounce the view back to the home directory.
+  const localAdapter = useMemo(() => createLocalAdapter(tab), [tab]);
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -61,7 +64,13 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
         {filesOpen && connected && tab.sessionId && (
-          <FilesSidebar tab={tab} onClose={() => setFilesOpen(false)} />
+          <FileBrowserPanel
+            adapter={localAdapter}
+            sessionId={tab.sessionId}
+            onClose={() => setFilesOpen(false)}
+            title="Files"
+            chipIcon={<FolderOpen size={13} />}
+          />
         )}
       </div>
     </div>

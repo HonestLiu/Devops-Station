@@ -428,6 +428,9 @@ export const kb = {
 export const localFs = {
   home: () => call<string>("local_home"),
   list: (path: string) => call<LocalEntry[]>("local_list", { path }),
+  mkdir: (path: string) => call<void>("local_mkdir", { path }),
+  remove: (path: string, isDir: boolean) => call<void>("local_remove", { path, isDir }),
+  rename: (from: string, to: string) => call<void>("local_rename", { from, to }),
   reveal: (path: string) => call<void>("reveal_path", { path }),
   open: (path: string) => call<void>("open_path", { path }),
   /** Open a URL in the OS default browser (http/https only). */

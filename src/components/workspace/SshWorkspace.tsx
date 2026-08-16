@@ -1,23 +1,26 @@
-import { useState } from "react";
-import { Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
-import { SftpPanel } from "@/components/sftp/SftpPanel";
+import { FileBrowserPanel, createSftpAdapter } from "@/components/files/FileBrowserPanel";
+import { RemoteFilePreview } from "@/components/sftp/RemoteFilePreview";
 import { PortForwardPanel } from "@/components/workspace/PortForwardPanel";
 import { KnownHostsDialog } from "@/components/workspace/KnownHostsDialog";
+import { explainFile, diffFiles } from "@/ai/tasks";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
-import type { Tab } from "@/lib/types";
+import type { MenuItem } from "@/store/useContextMenu";
+import type { RemoteFile, Tab } from "@/lib/types";
 
 export function SshWorkspace({ tab }: { tab: Tab }) {
   const t = useT();
   const [filesOpen, setFilesOpen] = useState(false);
   const [pfOpen, setPfOpen] = useState(false);
   const [khOpen, setKhOpen] = useState(false);
+  const [preview, setPreview] = useState<RemoteFile | null>(null);
   const reconnect = useTabsStore((s) => s.reconnect);
-  const patch = useTabsStore((s) => s.patch);
   const splitPane = useTabsStore((s) => s.splitPane);
   const closePane = useTabsStore((s) => s.closePane);
 
@@ -26,6 +29,37 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
   const canSplit = !!tab.sshConfig && paneCount < 4;
   const canClosePane = (tab.panes?.length ?? 0) > 1;
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+  // Stable adapter: recreating it per render would re-trigger the panel's
+  // load effect and bounce the view back to the home directory.
+  const sftpAdapter = useMemo(
+    () => (tab.sessionId ? createSftpAdapter(tab.sessionId) : null),
+    [tab.sessionId],
+  );
+
+  // SFTP-only extras: AI analyze / diff actions on a selected file.
+  const sftpAiActions = (f: RemoteFile): MenuItem[] =>
+    f.isDir || !tab.sessionId
+      ? []
+      : [
+          {
+            id: "ai-explain",
+            label: "AI 分析",
+            icon: <Sparkles size={14} />,
+            onClick: () => void explainFile(tab.sessionId!, f.path),
+          },
+          {
+            id: "ai-diff",
+            label: "AI 对比",
+            icon: <Sparkles size={14} />,
+            onClick: () => {
+              const other = window.prompt(
+                "Diff against which file? Enter the full remote path:",
+                f.path,
+              );
+              if (other && other.trim()) void diffFiles(tab.sessionId!, f.path, other.trim());
+            },
+          },
+        ];
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -101,8 +135,27 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
 
-        {filesOpen && connected && tab.sessionId && (
-          <SftpPanel sessionId={tab.sessionId} onClose={() => setFilesOpen(false)} />
+        {filesOpen && connected && tab.sessionId && sftpAdapter && (
+          <FileBrowserPanel
+            adapter={sftpAdapter}
+            sessionId={tab.sessionId}
+            onClose={() => {
+              setFilesOpen(false);
+              setPreview(null);
+            }}
+            title="SFTP"
+            chipIcon={<FolderOpen size={13} />}
+            onPreviewFile={(f) => setPreview(f)}
+            aiActions={sftpAiActions}
+          />
+        )}
+        {preview && tab.sessionId && (
+          <RemoteFilePreview
+            sessionId={tab.sessionId}
+            path={preview.path}
+            name={preview.name}
+            onClose={() => setPreview(null)}
+          />
         )}
 
         {pfOpen && connected && tab.sessionId && (

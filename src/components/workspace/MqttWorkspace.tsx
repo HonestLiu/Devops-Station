@@ -6,6 +6,8 @@ import {
   Copy,
   Inbox,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plug,
   Plus,
   Send,
@@ -15,7 +17,8 @@ import {
   X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui";
+import { Button, SideIconButton } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { mqtt } from "@/lib/api";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -170,6 +173,8 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   const [subTopic, setSubTopic] = useState("");
   const [subQos, setSubQos] = useState(0);
   const [subErr, setSubErr] = useState<string | undefined>();
+  // collapsible subscriptions rail
+  const [subsCollapsed, setSubsCollapsed] = useState(false);
 
   // publisher
   const [pubTopic, setPubTopic] = useState(tab.mqtt?.publish?.topic ?? "");
@@ -325,86 +330,111 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
       )}
 
       <div className="flex min-h-0 flex-1">
-        {/* Left sidebar — subscriptions */}
-        <aside className="flex w-56 shrink-0 flex-col border-r border-border/60 bg-surface/30">
-          <div className="border-b border-border/60 p-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full justify-start gap-1.5"
-              onClick={() => setShowSubInput((s) => !s)}
-              disabled={!live}
-            >
-              <Plus size={13} />
-              {t("mqtt.newSubscription")}
-            </Button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {showSubInput && (
-              <div className="mb-2 rounded-md border border-border/60 bg-bg p-2">
-                <input
-                  className={`${fieldCls} mb-2`}
-                  placeholder={t("mqtt.topic")}
-                  value={subTopic}
-                  onChange={(e) => setSubTopic(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void subscribe()}
-                  autoFocus
+        {/* Left sidebar — subscriptions (collapsible rail) */}
+        <aside
+          className={cn(
+            "flex shrink-0 flex-col border-r border-border/60 bg-surface/30 transition-[width] duration-200",
+            subsCollapsed ? "w-9" : "w-56",
+          )}
+        >
+          {subsCollapsed ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <SideIconButton
+                label={t("mqtt.expandSubs")}
+                onClick={() => setSubsCollapsed(false)}
+                icon={<PanelLeftOpen size={14} />}
+              />
+              <span className="text-[10px] font-semibold text-subtle" title={`${subs.length} ${t("mqtt.subscriptions")}`}>
+                {subs.length}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1 border-b border-border/60 p-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1 justify-start gap-1.5"
+                  onClick={() => setShowSubInput((s) => !s)}
+                  disabled={!live}
+                >
+                  <Plus size={13} />
+                  {t("mqtt.newSubscription")}
+                </Button>
+                <SideIconButton
+                  label={t("mqtt.collapseSubs")}
+                  onClick={() => setSubsCollapsed(true)}
+                  icon={<PanelLeftClose size={14} />}
                 />
-                <div className="flex items-center gap-2">
-                  <select
-                    className={selectCls}
-                    value={subQos}
-                    onChange={(e) => setSubQos(Number(e.target.value))}
-                  >
-                    <option value={0}>QoS 0</option>
-                    <option value={1}>QoS 1</option>
-                    <option value={2}>QoS 2</option>
-                  </select>
-                  <Button variant="primary" size="sm" className="ml-auto" onClick={subscribe}>
-                    {t("mqtt.subscribe")}
-                  </Button>
-                </div>
-                {subErr && <div className="mt-1.5 text-[11px] text-danger">{subErr}</div>}
               </div>
-            )}
 
-            {subs.length === 0 ? (
-              <div className="py-6 text-center text-[12px] text-muted">{t("mqtt.noSubscriptions")}</div>
-            ) : (
-              <div className="space-y-1">
-                {subs.map((s) => (
-                  <div
-                    key={s.topic}
-                    className={`group flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-[12px] ${
-                      filter === s.topic ? "bg-accent/15 text-accent" : "hover:bg-hover"
-                    }`}
-                    onClick={() => setFilter((f) => (f === s.topic ? "" : s.topic))}
-                    title={t("mqtt.filter")}
-                  >
-                    <span className="truncate font-mono">{s.topic}</span>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <span className="text-[10px] text-muted">Q{s.qos}</span>
-                      <button
-                        className="rounded p-0.5 hover:text-danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void unsubscribe(s.topic);
-                        }}
-                        title={t("mqtt.unsubscribe")}
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                {showSubInput && (
+                  <div className="mb-2 rounded-md border border-border/60 bg-bg p-2">
+                    <input
+                      className={`${fieldCls} mb-2`}
+                      placeholder={t("mqtt.topic")}
+                      value={subTopic}
+                      onChange={(e) => setSubTopic(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && void subscribe()}
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2">
+                      <select
+                        className={selectCls}
+                        value={subQos}
+                        onChange={(e) => setSubQos(Number(e.target.value))}
                       >
-                        <X size={11} />
-                      </button>
+                        <option value={0}>QoS 0</option>
+                        <option value={1}>QoS 1</option>
+                        <option value={2}>QoS 2</option>
+                      </select>
+                      <Button variant="primary" size="sm" className="ml-auto" onClick={subscribe}>
+                        {t("mqtt.subscribe")}
+                      </Button>
                     </div>
+                    {subErr && <div className="mt-1.5 text-[11px] text-danger">{subErr}</div>}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                )}
 
-          <div className="border-t border-border/60 p-2 text-[11px] text-muted">
-            {subs.length} {t("mqtt.subscriptions")}
-          </div>
+                {subs.length === 0 ? (
+                  <div className="py-6 text-center text-[12px] text-muted">{t("mqtt.noSubscriptions")}</div>
+                ) : (
+                  <div className="space-y-1">
+                    {subs.map((s) => (
+                      <div
+                        key={s.topic}
+                        className={`group flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-[12px] ${
+                          filter === s.topic ? "bg-accent/15 text-accent" : "hover:bg-hover"
+                        }`}
+                        onClick={() => setFilter((f) => (f === s.topic ? "" : s.topic))}
+                        title={t("mqtt.filter")}
+                      >
+                        <span className="truncate font-mono">{s.topic}</span>
+                        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <span className="text-[10px] text-muted">Q{s.qos}</span>
+                          <button
+                            className="rounded p-0.5 hover:text-danger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void unsubscribe(s.topic);
+                            }}
+                            title={t("mqtt.unsubscribe")}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-border/60 p-2 text-[11px] text-muted">
+                {subs.length} {t("mqtt.subscriptions")}
+              </div>
+            </>
+          )}
         </aside>
 
         {/* Right area — messages (top) + publisher (bottom) */}

@@ -198,3 +198,31 @@ pub fn open_url(url: String) -> Result<(), String> {
 
     opener::open_browser(url).map_err(|e| format!("failed to open URL: {e}"))
 }
+
+/// Create a directory (and any missing parents). Backs the Local file panel's
+/// "New folder" action, mirroring the SFTP/WSL panels.
+#[tauri::command]
+pub fn local_mkdir(path: String) -> Result<(), String> {
+    fs::create_dir_all(Path::new(&path)).map_err(|e| format!("cannot create directory {path}: {e}"))
+}
+
+/// Remove a file, or a directory and everything under it. Backs the Local file
+/// panel's "Delete" action (dirs are removed recursively, like SFTP/WSL).
+#[tauri::command]
+pub fn local_remove(path: String, is_dir: bool) -> Result<(), String> {
+    let p = Path::new(&path);
+    let res = if is_dir {
+        fs::remove_dir_all(p)
+    } else {
+        fs::remove_file(p)
+    };
+    res.map_err(|e| format!("cannot remove {path}: {e}"))
+}
+
+/// Rename / move a local file or directory. Backs the Local file panel's
+/// "Rename" action.
+#[tauri::command]
+pub fn local_rename(from: String, to: String) -> Result<(), String> {
+    fs::rename(Path::new(&from), Path::new(&to))
+        .map_err(|e| format!("cannot rename {from} -> {to}: {e}"))
+}

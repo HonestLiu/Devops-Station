@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FolderClosed, FolderOpen, RotateCw, Usb } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
-import { WslPanel } from "@/components/sftp/WslPanel";
+import { FileBrowserPanel, createWslAdapter } from "@/components/files/FileBrowserPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -29,6 +29,8 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
   const canSplit = paneCount < 4;
   const canClosePane = (tab.panes?.length ?? 0) > 1;
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+  // Stable adapter (recreating it per render would bounce the panel home).
+  const wslAdapter = useMemo(() => createWslAdapter(tab.wsl?.distro), [tab.wsl?.distro]);
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -81,10 +83,12 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
         </div>
 
         {filesOpen && connected && tab.sessionId && (
-          <WslPanel
+          <FileBrowserPanel
+            adapter={wslAdapter}
             sessionId={tab.sessionId}
-            distro={tab.wsl?.distro}
             onClose={() => setFilesOpen(false)}
+            title="WSL"
+            chipIcon={<FolderOpen size={13} />}
           />
         )}
 
