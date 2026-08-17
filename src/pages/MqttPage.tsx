@@ -104,6 +104,7 @@ function MqttModuleCards({
     desc: string;
     count: number | null;
     countLabel: string;
+    beta?: boolean;
   }[] = [
     {
       key: "client",
@@ -120,6 +121,7 @@ function MqttModuleCards({
       desc: t("dash.moduleDesc"),
       count: panelCount,
       countLabel: t("dash.panels"),
+      beta: true,
     },
   ];
   return (
@@ -132,8 +134,13 @@ function MqttModuleCards({
             <button
               key={m.key}
               onClick={() => onPick(m.key)}
-              className="group flex flex-col rounded-xl border border-border/60 bg-bg p-5 text-left transition-all hover:border-accent/50 hover:shadow-md hover:shadow-accent/5"
+              className="group relative flex flex-col rounded-xl border border-border/60 bg-bg p-5 text-left transition-all hover:border-accent/50 hover:shadow-md hover:shadow-accent/5"
             >
+              {m.beta && (
+                <span className="absolute right-3 top-3 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500 ring-1 ring-inset ring-amber-500/30">
+                  Beta
+                </span>
+              )}
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/15 text-accent transition-colors group-hover:bg-accent/25">
                 {m.icon}
               </div>
