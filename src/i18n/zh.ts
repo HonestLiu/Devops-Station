@@ -115,6 +115,8 @@ export const zh = {
   "mqtt.all": "全部",
   "mqtt.received": "接收",
   "mqtt.published": "发送",
+  "mqtt.pubNotSubscribed": "未订阅该主题，收不到自己发布的消息",
+  "mqtt.pubNotSubscribedHint": "MQTT 只投递给匹配的订阅；当前没有任何订阅覆盖此发布主题，发布后消息不会回显到本窗口",
   "mqtt.send": "发送",
   "mqtt.format": "格式",
   "mqtt.text": "文本",

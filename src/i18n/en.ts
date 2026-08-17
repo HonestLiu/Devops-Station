@@ -106,6 +106,8 @@ export const en: Record<keyof typeof zh, string> = {
   "mqtt.all": "All",
   "mqtt.received": "Received",
   "mqtt.published": "Published",
+  "mqtt.pubNotSubscribed": "Not subscribed to this topic — you won't receive your own publishes",
+  "mqtt.pubNotSubscribedHint": "MQTT only delivers to matching subscriptions; no active subscription covers this publish topic, so published messages won't echo back into this window",
   "mqtt.send": "Send",
   "mqtt.format": "Format",
   "mqtt.text": "Plaintext",

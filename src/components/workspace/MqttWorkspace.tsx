@@ -68,6 +68,29 @@ function payloadToBytes(format: PayloadFormat, text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
+/**
+ * MQTT topic matching with `+` (one level) and `#` (rest) wildcards. Used to
+ * tell whether a publish topic has any matching subscription — so we can warn
+ * before the user publishes into a void and then wonders why they can't receive.
+ */
+function topicMatches(topic: string, sub: string): boolean {
+  if (sub === topic) return true;
+  if (!sub.includes("#") && !sub.includes("+")) return false;
+  const t = topic.split("/");
+  const s = sub.split("/");
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "#") return true;
+    if (s[i] === "+") {
+      if (i >= t.length) return false;
+    } else if (s[i] !== t[i]) {
+      return false;
+    }
+    i += 1;
+  }
+  return i === t.length;
+}
+
 /** Decode a base64 payload for display in the selected format. */
 function formatPayload(b64: string, format: PayloadFormat): { text: string; kind: "text" | "binary" } {
   try {
@@ -287,6 +310,15 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   }, [messages, directionFilter, filter]);
 
   const live = status?.status === "connected" || status?.status === "reconnecting";
+
+  // Publishing to a topic no subscription covers = the classic "can only send,
+  // can't receive" confusion (your own message never echoes back). Warn before
+  // the user clicks send.
+  const pubTopicNotSubscribed = useMemo(() => {
+    const t = pubTopic.trim();
+    if (!t) return false;
+    return !subs.some((s) => topicMatches(t, s.topic));
+  }, [pubTopic, subs]);
 
   const FilterTab = ({ value }: { value: DirectionFilter }) => {
     const active = directionFilter === value;
@@ -580,6 +612,15 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
               </label>
 
               {pubErr && <span className="ml-2 truncate text-[11px] text-danger">{pubErr}</span>}
+
+              {pubTopicNotSubscribed && !pubErr && (
+                <span
+                  className="ml-2 truncate text-[11px] text-amber-500"
+                  title={t("mqtt.pubNotSubscribedHint")}
+                >
+                  {t("mqtt.pubNotSubscribed")}
+                </span>
+              )}
 
               <Button
                 variant="primary"
