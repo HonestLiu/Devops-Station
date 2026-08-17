@@ -66,6 +66,11 @@ export const zh = {
 
   // --- MQTT (ported MQTTX-style functionality) --------------------------------
   "mqtt.title": "MQTT 客户端",
+  "mqtt.modules": "模块",
+  "mqtt.chooseModule": "选择一个模块",
+  "mqtt.chooseModuleDesc": "选择要进入的功能：MQTT 客户端用于连接 broker、收发消息；上位机用于搭建可视化监控面板。",
+  "mqtt.moduleDesc": "连接 MQTT 服务器，管理订阅与发布，实时收发消息。",
+  "mqtt.connections": "个连接",
   "mqtt.connectVia": "选择一个 MQTT 连接",
   "mqtt.newConnection": "新建连接",
   "mqtt.editConnection": "编辑连接",
@@ -135,6 +140,8 @@ export const zh = {
 
   // --- HMI dashboards (上位机) -------------------------------------------------
   "dash.title": "上位机",
+  "dash.moduleDesc": "拖拽控件搭建智能家居监控面板，绑定 MQTT 主题实时联动。",
+  "dash.panels": "个面板",
   "dash.subtitle": "自定义智能家居控制面板",
   "dash.newPanel": "新建面板",
   "dash.noPanels": "还没有面板，创建一个开始搭建你的控制台",

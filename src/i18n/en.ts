@@ -57,6 +57,11 @@ export const en: Record<keyof typeof zh, string> = {
 
   // --- MQTT (ported MQTTX-style functionality) --------------------------------
   "mqtt.title": "MQTT Client",
+  "mqtt.modules": "Modules",
+  "mqtt.chooseModule": "Choose a module",
+  "mqtt.chooseModuleDesc": "Pick what to open: the MQTT Client connects to a broker to publish and subscribe; Dashboards build visual monitoring panels.",
+  "mqtt.moduleDesc": "Connect to an MQTT broker, manage subscriptions and publishes, send and receive messages live.",
+  "mqtt.connections": "connections",
   "mqtt.connectVia": "Pick an MQTT connection",
   "mqtt.newConnection": "New Connection",
   "mqtt.editConnection": "Edit Connection",
@@ -126,6 +131,8 @@ export const en: Record<keyof typeof zh, string> = {
 
   // --- HMI dashboards (上位机) -------------------------------------------------
   "dash.title": "Dashboards",
+  "dash.moduleDesc": "Drag widgets to build smart-home monitoring panels that bind to MQTT topics in real time.",
+  "dash.panels": "panels",
   "dash.subtitle": "Custom smart-home control panels",
   "dash.newPanel": "New panel",
   "dash.noPanels": "No panels yet — create one to start building",

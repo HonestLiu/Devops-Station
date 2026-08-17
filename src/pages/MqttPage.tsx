@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   LayoutDashboard,
   Loader2,
   MessageSquare,
@@ -11,10 +12,9 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui";
-import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
-import { mqttConnections } from "@/lib/api";
+import { mqttConnections, dash } from "@/lib/api";
 import type { MqttConnection, MqttProtocol } from "@/lib/types";
 import { DashPage } from "./DashPage";
 
@@ -42,38 +42,113 @@ function emptyConn(): MqttConnection {
 
 export function MqttPage() {
   const t = useT();
-  const [mode, setMode] = useState<"client" | "dash">("client");
+  // null = the dashboard-style module picker (replaces the old side sub-nav).
+  const [mode, setMode] = useState<"client" | "dash" | null>(null);
+  const [connCount, setConnCount] = useState<number | null>(null);
+  const [panelCount, setPanelCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    mqttConnections.list().then((l) => alive && setConnCount(l.length)).catch(() => alive && setConnCount(0));
+    dash.list().then((l) => alive && setPanelCount(l.length)).catch(() => alive && setPanelCount(0));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (mode === null) {
+    return <MqttModuleCards connCount={connCount} panelCount={panelCount} onPick={(m) => setMode(m)} />;
+  }
+
   return (
-    <div className="flex h-full">
-      {/* Left sub-nav: switches between the MQTT client and the HMI dashboard.
-          Kept on the side (not a top tab bar) so it never collides with the
-          app's own TabBar — the old top tabs produced a double tab bar. */}
-      <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border/70 bg-surface px-2 py-3">
-        <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle select-none">
-          {t("mqtt.title")}
-        </p>
-        <MqttNavItem active={mode === "client"} onClick={() => setMode("client")} icon={<MessageSquare size={15} />} label={t("mqtt.title")} />
-        <MqttNavItem active={mode === "dash"} onClick={() => setMode("dash")} icon={<LayoutDashboard size={15} />} label={t("dash.title")} />
-      </nav>
+    <div className="flex h-full flex-col">
+      {/* Breadcrumb header (single row, NOT a tab bar — keeps the page from
+          colliding with the app TabBar like the old top tabs did). */}
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+        <button
+          onClick={() => setMode(null)}
+          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-subtle transition-colors hover:bg-hover hover:text-fg"
+          title={t("mqtt.modules")}
+        >
+          <ArrowLeft size={14} />
+          {t("mqtt.modules")}
+        </button>
+        <span className="text-muted">/</span>
+        <span className="text-[13px] font-semibold text-fg">
+          {mode === "client" ? t("mqtt.title") : t("dash.title")}
+        </span>
+      </div>
       <div className="min-h-0 flex-1">{mode === "dash" ? <DashPage /> : <MqttClientView />}</div>
     </div>
   );
 }
 
-function MqttNavItem({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+/**
+ * Dashboard-style module picker: two big cards (MQTT Client / HMI Dashboard)
+ * instead of the old text sub-nav. Clicking a card enters that module.
+ */
+function MqttModuleCards({
+  connCount,
+  panelCount,
+  onPick,
+}: {
+  connCount: number | null;
+  panelCount: number | null;
+  onPick: (m: "client" | "dash") => void;
+}) {
+  const t = useT();
+  const modules: {
+    key: "client" | "dash";
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+    count: number | null;
+    countLabel: string;
+  }[] = [
+    {
+      key: "client",
+      icon: <MessageSquare size={22} />,
+      title: t("mqtt.title"),
+      desc: t("mqtt.moduleDesc"),
+      count: connCount,
+      countLabel: t("mqtt.connections"),
+    },
+    {
+      key: "dash",
+      icon: <LayoutDashboard size={22} />,
+      title: t("dash.title"),
+      desc: t("dash.moduleDesc"),
+      count: panelCount,
+      countLabel: t("dash.panels"),
+    },
+  ];
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
-        active
-          ? "bg-accent/15 font-medium text-accent ring-1 ring-inset ring-accent/25"
-          : "text-muted hover:bg-hover hover:text-fg",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
+    <div className="h-full overflow-y-auto bg-surface">
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <h1 className="text-[18px] font-semibold text-fg">{t("mqtt.chooseModule")}</h1>
+        <p className="mt-1 text-[13px] text-muted">{t("mqtt.chooseModuleDesc")}</p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {modules.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => onPick(m.key)}
+              className="group flex flex-col rounded-xl border border-border/60 bg-bg p-5 text-left transition-all hover:border-accent/50 hover:shadow-md hover:shadow-accent/5"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/15 text-accent transition-colors group-hover:bg-accent/25">
+                {m.icon}
+              </div>
+              <div className="mt-3 text-[15px] font-semibold text-fg">{m.title}</div>
+              <div className="mt-1 text-[12px] leading-relaxed text-muted">{m.desc}</div>
+              <div className="mt-4 flex items-center gap-2">
+                <span className="rounded-full bg-hover px-2.5 py-0.5 text-[11px] text-subtle">
+                  {m.count ?? "·"} {m.countLabel}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
