@@ -179,6 +179,8 @@ export const en: Record<keyof typeof zh, string> = {
   "dash.publish": "Publish config",
   "dash.publishFn": "Publish function",
   "dash.previewPublish": "Preview publish",
+  "dash.noPubTopic": "No publish topic — the action only updates locally, nothing is sent",
+  "dash.noSceneCmds": "Scene button has no commands (configure them in the right sidebar)",
   "dash.delete": "Delete widget",
   "dash.cat.base": "Basic",
   "dash.cat.color": "Color / Light",

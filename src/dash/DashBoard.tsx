@@ -74,6 +74,13 @@ export function DashBoard({
   const [log, setLog] = useState<DashLogEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [histTick, setHistTick] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number>(0);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  };
   const historyRef = useRef<Record<string, Record<string, number>[]>>({});
   const widgetsRef = useRef(widgets);
   widgetsRef.current = widgets;
@@ -217,7 +224,21 @@ export function DashBoard({
 
   // --- actions -----------------------------------------------------------------
   const publishValue = (w: DashWidget, value: unknown) => {
-    if (!sessionId || !w.pubTopic.trim()) return;
+    // Optimistic local update: the widget reflects the user's action instantly,
+    // even before any device echo arrives (and even when no publish topic is
+    // configured yet — otherwise controls feel dead/unclickable in preview).
+    setRuntimes((rt) => {
+      const prev = rt[w.id]?.values ?? {};
+      const next =
+        value && typeof value === "object" && !Array.isArray(value)
+          ? { ...prev, ...(value as Record<string, unknown>) }
+          : { ...prev, value };
+      return { ...rt, [w.id]: { raw: rt[w.id]?.raw ?? "", rawAt: rt[w.id]?.rawAt ?? 0, values: next, parseError: undefined } };
+    });
+    if (!sessionId || !w.pubTopic.trim()) {
+      showToast(t("dash.noPubTopic"));
+      return;
+    }
     const res = runPublish(w.publishFn, value);
     if (!res.ok) {
       setRuntimes((rt) => ({ ...rt, [w.id]: { ...rt[w.id], values: rt[w.id]?.values ?? {}, parseError: `发布函数：${res.error}` } }));
@@ -228,6 +249,10 @@ export function DashBoard({
   };
 
   const publishCommands = (w: DashWidget, cmds: { topic: string; payload: string }[]) => {
+    if (!cmds.length) {
+      showToast(t("dash.noSceneCmds"));
+      return;
+    }
     if (!sessionId) return;
     for (const c of cmds) {
       void mqtt.publish(sessionId, c.topic, utf8ToBase64(c.payload), 0, false, null).catch(() => undefined);
@@ -402,6 +427,9 @@ export function DashBoard({
           {connStatus === "error" ? `${t("dash.connError")}: ${connError}` : t("dash.offline")}
         </div>
       )}
+      {toast && (
+        <div className="border-b border-warning/30 bg-warning/10 px-3 py-1 text-[11px] text-warning">{toast}</div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         {/* widget library (edit mode) */}
@@ -440,10 +468,12 @@ export function DashBoard({
         {/* canvas */}
         <div className="relative min-w-0 flex-1 overflow-auto" onContextMenu={(e) => e.stopPropagation()}>
           <div
-            className="relative mx-auto my-4 min-w-full"
+            className="relative mx-auto min-h-full"
             style={{
               width: "100%",
-              height: maxRow * ROW_H,
+              // At least fill the visible area (min-h-full); taller when the
+              // grid holds more rows than the viewport.
+              height: Math.max(maxRow * ROW_H, 1),
               ...(bg.kind === "color"
                 ? { background: bg.color ?? "#1a1b26" }
                 : { backgroundImage: `url(${bg.image})`, backgroundSize: "cover", backgroundPosition: "center" }),

@@ -188,6 +188,8 @@ export const zh = {
   "dash.publish": "发布配置",
   "dash.publishFn": "发布函数",
   "dash.previewPublish": "预览发布",
+  "dash.noPubTopic": "未设置发布 Topic，操作仅本地生效，不会发送",
+  "dash.noSceneCmds": "场景按钮未配置指令组（在右侧边栏填写）",
   "dash.delete": "删除控件",
   "dash.cat.base": "基础操作",
   "dash.cat.color": "颜色 / 光效",
