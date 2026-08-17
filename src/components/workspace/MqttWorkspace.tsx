@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   ArrowDownToLine,
   Check,
   Copy,
+  Filter,
   Inbox,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plug,
   Plus,
   Send,
@@ -22,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { mqtt } from "@/lib/api";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useContextMenu } from "@/store/useContextMenu";
 import type { MqttMessage, MqttStatus, Tab, TabStatus } from "@/lib/types";
 
 const MAX_MESSAGES = 500;
@@ -196,6 +199,9 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   const [subTopic, setSubTopic] = useState("");
   const [subQos, setSubQos] = useState(0);
   const [subErr, setSubErr] = useState<string | undefined>();
+  // When set, the subscription input edits this existing subscription (topic
+  // may be renamed); null = creating a new subscription.
+  const [editingSub, setEditingSub] = useState<string | null>(null);
   // collapsible subscriptions rail
   const [subsCollapsed, setSubsCollapsed] = useState(false);
 
@@ -253,16 +259,84 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   const subscribe = async () => {
     if (!sessionId || !subTopic.trim()) return;
     setSubErr(undefined);
+    const topic = subTopic.trim();
     try {
-      await mqtt.subscribe(sessionId, subTopic.trim(), subQos, hostId);
-      setSubs((s) =>
-        s.some((x) => x.topic === subTopic.trim()) ? s : [...s, { topic: subTopic.trim(), qos: subQos }],
-      );
+      await mqtt.subscribe(sessionId, topic, subQos, hostId);
+      setSubs((s) => {
+        const exists = s.some((x) => x.topic === topic);
+        if (editingSub) {
+          // Editing mode: drop the old entry, then add/update the new one so a
+          // renamed topic stops receiving under its old name immediately.
+          const withoutOld = s.filter((x) => x.topic !== editingSub);
+          if (exists) {
+            return withoutOld.map((x) => (x.topic === topic ? { ...x, qos: subQos } : x));
+          }
+          return [...withoutOld, { topic, qos: subQos }];
+        }
+        return exists ? s : [...s, { topic, qos: subQos }];
+      });
+      if (editingSub && editingSub !== topic) {
+        await mqtt.unsubscribe(sessionId, editingSub, hostId).catch(() => undefined);
+      }
+      setEditingSub(null);
       setSubTopic("");
       setShowSubInput(false);
     } catch (e) {
       setSubErr((e as Error).message);
     }
+  };
+
+  // Load a subscription into the input for editing (topic may be renamed).
+  const startEditSub = (s: Sub) => {
+    setEditingSub(s.topic);
+    setSubTopic(s.topic);
+    setSubQos(s.qos);
+    setSubErr(undefined);
+    setShowSubInput(true);
+  };
+
+  const cancelEditSub = () => {
+    setEditingSub(null);
+    setSubTopic("");
+    setSubQos(0);
+    setSubErr(undefined);
+    setShowSubInput(false);
+  };
+
+  // Right-click on a subscription → subscription-specific menu instead of the
+  // generic app menu (the app root suppresses the native menu, so events bubble
+  // up to it unless we stop propagation here).
+  const onSubContextMenu = (e: ReactMouseEvent, s: Sub) => {
+    e.preventDefault();
+    e.stopPropagation();
+    useContextMenu.getState().show(e.clientX, e.clientY, [
+      {
+        id: "edit",
+        label: t("mqtt.editSubscription"),
+        icon: <Pencil size={14} />,
+        onClick: () => startEditSub(s),
+      },
+      {
+        id: "filter",
+        label: t("mqtt.filterMessages"),
+        icon: <Filter size={14} />,
+        onClick: () => setFilter((f) => (f === s.topic ? "" : s.topic)),
+      },
+      {
+        id: "copy",
+        label: t("mqtt.copyTopic"),
+        icon: <Copy size={14} />,
+        onClick: () => void navigator.clipboard.writeText(s.topic),
+      },
+      { id: "sep", separator: true, label: "" },
+      {
+        id: "delete",
+        label: t("mqtt.deleteSubscription"),
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => void unsubscribe(s.topic),
+      },
+    ]);
   };
 
   const unsubscribe = async (topic: string) => {
@@ -387,7 +461,11 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                   variant="secondary"
                   size="sm"
                   className="flex-1 justify-start gap-1.5"
-                  onClick={() => setShowSubInput((s) => !s)}
+                  onClick={() => {
+                    setEditingSub(null);
+                    setSubTopic("");
+                    setShowSubInput((s) => !s);
+                  }}
                   disabled={!live}
                 >
                   <Plus size={13} />
@@ -403,6 +481,18 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
                 {showSubInput && (
                   <div className="mb-2 rounded-md border border-border/60 bg-bg p-2">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-subtle">
+                        {editingSub ? t("mqtt.editSubscription") : t("mqtt.newSubscription")}
+                      </span>
+                      <button
+                        className="rounded p-0.5 text-muted hover:text-fg"
+                        onClick={cancelEditSub}
+                        title={t("mqtt.cancel")}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
                     <input
                       className={`${fieldCls} mb-2`}
                       placeholder={t("mqtt.topic")}
@@ -422,7 +512,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                         <option value={2}>QoS 2</option>
                       </select>
                       <Button variant="primary" size="sm" className="ml-auto" onClick={subscribe}>
-                        {t("mqtt.subscribe")}
+                        {editingSub ? t("mqtt.save") : t("mqtt.subscribe")}
                       </Button>
                     </div>
                     {subErr && <div className="mt-1.5 text-[11px] text-danger">{subErr}</div>}
@@ -440,6 +530,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                           filter === s.topic ? "bg-accent/15 text-accent" : "hover:bg-hover"
                         }`}
                         onClick={() => setFilter((f) => (f === s.topic ? "" : s.topic))}
+                        onContextMenu={(e) => onSubContextMenu(e, s)}
                         title={t("mqtt.filter")}
                       >
                         <span className="truncate font-mono">{s.topic}</span>
