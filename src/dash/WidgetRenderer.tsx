@@ -748,7 +748,7 @@ export function WidgetRenderer(ctx: RenderCtx) {
             <span className="text-subtle">模式</span>
             <div className="flex gap-0.5">
               {["auto", "cool", "heat", "fan"].map((m) => (
-                <button key={m} disabled={!running} onClick={() => ctx.onPublish({ ...v, mode: m })} className={cn("rounded px-1.5 py-0.5", str(v.mode) === m ? "bg-accent text-accent-fg" : "bg-hover text-subtle hover:text-fg")}>
+                <button key={m} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, mode: m }))} className={cn("rounded px-1.5 py-0.5", str(v.mode) === m ? "bg-accent text-accent-fg" : "bg-hover text-subtle hover:text-fg")}>
                   {m}
                 </button>
               ))}
@@ -757,9 +757,9 @@ export function WidgetRenderer(ctx: RenderCtx) {
           <div className="flex items-center justify-between gap-1 text-[11px]">
             <span className="text-subtle">温度</span>
             <span className="flex items-center gap-1">
-              <button disabled={!running} onClick={() => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) - 1, 16, 30) })} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">−</button>
+              <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) - 1, 16, 30) }))} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">−</button>
               <span className="w-7 text-center font-mono text-[13px] text-fg">{Math.round(num(v.temp, 26))}°</span>
-              <button disabled={!running} onClick={() => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) + 1, 16, 30) })} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">+</button>
+              <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) + 1, 16, 30) }))} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">+</button>
             </span>
           </div>
           <input type="range" min={0} max={100} value={pct(v.fan)} disabled={!running} onChange={(e) => ctx.onPublish({ ...v, fan: Number(e.target.value) })} className="w-full accent-[rgb(var(--c-info))]" />
@@ -779,9 +779,9 @@ export function WidgetRenderer(ctx: RenderCtx) {
             <span className="absolute self-center font-mono text-[14px] font-semibold text-fg">{Math.round(pos)}%</span>
           </div>
           <div className="flex items-center justify-center gap-1">
-            <button disabled={!running} onClick={() => ctx.onPublish({ position: 0, moving: "close" })} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全关</button>
-            <button disabled={!running} onClick={() => ctx.onPublish({ position: 50, moving: "stop" })} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">停</button>
-            <button disabled={!running} onClick={() => ctx.onPublish({ position: 100, moving: "open" })} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全开</button>
+            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 0, moving: "close" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全关</button>
+            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 50, moving: "stop" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">停</button>
+            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 100, moving: "open" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全开</button>
           </div>
         </Card>
       );

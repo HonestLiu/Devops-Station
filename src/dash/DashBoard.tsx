@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowLeft,
+  Copy,
   Download,
   Eye,
   Image as ImageIcon,
@@ -30,6 +31,7 @@ import { WidgetRenderer, widgetIcon, type DashLogEntry } from "./WidgetRenderer"
 import { MiniEditor } from "./miniEditor";
 import { aiGenerateParse, hasAiConfig } from "./ai";
 import { cn } from "@/lib/utils";
+import { useContextMenu, type MenuItem } from "../store/useContextMenu";
 
 const COLS = 12;
 const ROW_H = 72;
@@ -61,6 +63,9 @@ export function DashBoard({
   onSaved: (p: DashPanel) => void;
 }) {
   const t = useT();
+  // Open the app-wide right-click menu (same store/component as the rest of the
+  // app) so the dashboard never shows the OS-native context menu.
+  const showCtx = useContextMenu((s) => s.show);
   const [json, setJson] = useState<DashPanelJson>(() => parsePanel(panel.json));
   const widgets = json.widgets;
   const [name, setName] = useState(panel.name);
@@ -86,6 +91,10 @@ export function DashBoard({
   widgetsRef.current = widgets;
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; mode: "move" | "resize"; sx: number; sy: number; ow: DashWidget; colW: number } | null>(null);
+  // Set true while a move/resize drag is actually happening, so the trailing
+  // `click` (which the browser fires after pointerup) is ignored and doesn't
+  // deselect the widget. Reset on the next tick so a later genuine click works.
+  const dragMovedRef = useRef(false);
 
   const setWidgets = (updater: (ws: DashWidget[]) => DashWidget[]) =>
     setJson((j) => ({ ...j, widgets: updater(j.widgets) }));
@@ -293,18 +302,69 @@ export function DashBoard({
     setSelectedId((s) => (s === id ? null : s));
   };
 
+  const duplicateWidget = (w: DashWidget) => {
+    const copy: DashWidget = {
+      ...w,
+      id: uid(),
+      x: clamp(w.x + 1, 0, COLS - w.w),
+      title: `${w.title} 副本`,
+    };
+    setWidgets((ws) => [...ws, copy]);
+    setSelectedId(copy.id);
+  };
+
+  // Right-click menu shown on a widget (edit mode). Reuses the app-wide menu so
+  // it looks identical to every other surface.
+  const widgetMenu = (w: DashWidget): MenuItem[] => [
+    {
+      id: "select",
+      label: t("dash.ctx.select"),
+      icon: <Pencil size={14} />,
+      onClick: () => setSelectedId(w.id),
+    },
+    {
+      id: "duplicate",
+      label: t("dash.ctx.duplicate"),
+      icon: <Copy size={14} />,
+      onClick: () => duplicateWidget(w),
+    },
+    { id: "sep", separator: true, label: "" },
+    {
+      id: "delete",
+      label: t("dash.ctx.delete"),
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: () => removeWidget(w.id),
+    },
+  ];
+
+  // Right-click menu shown on empty canvas (edit mode).
+  const canvasMenu = (): MenuItem[] => [
+    {
+      id: "add",
+      label: t("dash.ctx.addWidget"),
+      icon: <Plus size={14} />,
+      onClick: () => setShowLib(true),
+    },
+  ];
+
   const onPointerDown = (e: ReactPointerEvent, w: DashWidget, mode: "move" | "resize") => {
     if (!editMode) return;
-    e.preventDefault();
+    // NOTE: do NOT call preventDefault() here — it would suppress the subsequent
+    // `click` event and break edit-mode widget selection (the wrapper's onClick
+    // relies on the click firing). The card already has `select-none`, so text
+    // selection during drag is prevented by CSS instead.
     e.stopPropagation();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     dragRef.current = { id: w.id, mode, sx: e.clientX, sy: e.clientY, ow: { ...w }, colW: rect.width / COLS };
+    dragMovedRef.current = false;
     const move = (ev: PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
       const dx = (ev.clientX - d.sx) / d.colW;
       const dy = (ev.clientY - d.sy) / ROW_H;
+      if (Math.abs(ev.clientX - d.sx) > 3 || Math.abs(ev.clientY - d.sy) > 3) dragMovedRef.current = true;
       setWidgets((ws) =>
         ws.map((x) => {
           if (x.id !== d.id) return x;
@@ -316,6 +376,9 @@ export function DashBoard({
     };
     const up = () => {
       dragRef.current = null;
+      // Reset after the trailing click is dispatched so a later empty click can
+      // still deselect.
+      window.setTimeout(() => { dragMovedRef.current = false; }, 0);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -466,7 +529,18 @@ export function DashBoard({
         )}
 
         {/* canvas */}
-        <div className="relative min-w-0 flex-1 overflow-auto" onContextMenu={(e) => e.stopPropagation()}>
+        <div
+          className="relative min-w-0 flex-1 overflow-auto"
+          onContextMenu={(e) => {
+            // Edit mode: suppress the native menu and show the app menu.
+            // Preview mode: let it bubble to the app root (global nav menu).
+            if (!editMode) return;
+            e.preventDefault();
+            e.stopPropagation();
+            showCtx(e.clientX, e.clientY, canvasMenu());
+          }}
+          onClick={editMode ? () => { if (dragMovedRef.current) return; setSelectedId(null); } : undefined}
+        >
           <div
             className="relative mx-auto min-h-full"
             style={{
@@ -521,9 +595,11 @@ export function DashBoard({
                 return (
                   <div
                     key={w.id}
-                    className={cn("absolute", editMode && "cursor-grab")}
+                    className={cn("absolute select-none", editMode && "cursor-grab")}
                     style={{ left: `${leftPct}%`, top: w.y * ROW_H, width: `${widthPct}%`, height: w.h * ROW_H }}
                     onPointerDown={editMode ? (e) => onPointerDown(e, w, "move") : undefined}
+                    onClick={editMode ? (e) => { e.stopPropagation(); setSelectedId(w.id); } : undefined}
+                    onContextMenu={editMode ? (e) => { e.preventDefault(); e.stopPropagation(); setSelectedId(w.id); showCtx(e.clientX, e.clientY, widgetMenu(w)); } : undefined}
                   >
                     <WidgetRenderer
                       widget={w}
@@ -556,6 +632,7 @@ export function DashBoard({
                             e.stopPropagation();
                             onPointerDown(e, w, "resize");
                           }}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </>
                     )}

@@ -230,6 +230,10 @@ export const en: Record<keyof typeof zh, string> = {
   "dash.w.alarmLight": "Alarm light",
   "dash.w.alarmPopup": "Alarm notify",
   "dash.w.unknown": "Unknown widget",
+  "dash.ctx.select": "Select",
+  "dash.ctx.duplicate": "Duplicate widget",
+  "dash.ctx.delete": "Delete widget",
+  "dash.ctx.addWidget": "Add widget",
 
   // --- tab bar --------------------------------------------------------------
   "tabs.duplicate": "Duplicate Tab",

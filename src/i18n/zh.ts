@@ -239,6 +239,10 @@ export const zh = {
   "dash.w.alarmLight": "阈值告警灯",
   "dash.w.alarmPopup": "告警通知",
   "dash.w.unknown": "未知控件",
+  "dash.ctx.select": "选中",
+  "dash.ctx.duplicate": "复制控件",
+  "dash.ctx.delete": "删除控件",
+  "dash.ctx.addWidget": "添加控件",
 
   // --- tab bar --------------------------------------------------------------
   "tabs.duplicate": "复制标签页",
