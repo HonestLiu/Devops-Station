@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::types::{
-    ForwardType, Host, HostKind, KnownHostEntry, MqttConnection, MqttPublishPref, MqttStoredSub,
-    PortForwardRule, QuickCommand,
+    DashPanel, ForwardType, Host, HostKind, KnownHostEntry, MqttConnection, MqttPublishPref,
+    MqttStoredSub, PortForwardRule, QuickCommand,
 };
 use crypto::Vault;
 
@@ -126,6 +126,15 @@ const MIGRATIONS: &[&str] = &[
         last_seen   INTEGER NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS idx_port_forwards_host ON port_forwards(host_id)",
+    "CREATE TABLE IF NOT EXISTS dash_panels (
+        id               TEXT PRIMARY KEY,
+        name             TEXT NOT NULL,
+        connection_id    TEXT NOT NULL DEFAULT '',
+        connection_name  TEXT NOT NULL DEFAULT '',
+        json             TEXT NOT NULL DEFAULT '{}',
+        sort_order       INTEGER NOT NULL DEFAULT 0,
+        updated_at       INTEGER NOT NULL DEFAULT 0
+    )",
 ];
 
 /// Apply [`MIGRATIONS`], ignoring the ones already present.
@@ -1238,5 +1247,59 @@ impl Store {
         let doc: serde_json::Value = serde_json::from_str(&text)
             .map_err(|e| AppError::Storage(format!("数据文件不是合法 JSON: {e}")))?;
         self.import_profile_value(doc, mode)
+    }
+
+    // --- HMI dashboards ("上位机") -------------------------------------------
+
+    pub fn list_dash_panels(&self) -> AppResult<Vec<DashPanel>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, connection_id, connection_name, json, sort_order, updated_at
+             FROM dash_panels ORDER BY sort_order ASC, name ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DashPanel {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                connection_id: row.get(2)?,
+                connection_name: row.get(3)?,
+                json: row.get(4)?,
+                sort_order: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn save_dash_panel(&self, mut panel: DashPanel) -> AppResult<DashPanel> {
+        if panel.id.is_empty() {
+            panel.id = Uuid::new_v4().to_string();
+        }
+        panel.updated_at = chrono::Utc::now().timestamp();
+        self.conn.lock().execute(
+            "INSERT INTO dash_panels (id, name, connection_id, connection_name, json, sort_order, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, connection_id=excluded.connection_id,
+                connection_name=excluded.connection_name, json=excluded.json,
+                sort_order=excluded.sort_order, updated_at=excluded.updated_at",
+            params![
+                panel.id,
+                panel.name,
+                panel.connection_id,
+                panel.connection_name,
+                panel.json,
+                panel.sort_order,
+                panel.updated_at
+            ],
+        )?;
+        Ok(panel)
+    }
+
+    pub fn delete_dash_panel(&self, id: &str) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM dash_panels WHERE id = ?1", params![id])?;
+        Ok(())
     }
 }

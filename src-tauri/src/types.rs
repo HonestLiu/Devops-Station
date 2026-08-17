@@ -612,3 +612,20 @@ pub struct MqttStatus {
     pub status: String,
     pub detail: Option<String>,
 }
+
+/// A user-built smart-home / HMI dashboard panel ("上位机"). The full layout
+/// (widgets, grid, background) is stored as an opaque JSON blob in `json` so
+/// the frontend owns the schema and can evolve it without a DB migration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashPanel {
+    pub id: String,
+    pub name: String,
+    pub connection_id: String,
+    /// Denormalised display name of the MQTT connection (sync on save).
+    pub connection_name: String,
+    /// JSON: { cols, widgets: [...], background: {...} }
+    pub json: String,
+    pub sort_order: i64,
+    pub updated_at: i64,
+}

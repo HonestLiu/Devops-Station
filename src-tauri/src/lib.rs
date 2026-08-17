@@ -975,6 +975,21 @@ async fn mqtt_delete_connection(state: State<'_, AppState>, id: String) -> AppRe
     state.store.delete_mqtt_connection(&id)
 }
 
+#[tauri::command]
+async fn dash_panels_list(state: State<'_, AppState>) -> AppResult<Vec<DashPanel>> {
+    state.store.list_dash_panels()
+}
+
+#[tauri::command]
+async fn dash_panel_save(state: State<'_, AppState>, panel: DashPanel) -> AppResult<DashPanel> {
+    state.store.save_dash_panel(panel)
+}
+
+#[tauri::command]
+async fn dash_panel_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.store.delete_dash_panel(&id)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1108,6 +1123,9 @@ pub fn run() {
             mqtt_list_connections,
             mqtt_save_connection,
             mqtt_delete_connection,
+            dash_panels_list,
+            dash_panel_save,
+            dash_panel_delete,
             remote_metrics,
             local_metrics,
             serial_list_ports,

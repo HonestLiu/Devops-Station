@@ -761,3 +761,60 @@ export interface ProfileImportInfo {
   fonts: number;
   mode: string;
 }
+
+// --- HMI dashboards ("上位机") -------------------------------------------------
+
+/** Persisted dashboard panel record (backend row). */
+export interface DashPanel {
+  id: string;
+  name: string;
+  connectionId: string;
+  connectionName: string;
+  /** JSON-serialised DashPanelJson. */
+  json: string;
+  sortOrder: number;
+  updatedAt: number;
+}
+
+/** Widget instance placed on a panel grid. */
+export interface DashWidget {
+  id: string;
+  /** Registry widget type, e.g. "toggle". */
+  type: string;
+  /** Grid position (x/y in columns, w/h in columns x rows). */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title: string;
+  /** Subscribe (input) topics — raw MQTT payloads are fed to parseFn. */
+  topics: string[];
+  /** Publish (output) topic used by publishFn. */
+  pubTopic: string;
+  /** User-editable JS function body: (payload, topic) => { ... return vars }. */
+  parseFn: string;
+  /** User-editable JS function body: (value) => payload-string/JSON. */
+  publishFn: string;
+  /** Per-type extras (knob min/max, chart series, thresholds, …). */
+  config: Record<string, unknown>;
+}
+
+export interface DashBackground {
+  kind: "color" | "image";
+  color?: string;
+  image?: string;
+}
+
+export interface DashPanelJson {
+  cols: number;
+  widgets: DashWidget[];
+  background: DashBackground;
+}
+
+/** Latest raw payload + parsed values for a widget (runtime only, not persisted). */
+export interface DashWidgetRuntime {
+  raw: string;
+  rawAt: number;
+  values: Record<string, unknown>;
+  parseError?: string;
+}

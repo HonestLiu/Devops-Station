@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  LayoutDashboard,
   Loader2,
   MessageSquare,
   Pencil,
@@ -14,6 +15,7 @@ import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections } from "@/lib/api";
 import type { MqttConnection, MqttProtocol } from "@/lib/types";
+import { DashPage } from "./DashPage";
 
 const PROTOCOLS: MqttProtocol[] = ["mqtt", "mqtts", "ws", "wss"];
 
@@ -38,6 +40,34 @@ function emptyConn(): MqttConnection {
 }
 
 export function MqttPage() {
+  const t = useT();
+  const [mode, setMode] = useState<"client" | "dash">("client");
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/70 px-3">
+        <ModeTab active={mode === "client"} onClick={() => setMode("client")} icon={<MessageSquare size={13} />} label={t("mqtt.title")} />
+        <ModeTab active={mode === "dash"} onClick={() => setMode("dash")} icon={<LayoutDashboard size={13} />} label={t("dash.title")} />
+      </div>
+      <div className="min-h-0 flex-1">{mode === "dash" ? <DashPage /> : <MqttClientView />}</div>
+    </div>
+  );
+}
+
+function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
+        active ? "bg-accent/15 text-accent" : "text-subtle hover:bg-hover hover:text-fg"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function MqttClientView() {
   const t = useT();
   const openMqtt = useTabsStore((s) => s.openMqtt);
   const [conns, setConns] = useState<MqttConnection[]>([]);

@@ -37,6 +37,7 @@ import type {
   MqttConnectConfig,
   MqttMessage,
   MqttStatus,
+  DashPanel,
 } from "./types";
 
 /**
@@ -379,6 +380,12 @@ export const db = {
 };
 
 // --- Fonts -------------------------------------------------------------------
+
+export const dash = {
+  list: () => call<DashPanel[]>("dash_panels_list"),
+  save: (panel: DashPanel) => call<DashPanel>("dash_panel_save", { panel }),
+  delete: (id: string) => call<void>("dash_panel_delete", { id }),
+};
 
 export const fonts = {
   /** All system-installed font families (used to build a searchable checklist). */
