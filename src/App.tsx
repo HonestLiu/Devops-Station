@@ -2,11 +2,14 @@ import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Cable,
+  ClipboardPaste,
   Copy,
   FolderOpen,
+  ListChecks,
   MessageSquare,
   Microchip,
   MonitorSmartphone,
+  Scissors,
   Server,
   Settings as SettingsIcon,
   X,
@@ -101,16 +104,75 @@ export default function App() {
   const closeCtx = useContextMenu((s) => s.close);
 
   // Fully take over the right mouse button: suppress the native menu everywhere
-  // (except text fields, which keep cut/copy/paste) and show our own menu.
+  // and show our own menu. Text fields get an app-style cut/copy/paste/select-all
+  // menu instead of the WebView2 native one.
   const onRootContextMenu = (e: ReactMouseEvent) => {
     const target = e.target as HTMLElement | null;
-    if (
-      target &&
-      target.closest('input, textarea, [contenteditable="true"], [contenteditable=""]')
-    ) {
+    e.preventDefault();
+
+    // Text fields & contenteditable: app-style editing menu. We must NOT let
+    // the event reach the WebView2 default handler — that would pop the native
+    // OS menu (inconsistent styling) instead of ours.
+    const inputEl = target?.closest<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+    const richEl = target?.closest<HTMLElement>('[contenteditable="true"], [contenteditable=""]');
+    if (inputEl || richEl) {
+      const rich = !!richEl;
+      const el = rich ? richEl! : inputEl!;
+      const selectedText = rich
+        ? window.getSelection()?.toString() ?? ""
+        : String(inputEl!.value).slice(inputEl!.selectionStart ?? 0, inputEl!.selectionEnd ?? 0);
+      const hasSelection = rich
+        ? !!selectedText
+        : (inputEl!.selectionStart ?? 0) !== (inputEl!.selectionEnd ?? 0);
+      const hasText = rich ? !!(el.textContent ?? "").length : String(inputEl!.value).length > 0;
+      // The menu button steals focus when clicked; execCommand("cut"/"paste")
+      // acts on the focused field, so restore focus before running it.
+      const focusField = () => el.focus();
+      showCtx(e.clientX, e.clientY, [
+        {
+          id: "cut",
+          label: t("common.cut"),
+          icon: <Scissors size={14} />,
+          disabled: !hasSelection,
+          onClick: () => {
+            focusField();
+            document.execCommand("cut");
+          },
+        },
+        {
+          id: "copy",
+          label: t("common.copy"),
+          icon: <Copy size={14} />,
+          disabled: !hasSelection,
+          onClick: () => {
+            void navigator.clipboard.writeText(selectedText);
+          },
+        },
+        {
+          id: "paste",
+          label: t("common.paste"),
+          icon: <ClipboardPaste size={14} />,
+          onClick: () => {
+            focusField();
+            document.execCommand("paste");
+          },
+        },
+        { id: "sep", separator: true, label: "" },
+        {
+          id: "selectAll",
+          label: t("common.selectAll"),
+          icon: <ListChecks size={14} />,
+          disabled: !hasText,
+          onClick: () => {
+            el.focus();
+            if (rich) document.execCommand("selectAll");
+            else inputEl!.select();
+          },
+        },
+      ]);
       return;
     }
-    e.preventDefault();
+
     // Right-click over a text selection gets a Copy item first — the native
     // menu is suppressed app-wide, so without this there'd be no way to copy
     // selected text outside of inputs (e.g. the AI chat history).
