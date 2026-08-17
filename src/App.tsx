@@ -340,7 +340,10 @@ export default function App() {
     if (!settingsLoaded) return;
     void permHook.setScanFallback(approval.scanFallback).catch(() => undefined);
     if (approval.enabled) {
-      void permHook.start(approval.port).catch(() => undefined);
+      const managed = (Object.keys(approval.tools) as (keyof typeof approval.tools)[])
+        .filter((k) => approval.tools[k])
+        .map((k) => String(k));
+      void permHook.start(approval.port, managed).catch(() => undefined);
     } else {
       void permHook.stop().catch(() => undefined);
     }

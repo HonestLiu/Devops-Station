@@ -493,11 +493,15 @@ export function Settings() {
     setHookMsg(null);
     try {
       const st = hookStatus[tool.id];
-      setHookMsg(
-        st?.installed
-          ? await permHook.uninstall(tool.id)
-          : await permHook.install(tool.id, settings.approval.port),
-      );
+      if (st?.installed) {
+        setHookMsg(await permHook.uninstall(tool.id));
+        // Remember the user's intent so the next launch won't self-heal it back.
+        setApprovalTool(tool.id, false);
+      } else {
+        setHookMsg(await permHook.install(tool.id, settings.approval.port));
+        // Mark as managed → startup keeps re-asserting it (survives restart).
+        setApprovalTool(tool.id, true);
+      }
       await refreshHooks();
     } catch (e) {
       setHookMsg(String(e));
@@ -514,6 +518,7 @@ export function Settings() {
         HOOK_TOOLS.map(async (tool) => {
           try {
             if (hookStatus[tool.id]?.installed) {
+              setApprovalTool(tool.id, false);
               return await permHook.uninstall(tool.id);
             }
             return `${tool.label}：${t("settings.hookNotInstalled")}`;

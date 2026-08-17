@@ -220,7 +220,14 @@ fn server_lock() -> &'static Mutex<Option<HookServerState>> {
 /// hook scripts** with the actual port, so the hooks keep working without the
 /// user having to reinstall anything.
 #[tauri::command]
-pub async fn perm_hook_start(app: AppHandle, port: u16) -> Result<(), String> {
+pub async fn perm_hook_start(
+    app: AppHandle,
+    port: u16,
+    // Tools the user wants managed (Claude Code / Codex / OpenCode). When
+    // `None` we keep the old behaviour of re-syncing everything, so callers
+    // that do not pass the list still get a working self-heal.
+    tools: Option<Vec<String>>,
+) -> Result<(), String> {
     debug_log(&format!("perm_hook_start called with port={port}"));
     if port == 0 {
         return Err("端口不能为 0".to_string());
@@ -261,8 +268,35 @@ pub async fn perm_hook_start(app: AppHandle, port: u16) -> Result<(), String> {
     // best-effort (a running Claude Code may transiently lock the script file;
     // the next app start will retry).
     let _ = write_hook_script(actual);
-    let _ = sync_opencode_plugin(actual);
-    debug_log(&format!("hook scripts synced to port {actual}"));
+
+    // Self-heal the per-tool registry entries. If the tool rewrote its own
+    // config on a later launch (Claude Code normalizes ~/.claude/settings.json,
+    // which can drop a hand-added hook) or the entry was otherwise lost, we
+    // re-assert it here on every app start — using the ACTUAL port — so the
+    // Settings page never flips back to "未安装" after a restart. Idempotent:
+    // each install_* skips when our marker is already present, and only touches
+    // the tools the user explicitly manages (driven by approval.tools).
+    let managed: Vec<String> = tools.clone().unwrap_or_else(|| {
+        vec!["claude".into(), "codex".into(), "opencode".into()]
+    });
+    for t in &managed {
+        match t.as_str() {
+            "claude" => {
+                let _ = install_claude(actual);
+            }
+            "codex" => {
+                let _ = install_codex(actual);
+            }
+            "opencode" => {
+                let _ = sync_opencode_plugin(actual);
+            }
+            _ => {}
+        }
+    }
+    debug_log(&format!(
+        "hook scripts synced to port {actual}; managed tools: {}",
+        managed.join(",")
+    ));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown2 = shutdown.clone();

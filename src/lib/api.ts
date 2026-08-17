@@ -517,8 +517,11 @@ export interface HookStatus {
  * `127.0.0.1:{port}/approval`; no more terminal-output regex scanning.
  */
 export const permHook = {
-  /** Start the local listener (idempotent for the same port). */
-  start: (port: number) => call<void>("perm_hook_start", { port }),
+  /** Start the local listener (idempotent for the same port). `tools` is the
+   *  set of managed tool ids whose hooks are re-asserted on every launch so an
+   *  install survives a restart. */
+  start: (port: number, tools?: string[]) =>
+    call<void>("perm_hook_start", { port, tools: tools ?? null }),
   /** Stop the local listener. */
   stop: () => call<void>("perm_hook_stop"),
   /** Install the notify hook for a tool (`claude` | `codex` | `opencode`). */

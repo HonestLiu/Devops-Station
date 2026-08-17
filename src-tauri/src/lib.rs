@@ -1138,15 +1138,33 @@ pub fn run() {
                         .get("port")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(47890) as u16;
+                    // Build the set of tools the user wants managed from the
+                    // persisted approval.tools flags; self-heal re-asserts their
+                    // hooks (with the actual port) on every launch so an install
+                    // survives a restart.
+                    let managed: Vec<String> = approval
+                        .get("tools")
+                        .and_then(|t| t.as_object())
+                        .map(|o| {
+                            o.iter()
+                                .filter(|(_, v)| v.as_bool() == Some(true))
+                                .map(|(k, _)| k.clone())
+                                .collect()
+                        })
+                        // `.tools` missing (e.g. a fresh DB before the first
+                        // settings save) → manage all three, matching
+                        // DEFAULT_SETTINGS.approval.tools, so the hook self-heal
+                        // still runs on the very first launch.
+                        .unwrap_or_else(|| vec!["claude".into(), "codex".into(), "opencode".into()]);
                     crate::perm_hook::debug_log(&format!(
-                        "setup: approval={approval} enabled={enabled} port={port}"
+                        "setup: approval={approval} enabled={enabled} port={port} managed={managed:?}"
                     ));
                     if enabled && port > 0 {
                         let handle = app.handle().clone();
                         // block_on (not spawn): guarantees the listener starts
                         // before setup returns, immune to task-scheduling quirks.
                         let r = tauri::async_runtime::block_on(
-                            crate::perm_hook::perm_hook_start(handle, port),
+                            crate::perm_hook::perm_hook_start(handle, port, Some(managed)),
                         );
                         crate::perm_hook::debug_log(&format!(
                             "setup: listener start result {r:?}"
