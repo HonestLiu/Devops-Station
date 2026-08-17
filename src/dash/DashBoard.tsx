@@ -25,7 +25,7 @@ import { Button, SideIconButton } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqtt, mqttConnections } from "@/lib/api";
 import type { DashPanel, DashPanelJson, DashWidget, MqttMessage } from "@/lib/types";
-import { CATEGORY_KEYS, WIDGETS, widgetMeta } from "./registry";
+import { CATEGORY_KEYS, WIDGETS, widgetMeta, type WidgetMeta } from "./registry";
 import { runParse, runPublish, base64ToUtf8, utf8ToBase64, topicCovered } from "./exec";
 import { WidgetRenderer, widgetIcon, type DashLogEntry } from "./WidgetRenderer";
 import { MiniEditor } from "./miniEditor";
@@ -52,6 +52,37 @@ function parsePanel(s: string): DashPanelJson {
 }
 
 const clamp = (n: number, a: number, b: number) => Math.min(b, Math.max(a, n));
+
+/**
+ * Build a representative `value` to feed the widget's publish function so the
+ * settings panel can show the real MQTT payload (and copy it for MQTTX).
+ * Returns `undefined` for widgets that don't publish from a value (e.g. button,
+ * sceneButton) — the panel then shows the human hint instead.
+ */
+function sampleValueForWidget(w: DashWidget, meta: WidgetMeta): unknown {
+  if (w.type === "rgbInput") return { r: 255, g: 136, b: 0 };
+  if (meta.vars.length === 0) return undefined;
+  const rangeMid = () => {
+    const min = Number(meta.config?.find((c) => c.key === "min")?.def ?? 0);
+    const max = Number(meta.config?.find((c) => c.key === "max")?.def ?? 100);
+    return Math.round((min + max) / 2);
+  };
+  if (meta.vars.length === 1) {
+    const v = meta.vars[0];
+    if (v.type === "boolean") return true;
+    if (v.type === "number") return rangeMid();
+    if (v.key === "color") return "#FF8800";
+    return "test";
+  }
+  const obj: Record<string, unknown> = {};
+  for (const v of meta.vars) {
+    if (v.type === "boolean") obj[v.key] = true;
+    else if (v.type === "number") obj[v.key] = rangeMid();
+    else if (v.key === "color") obj[v.key] = "#FF8800";
+    else obj[v.key] = "test";
+  }
+  return obj;
+}
 
 export function DashBoard({
   panel,
@@ -663,6 +694,7 @@ export function DashBoard({
             update={(patch) => updateWidget(selected.id, patch)}
             onDelete={() => removeWidget(selected.id)}
             onClose={() => setSelectedId(null)}
+            showToast={showToast}
           />
         )}
       </div>
@@ -680,12 +712,14 @@ function WidgetSettings({
   update,
   onDelete,
   onClose,
+  showToast,
 }: {
   widget: DashWidget;
   rt?: { raw: string; rawAt: number; values: Record<string, unknown>; parseError?: string };
   update: (patch: Partial<DashWidget>) => void;
   onDelete: () => void;
   onClose: () => void;
+  showToast: (msg: string) => void;
 }) {
   const t = useT();
   const meta = widgetMeta(widget.type);
@@ -694,6 +728,24 @@ function WidgetSettings({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiTweak, setAiTweak] = useState("");
   const raw = rt?.raw ?? "";
+  const [outSample, setOutSample] = useState<string | null>(null);
+  const copyText = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => showToast(t("dash.copied")),
+      () => showToast(t("dash.copyFailed")),
+    );
+  };
+  const genOutSample = async () => {
+    if (!meta) return;
+    const sampleVal = sampleValueForWidget(widget, meta);
+    if (sampleVal === undefined) return;
+    const r = await runPublish(widget.publishFn, sampleVal);
+    if (r.ok) setOutSample(r.out);
+    else {
+      setOutSample(null);
+      showToast(`错误: ${r.error}`);
+    }
+  };
 
   const runTest = async (rawInput: string) => {
     const res = await runParse(widget.parseFn, rawInput, widget.topics[0] ?? "");
@@ -767,6 +819,48 @@ function WidgetSettings({
             </Field>
           </div>
         </Section>
+
+        {/* Payload 示例（MQTTX 测试） */}
+        {(meta && (meta.template.trim() !== "{}" || meta.publish)) && (
+          <Section title={t("dash.payloadExample")}>
+            {meta.template.trim() !== "{}" && (
+              <div className="rounded-md border border-border/60 bg-bg/60 p-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">{t("dash.payloadIn")}</span>
+                  <button className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-fg hover:bg-border" onClick={() => copyText(meta.template)}>
+                    {t("dash.copy")}
+                  </button>
+                </div>
+                <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-fg/80">{meta.template}</pre>
+                <p className="mt-1 text-[10px] leading-snug text-subtle">{t("dash.payloadInHint", { topic: widget.topics[0] || "…" })}</p>
+              </div>
+            )}
+            {meta.publish && (
+              <div className="rounded-md border border-border/60 bg-bg/60 p-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">{t("dash.payloadOut")}</span>
+                  {sampleValueForWidget(widget, meta) !== undefined && (
+                    <button className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-fg hover:bg-border" onClick={genOutSample}>
+                      {t("dash.genSample")}
+                    </button>
+                  )}
+                </div>
+                {sampleValueForWidget(widget, meta) === undefined ? (
+                  <p className="text-[10px] leading-snug text-subtle">{meta.publishSample}</p>
+                ) : outSample ? (
+                  <div className="flex items-start gap-1">
+                    <pre className="min-w-0 flex-1 max-h-24 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-info">{outSample}</pre>
+                    <button className="shrink-0 rounded bg-hover p-1 text-fg hover:bg-border" onClick={() => copyText(outSample)} title={t("dash.copy")}>
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[10px] leading-snug text-subtle">{t("dash.payloadOutHint", { topic: widget.pubTopic || "…" })}</p>
+                )}
+              </div>
+            )}
+          </Section>
+        )}
 
         {meta && meta.vars.length > 0 && (
           <Section title={t("dash.data")}>
