@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections } from "@/lib/api";
@@ -43,23 +44,32 @@ export function MqttPage() {
   const t = useT();
   const [mode, setMode] = useState<"client" | "dash">("client");
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/70 px-3">
-        <ModeTab active={mode === "client"} onClick={() => setMode("client")} icon={<MessageSquare size={13} />} label={t("mqtt.title")} />
-        <ModeTab active={mode === "dash"} onClick={() => setMode("dash")} icon={<LayoutDashboard size={13} />} label={t("dash.title")} />
-      </div>
+    <div className="flex h-full">
+      {/* Left sub-nav: switches between the MQTT client and the HMI dashboard.
+          Kept on the side (not a top tab bar) so it never collides with the
+          app's own TabBar — the old top tabs produced a double tab bar. */}
+      <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border/70 bg-surface px-2 py-3">
+        <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-subtle select-none">
+          {t("mqtt.title")}
+        </p>
+        <MqttNavItem active={mode === "client"} onClick={() => setMode("client")} icon={<MessageSquare size={15} />} label={t("mqtt.title")} />
+        <MqttNavItem active={mode === "dash"} onClick={() => setMode("dash")} icon={<LayoutDashboard size={15} />} label={t("dash.title")} />
+      </nav>
       <div className="min-h-0 flex-1">{mode === "dash" ? <DashPage /> : <MqttClientView />}</div>
     </div>
   );
 }
 
-function ModeTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function MqttNavItem({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
-        active ? "bg-accent/15 text-accent" : "text-subtle hover:bg-hover hover:text-fg"
-      }`}
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+        active
+          ? "bg-accent/15 font-medium text-accent ring-1 ring-inset ring-accent/25"
+          : "text-muted hover:bg-hover hover:text-fg",
+      )}
     >
       {icon}
       {label}

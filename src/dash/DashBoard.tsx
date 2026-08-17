@@ -729,11 +729,13 @@ function WidgetSettings({
   const [aiTweak, setAiTweak] = useState("");
   const raw = rt?.raw ?? "";
   const [outSample, setOutSample] = useState<string | null>(null);
-  const copyText = (text: string) => {
-    void navigator.clipboard?.writeText(text).then(
-      () => showToast(t("dash.copied")),
-      () => showToast(t("dash.copyFailed")),
-    );
+  // Copy is silent — no toast banner. We just flip the clicked button's label
+  // to "已复制" for a moment so the user gets confirmation without the popup.
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyText = (text: string, key: string) => {
+    void navigator.clipboard?.writeText(text);
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((c) => (c === key ? null : c)), 1200);
   };
   const genOutSample = async () => {
     if (!meta) return;
@@ -827,8 +829,8 @@ function WidgetSettings({
               <div className="rounded-md border border-border/60 bg-bg/60 p-2">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">{t("dash.payloadIn")}</span>
-                  <button className="rounded bg-hover px-1.5 py-0.5 text-[10px] text-fg hover:bg-border" onClick={() => copyText(meta.template)}>
-                    {t("dash.copy")}
+                  <button className={cn("rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-medium transition-colors", copiedKey === "in" ? "bg-accent/15 text-accent" : "bg-bg/40 text-subtle hover:border-border hover:bg-hover hover:text-fg")} onClick={() => copyText(meta.template, "in")}>
+                    {copiedKey === "in" ? t("dash.copied") : t("dash.copy")}
                   </button>
                 </div>
                 <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-fg/80">{meta.template}</pre>
@@ -850,8 +852,8 @@ function WidgetSettings({
                 ) : outSample ? (
                   <div className="flex items-start gap-1">
                     <pre className="min-w-0 flex-1 max-h-24 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-info">{outSample}</pre>
-                    <button className="shrink-0 rounded bg-hover p-1 text-fg hover:bg-border" onClick={() => copyText(outSample)} title={t("dash.copy")}>
-                      <Copy size={12} />
+                    <button className={cn("shrink-0 rounded border border-border/70 p-1 transition-colors", copiedKey === "out" ? "bg-accent/15 text-accent" : "bg-bg/40 text-subtle hover:border-border hover:bg-hover hover:text-fg")} onClick={() => copyText(outSample, "out")} title={t("dash.copy")}>
+                      {copiedKey === "out" ? <span className="px-0.5 text-[10px] font-medium">{t("dash.copied")}</span> : <Copy size={12} />}
                     </button>
                   </div>
                 ) : (

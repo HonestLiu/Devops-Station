@@ -105,6 +105,39 @@ function Card({
   );
 }
 
+/**
+ * Unified control button used inside widget cards (mode toggles, scene
+ * triggers, media transport, curtain controls, …). One consistent border,
+ * padding, hover and selected state so the whole dashboard reads as a single
+ * family instead of a pile of mismatched `bg-hover` pills.
+ */
+function CtrlBtn({
+  active,
+  className,
+  children,
+  ...rest
+}: {
+  active?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...rest}
+      className={cn(
+        "inline-flex select-none items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+        "disabled:cursor-not-allowed disabled:opacity-40",
+        active
+          ? "border-accent/50 bg-accent/15 text-accent"
+          : "border-border/70 bg-bg/40 text-subtle hover:border-border hover:bg-hover hover:text-fg",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** Big monospace value. */
 function BigValue({ value, unit, big }: { value: string; unit?: string; big?: boolean }) {
   return (
@@ -342,11 +375,15 @@ export function WidgetRenderer(ctx: RenderCtx) {
       const offP = str(cfg.offPayload, "OFF");
       const on = bool(v.pressed);
       return (
-        <Card ctx={ctx} onClick={click(ctx, () => ctx.onPublish(mode === "latching" ? (on ? offP : onP) : onP))} className="items-center justify-center gap-1">
+        <Card ctx={ctx} className="items-center justify-center gap-1">
           {title}
-          <div className={cn("flex flex-1 items-center justify-center rounded-md text-[13px] font-medium", on ? "bg-accent text-accent-fg" : "bg-hover text-fg", mode === "latching" && "border border-border")}>
+          <CtrlBtn
+            active={on}
+            className="flex-1 text-[13px]"
+            onClick={() => click(ctx, () => ctx.onPublish(mode === "latching" ? (on ? offP : onP) : onP))()}
+          >
             {mode === "latching" ? (on ? "ON" : "OFF") : "按住"}
-          </div>
+          </CtrlBtn>
         </Card>
       );
     }
@@ -549,11 +586,11 @@ export function WidgetRenderer(ctx: RenderCtx) {
         <Card ctx={ctx} className="items-center justify-center gap-1">
           {title}
           <div className="flex flex-1 items-center justify-center gap-2">
-            <button className="rounded-md p-1.5 text-fg hover:bg-hover" onClick={click(ctx, () => ctx.onPublish("prev"))}><SkipBack size={16} /></button>
-            <button className="rounded-md bg-accent p-2 text-accent-fg hover:opacity-90" onClick={click(ctx, () => ctx.onPublish("toggle"))}>
+            <CtrlBtn disabled={!running} className="p-1.5" onClick={click(ctx, () => ctx.onPublish("prev"))}><SkipBack size={16} /></CtrlBtn>
+            <CtrlBtn disabled={!running} className="border-accent/50 bg-accent p-2 text-accent-fg hover:opacity-90" onClick={click(ctx, () => ctx.onPublish("toggle"))}>
               {playing ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-            <button className="rounded-md p-1.5 text-fg hover:bg-hover" onClick={click(ctx, () => ctx.onPublish("next"))}><SkipForward size={16} /></button>
+            </CtrlBtn>
+            <CtrlBtn disabled={!running} className="p-1.5" onClick={click(ctx, () => ctx.onPublish("next"))}><SkipForward size={16} /></CtrlBtn>
           </div>
         </Card>
       );
@@ -748,18 +785,18 @@ export function WidgetRenderer(ctx: RenderCtx) {
             <span className="text-subtle">模式</span>
             <div className="flex gap-0.5">
               {["auto", "cool", "heat", "fan"].map((m) => (
-                <button key={m} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, mode: m }))} className={cn("rounded px-1.5 py-0.5", str(v.mode) === m ? "bg-accent text-accent-fg" : "bg-hover text-subtle hover:text-fg")}>
+                <CtrlBtn key={m} active={str(v.mode) === m} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, mode: m }))}>
                   {m}
-                </button>
+                </CtrlBtn>
               ))}
             </div>
           </div>
           <div className="flex items-center justify-between gap-1 text-[11px]">
             <span className="text-subtle">温度</span>
             <span className="flex items-center gap-1">
-              <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) - 1, 16, 30) }))} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">−</button>
+              <CtrlBtn disabled={!running} className="h-5 px-1.5" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) - 1, 16, 30) }))}>−</CtrlBtn>
               <span className="w-7 text-center font-mono text-[13px] text-fg">{Math.round(num(v.temp, 26))}°</span>
-              <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) + 1, 16, 30) }))} className="h-5 w-5 rounded bg-hover text-fg hover:bg-border">+</button>
+              <CtrlBtn disabled={!running} className="h-5 px-1.5" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) + 1, 16, 30) }))}>+</CtrlBtn>
             </span>
           </div>
           <input type="range" min={0} max={100} value={pct(v.fan)} disabled={!running} onChange={(e) => ctx.onPublish({ ...v, fan: Number(e.target.value) })} className="w-full accent-[rgb(var(--c-info))]" />
@@ -779,9 +816,9 @@ export function WidgetRenderer(ctx: RenderCtx) {
             <span className="absolute self-center font-mono text-[14px] font-semibold text-fg">{Math.round(pos)}%</span>
           </div>
           <div className="flex items-center justify-center gap-1">
-            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 0, moving: "close" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全关</button>
-            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 50, moving: "stop" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">停</button>
-            <button disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 100, moving: "open" }))} className="rounded bg-hover px-2 py-0.5 text-[11px] text-fg hover:bg-border">全开</button>
+            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 0, moving: "close" }))}>全关</CtrlBtn>
+            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 50, moving: "stop" }))}>停</CtrlBtn>
+            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 100, moving: "open" }))}>全开</CtrlBtn>
           </div>
         </Card>
       );
