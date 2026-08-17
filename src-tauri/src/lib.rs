@@ -39,6 +39,9 @@ use stream::Attached;
 use system::LocalMonitor;
 use types::*;
 
+// QuickJS sandbox types for HMI dashboard parse/publish evaluation (see dash_eval).
+use rquickjs::{Context as QjsContext, Value as QjsValue};
+
 pub struct AppState {
     ssh: SshManager,
     serial: SerialManager,
@@ -990,6 +993,103 @@ async fn dash_panel_delete(state: State<'_, AppState>, id: String) -> AppResult<
     state.store.delete_dash_panel(&id)
 }
 
+// ---------------------------------------------------------------------------
+// HMI dashboard: evaluate user-authored parse/publish JS in a sandboxed QuickJS
+// runtime. `kind` is "parse" (payload+topic -> object) or "publish" (value ->
+// string). Returns `{ ok, out, error }` so the frontend can surface errors
+// exactly as before. Running this in Rust means the webview never executes
+// `new Function`, so the frontend CSP does not need `unsafe-eval`.
+// ---------------------------------------------------------------------------
+#[tauri::command]
+async fn dash_eval(
+    kind: String,
+    code: String,
+    payload: Option<String>,
+    topic: Option<String>,
+    value: Option<String>,
+) -> AppResult<serde_json::Value> {
+    let kind = kind;
+    let code = code;
+    let payload = payload.unwrap_or_default();
+    let topic = topic.unwrap_or_default();
+    let value = value.unwrap_or_default();
+    let res = tokio::task::spawn_blocking(move || eval_dash_js(&kind, &code, &payload, &topic, &value))
+        .await
+        .map_err(|e| AppError::Other(format!("dash_eval task join: {e}")))?;
+    res
+}
+
+fn eval_dash_js(
+    kind: &str,
+    code: &str,
+    payload: &str,
+    topic: &str,
+    value: &str,
+) -> AppResult<serde_json::Value> {
+    use rquickjs::{Function as QjsFunction, Runtime as QjsRuntime};
+
+    let rt = QjsRuntime::new().map_err(|e| AppError::Other(format!("QuickJS runtime init: {e}")))?;
+    let ctx = QjsContext::full(&rt).map_err(|e| AppError::Other(format!("QuickJS context init: {e}")))?;
+    let out = ctx.with(|ctx| {
+        // Body starts on line 2 (line 1 is the `function(...)` header), which
+        // keeps QuickJS-reported line numbers aligned with the old `new Function`
+        // behaviour the frontend's error formatter expects.
+        let wrapper = if kind == "publish" {
+            format!("(function(value) {{\n{}\n}})", code)
+        } else {
+            format!("(function(payload, topic) {{\n{}\n}})", code)
+        };
+        let func: QjsFunction = match ctx.eval(wrapper) {
+            Ok(f) => f,
+            Err(e) => {
+                return serde_json::json!({ "ok": false, "error": format!("函数编译失败: {e}") });
+            }
+        };
+        let js_val = if kind == "publish" {
+            // `value` arrives as canonical JSON; rebuild a real JS value from it.
+            let v: serde_json::Value = match serde_json::from_str(value) {
+                Ok(v) => v,
+                Err(e) => {
+                    return serde_json::json!({ "ok": false, "error": format!("发布值 JSON 解析失败: {e}") });
+                }
+            };
+            match ctx.json_parse(serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string())) {
+                Ok(jv) => jv,
+                Err(_) => QjsValue::new_null(ctx.clone()),
+            }
+        } else {
+            match func.call((payload.to_string(), topic.to_string())) {
+                Ok(v) => v,
+                Err(e) => {
+                    return serde_json::json!({ "ok": false, "error": format!("解析函数运行失败: {e}") });
+                }
+            }
+        };
+        if kind != "publish" && !js_val.is_object() {
+            return serde_json::json!({
+                "ok": false,
+                "error": "解析函数必须 return 一个对象（如 { temp: 26.3 }）"
+            });
+        }
+        let out_string = if js_val.is_string() {
+            js_val.get::<String>().unwrap_or_default()
+        } else {
+            match ctx.json_stringify(js_val) {
+                Ok(Some(s)) => s.get::<String>().unwrap_or_default(),
+                _ => return serde_json::json!({ "ok": false, "error": "结果无法序列化为 JSON" }),
+            }
+        };
+        if kind == "publish" {
+            serde_json::json!({ "ok": true, "out": out_string })
+        } else {
+            let parsed: serde_json::Value =
+                serde_json::from_str(&out_string).unwrap_or(serde_json::Value::Null);
+            serde_json::json!({ "ok": true, "out": parsed })
+        }
+    });
+    Ok(out)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1126,6 +1226,7 @@ pub fn run() {
             dash_panels_list,
             dash_panel_save,
             dash_panel_delete,
+            dash_eval,
             remote_metrics,
             local_metrics,
             serial_list_ports,

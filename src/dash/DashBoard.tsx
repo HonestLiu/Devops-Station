@@ -109,14 +109,14 @@ export function DashBoard({
       }
     };
 
-    const onMsg = (m: MqttMessage) => {
+    const onMsg = async (m: MqttMessage) => {
       if (m.direction !== "in") return;
       const text = base64ToUtf8(m.payloadBase64);
       setLog((l) => [...l.slice(-499), { id: m.id, ts: m.timestamp, topic: m.topic, payload: text.slice(0, 400), dir: "in" }]);
       for (const w of widgetsRef.current) {
         if (!topicCovered(m.topic, w.topics)) continue;
         const meta = widgetMeta(w.type);
-        const res = meta ? runParse(w.parseFn, text, m.topic) : null;
+        const res = meta ? await runParse(w.parseFn, text, m.topic) : null;
         if (res?.ok) {
           setRuntimes((rt) => ({ ...rt, [w.id]: { raw: text, rawAt: m.timestamp, values: res.out } }));
           if (w.type === "lineChart" || w.type === "barChart") {
@@ -223,7 +223,7 @@ export function DashBoard({
   }, [json, name]);
 
   // --- actions -----------------------------------------------------------------
-  const publishValue = (w: DashWidget, value: unknown) => {
+  const publishValue = async (w: DashWidget, value: unknown) => {
     // Optimistic local update: the widget reflects the user's action instantly,
     // even before any device echo arrives (and even when no publish topic is
     // configured yet — otherwise controls feel dead/unclickable in preview).
@@ -239,7 +239,7 @@ export function DashBoard({
       showToast(t("dash.noPubTopic"));
       return;
     }
-    const res = runPublish(w.publishFn, value);
+    const res = await runPublish(w.publishFn, value);
     if (!res.ok) {
       setRuntimes((rt) => ({ ...rt, [w.id]: { ...rt[w.id], values: rt[w.id]?.values ?? {}, parseError: `发布函数：${res.error}` } }));
       return;
@@ -618,8 +618,8 @@ function WidgetSettings({
   const [aiTweak, setAiTweak] = useState("");
   const raw = rt?.raw ?? "";
 
-  const runTest = (rawInput: string) => {
-    const res = runParse(widget.parseFn, rawInput, widget.topics[0] ?? "");
+  const runTest = async (rawInput: string) => {
+    const res = await runParse(widget.parseFn, rawInput, widget.topics[0] ?? "");
     setTestRes(res.ok ? { ok: true, detail: JSON.stringify(res.out, null, 2) } : { ok: false, detail: res.error });
   };
 
@@ -648,9 +648,9 @@ function WidgetSettings({
     window.setTimeout(() => setAiBusy(false), 60000);
   };
 
-  const previewPublish = () => {
+  const previewPublish = async () => {
     const sample = widget.type === "rgbInput" ? { r: 255, g: 136, b: 0 } : 50;
-    const res = runPublish(widget.publishFn, sample);
+    const res = await runPublish(widget.publishFn, sample);
     setPubPreview(res.ok ? res.out : `错误: ${res.error}`);
   };
 

@@ -83,6 +83,14 @@ getrandom = "0.2"
 # `cmd /c start` / `xdg-open` / `open` invocations in local_fs::open_url.
 opener = "0.7"
 
+# Sandboxed QuickJS runtime for HMI dashboard user-authored parse/publish JS.
+# Evaluated here in Rust (NOT in the webview) so the frontend CSP never needs
+# `unsafe-eval` — this is the permanent fix for the CSP `unsafe-eval` errors.
+# `default-features = false` avoids the `bindgen` feature (which would require
+# libclang); the bundled QuickJS C is compiled with the system C toolchain and
+# pre-generated bindings are used.
+rquickjs = { version = "0.12", default-features = false, features = ["full"] }
+
 # Used by crate::notify to register our Start Menu shortcut + AUMID on Windows.
 # Windows-only: windows 0.61 pulls in windows-future 0.2.1 UNCONDITIONALLY, and
 # that crate fails to compile off-Windows (it references windows_core::imp::
