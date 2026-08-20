@@ -366,11 +366,13 @@ export default function App() {
   // terminal) — the OS-level registration below covers the no-focus case; the
   // 400ms dedup in approveWaitingNow keeps the two from double-sending Enter.
   const approveShortcut = useAppStore((s) => s.settings.approveShortcut);
+  const approveShortcutEnabled = useAppStore((s) => s.settings.approveShortcutEnabled);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Stand down while Settings is recording a shortcut: the recorder's own
       // listener must be the one to consume the keystroke (capture-order).
       if (isShortcutRecording()) return;
+      if (!approveShortcutEnabled) return;
       if (matchesShortcut(e, approveShortcut)) {
         e.preventDefault();
         e.stopPropagation();
@@ -379,15 +381,19 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [approveShortcut]);
+  }, [approveShortcut, approveShortcutEnabled]);
 
   // Keep the OS-level (system-wide) quick-approve shortcut in sync with the
   // setting — it works even when this window has no focus, e.g. the user is
-  // watching Claude Code in a separate terminal window.
+  // watching Claude Code in a separate terminal window. The master toggle
+  // unregisters it entirely so the hotkey never fires while disabled.
   useEffect(() => {
     if (!settingsLoaded) return;
-    void permHook.setGlobalShortcut(shortcutToAccelerator(approveShortcut)).catch(() => undefined);
-  }, [settingsLoaded, approveShortcut]);
+    const acc = approveShortcutEnabled ? shortcutToAccelerator(approveShortcut) : null;
+    void permHook.setGlobalShortcut(acc).catch((e) =>
+      console.error("[shortcut] failed to register global approve shortcut:", e),
+    );
+  }, [settingsLoaded, approveShortcut, approveShortcutEnabled]);
 
   // OS-level quick-approve shortcut (tauri-plugin-global-shortcut): fires even
   // when the app window has no focus (e.g. the user is looking at Claude Code

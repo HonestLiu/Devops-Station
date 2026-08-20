@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Download,
+  Eye,
   LayoutDashboard,
   Pencil,
   Plus,
@@ -14,6 +15,7 @@ import { useT } from "@/i18n";
 import { dash, mqttConnections } from "@/lib/api";
 import type { DashPanel, MqttConnection } from "@/lib/types";
 import { DashBoard } from "@/dash/DashBoard";
+import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { cn } from "@/lib/utils";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -26,8 +28,9 @@ export function DashPage() {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newConn, setNewConn] = useState("");
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameVal, setRenameVal] = useState("");
+  const [editing, setEditing] = useState<DashPanel | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editConn, setEditConn] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () => {
@@ -63,13 +66,36 @@ export function DashPage() {
     load();
   };
 
-  const rename = async (id: string) => {
-    const p = panels.find((x) => x.id === id);
-    if (!p || !renameVal.trim()) return;
-    await dash.save({ ...p, name: renameVal.trim() });
-    setRenaming(null);
+  // --- edit dialog (name + bound MQTT server, opened from the edit button or
+  // the row's right-click menu) ----------------------------------------------
+  const openEdit = (p: DashPanel) => {
+    setEditing(p);
+    setEditName(p.name);
+    setEditConn(p.connectionId);
+  };
+  const saveEdit = async () => {
+    if (!editing || !editName.trim()) return;
+    await dash.save({
+      ...editing,
+      name: editName.trim(),
+      connectionId: editConn,
+      connectionName: conns.find((c) => c.id === editConn)?.name ?? "",
+    });
+    setEditing(null);
     load();
   };
+
+  // Right-click menu on a panel row: reuses the same actions as the buttons.
+  const panelMenu = (p: DashPanel, i: number): MenuItem[] => [
+    { id: "edit", label: t("dash.ctx.edit"), icon: <Pencil size={14} />, onClick: () => openEdit(p) },
+    { id: "open", label: t("dash.open"), icon: <Eye size={14} />, onClick: () => setActiveId(p.id) },
+    { id: "export", label: t("dash.export"), icon: <Download size={14} />, onClick: () => exportOne(p) },
+    { id: "sep1", separator: true, label: "" },
+    { id: "up", label: t("dash.moveUp"), icon: <ArrowUp size={14} />, disabled: i === 0, onClick: () => void move(i, -1) },
+    { id: "down", label: t("dash.moveDown"), icon: <ArrowDown size={14} />, disabled: i === panels.length - 1, onClick: () => void move(i, 1) },
+    { id: "sep2", separator: true, label: "" },
+    { id: "delete", label: t("dash.delete"), icon: <Trash2 size={14} />, danger: true, onClick: () => void remove(p) },
+  ];
 
   const remove = async (p: DashPanel) => {
     if (!confirm(t("dash.confirmDelete"))) return;
@@ -179,23 +205,17 @@ export function DashPage() {
               <div
                 key={p.id}
                 className="flex items-center gap-3 rounded-lg border border-border/60 bg-bg/40 px-3 py-2.5 transition-colors hover:border-accent/40"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  useContextMenu.getState().show(e.clientX, e.clientY, panelMenu(p, i));
+                }}
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-[13px] font-semibold text-accent">
                   {p.name.slice(0, 1).toUpperCase() || "D"}
                 </span>
                 <div className="min-w-0 flex-1">
-                  {renaming === p.id ? (
-                    <input
-                      autoFocus
-                      value={renameVal}
-                      onChange={(e) => setRenameVal(e.target.value)}
-                      onBlur={() => void rename(p.id)}
-                      onKeyDown={(e) => e.key === "Enter" && void rename(p.id)}
-                      className="w-full max-w-[220px] rounded border border-accent/60 bg-bg px-2 py-0.5 text-[13px] text-fg outline-none"
-                    />
-                  ) : (
-                    <div className="truncate text-[13px] font-medium text-fg">{p.name}</div>
-                  )}
+                  <div className="truncate text-[13px] font-medium text-fg">{p.name}</div>
                   <div className="truncate text-[11px] text-subtle">
                     {p.connectionName || t("dash.noConnection")}
                     {" · "}
@@ -216,7 +236,7 @@ export function DashPage() {
                   <Button variant="ghost" size="sm" disabled={i === panels.length - 1} onClick={() => void move(i, 1)} title={t("dash.moveDown")}>
                     <ArrowDown size={13} />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => { setRenaming(p.id); setRenameVal(p.name); }} title={t("dash.rename")}>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(p)} title={t("dash.ctx.edit")}>
                     <Pencil size={13} />
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => exportOne(p)} title={t("dash.export")}>
@@ -272,6 +292,50 @@ export function DashPage() {
                 {t("common.cancel")}
               </Button>
               <Button variant="primary" disabled={!newName.trim() || !newConn} onClick={() => void create()}>
+                {t("common.save")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
+          <div className="card w-[380px] max-w-full p-0 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-border/70 px-5 py-3 text-[14px] font-semibold text-fg">{t("dash.editPanel")}</div>
+            <div className="space-y-3 p-5">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.name")}</label>
+                <input
+                  autoFocus
+                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+                  value={editName}
+                  placeholder="我的客厅面板"
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void saveEdit()}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
+                <select
+                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+                  value={editConn}
+                  onChange={(e) => setEditConn(e.target.value)}
+                >
+                  {conns.length === 0 && <option value="">{t("dash.noConnection")}</option>}
+                  {conns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.protocol}://{c.host}:{c.port})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border/70 px-5 py-3">
+              <Button variant="secondary" onClick={() => setEditing(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" disabled={!editName.trim()} onClick={() => void saveEdit()}>
                 {t("common.save")}
               </Button>
             </div>

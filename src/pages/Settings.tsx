@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import {
@@ -29,7 +29,7 @@ import { Button, Input, PasswordInput, Select } from "@/components/ui";
 import { FontDialog } from "@/components/FontDialog";
 import { notify, permHook, profile, type HookStatus } from "@/lib/api";
 import { isWindows } from "@/lib/platform";
-import { formatShortcut, setShortcutRecording, MODIFIER_CODES } from "@/lib/shortcut";
+import { formatShortcut, setShortcutRecording, shortcutToAccelerator, MODIFIER_CODES } from "@/lib/shortcut";
 import {
   loginAccount,
   logoutAccount,
@@ -195,49 +195,103 @@ function ShortcutRecorder({
   pressHint: string;
 }) {
   const [recording, setRecording] = useState(false);
+  const enabled = useAppStore((s) => s.settings.approveShortcutEnabled);
+
+  // Latest value/enabled via refs so re-registering after a capture (or on
+  // cancel) uses the up-to-date shortcut, not the closure from when recording
+  // started. App.tsx also re-registers on value/enabled changes; this covers
+  // the cancel-with-no-change path so the global shortcut is restored.
+  const valueRef = useRef(value);
+  const enabledRef = useRef(enabled);
+  valueRef.current = value;
+  enabledRef.current = enabled;
+
+  // Re-register the OS-level shortcut with the current value/enabled state.
+  const reregister = useCallback(() => {
+    void permHook
+      .setGlobalShortcut(
+        enabledRef.current ? shortcutToAccelerator(valueRef.current) : null,
+      )
+      .catch((e) =>
+        console.error("[shortcut] failed to re-register global approve shortcut:", e),
+      );
+  }, []);
 
   // Publish the recording state globally so the app-level shortcut handlers
   // (registered on window in the capture phase, before this listener) stand
   // down — otherwise a combination equal to an existing shortcut is consumed
   // and stopPropagation'd before the recorder ever sees it.
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
     setShortcutRecording(false);
     setRecording(false);
-  };
+    // Re-register the OS-level shortcut now that recording is done. It was
+    // unregistered on start so the OS wouldn't swallow the keystroke we just
+    // recorded (a registered global hotkey consumes the keydown before JS
+    // sees it), so failing to restore it would silently disable the shortcut.
+    reregister();
+  }, [reregister]);
 
   useEffect(() => {
     if (!recording) return;
     setShortcutRecording(true);
-    const onKey = (e: KeyboardEvent) => {
+    // Temporarily unregister the OS-level shortcut so the keystrokes we're about
+    // to record aren't swallowed by the OS before they reach this listener (a
+    // registered global hotkey consumes the combination before JS sees it).
+    void permHook.setGlobalShortcut(null).catch(() => undefined);
+
+    // Accumulate every physically-pressed key so the full combination is
+    // captured no matter what order the keydowns arrive in, and regardless of
+    // whether the per-event modifier flags are accurate. We finalize as soon as
+    // a non-modifier key is present together with at least one modifier — this
+    // is what makes "Ctrl+Shift+K" record all three keys instead of just the
+    // last one when modifier keydowns are missed or delivered out of order.
+    const pressed = new Set<string>();
+
+    const finalize = (keyCode: string) => {
+      const mods: string[] = [];
+      if (pressed.has("Control")) mods.push("ctrl");
+      if (pressed.has("Alt")) mods.push("alt");
+      if (pressed.has("Shift")) mods.push("shift");
+      if (pressed.has("Meta")) mods.push("meta");
+      if (mods.length === 0) return; // need a modifier; keep waiting
+      onChange([...mods, keyCode].join("+"));
+      stopRecording();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (e.code === "Escape") {
         stopRecording();
         return;
       }
-      // Ignore keydown events for the modifier keys themselves. Otherwise the
-      // first modifier you press (e.g. Ctrl) is captured as the "key" and the
-      // recorder stops before Shift/Enter ever arrive — you could never record
-      // a combination, and the stored value (e.g. "ctrl+Control") would then
-      // fire on every bare Ctrl keydown. Only the real, non-modifier key
-      // finalizes the shortcut.
-      if (MODIFIER_CODES.has(e.code)) return;
-      if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) return;
-      const mods: string[] = [];
-      if (e.ctrlKey) mods.push("ctrl");
-      if (e.altKey) mods.push("alt");
-      if (e.shiftKey) mods.push("shift");
-      if (e.metaKey) mods.push("meta");
-      onChange([...mods, e.code].join("+"));
-      stopRecording();
+      pressed.add(e.code);
+      if (MODIFIER_CODES.has(e.code)) {
+        // A non-modifier key may already be held (pressed before the modifier) —
+        // finalize it now that a modifier is present.
+        const pending = [...pressed].find((c) => !MODIFIER_CODES.has(c));
+        if (pending) finalize(pending);
+        return;
+      }
+      finalize(e.code);
     };
-    window.addEventListener("keydown", onKey, true);
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      pressed.delete(e.code);
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       setShortcutRecording(false);
+      pressed.clear();
+      // Restore the global shortcut if recording was cancelled/torn down
+      // without a capture (e.g. unmount).
+      reregister();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording, onChange]);
+  }, [recording, onChange, stopRecording]);
 
   return (
     <button
@@ -1257,6 +1311,16 @@ export function Settings() {
 
           {/* Shortcuts */}
           <Section id="shortcuts" hidden={!secVisible("settings.shortcuts")} icon={<Keyboard size={15} />} title={t("settings.shortcuts")}>
+            <Row
+              title={t("settings.approveShortcutEnabled")}
+              desc={t("settings.approveShortcutEnabledHint")}
+            >
+              <Switch
+                checked={settings.approveShortcutEnabled}
+                onChange={(v) => void updateSetting("approveShortcutEnabled", v)}
+                label={t("settings.approveShortcutEnabled")}
+              />
+            </Row>
             <Row
               title={t("settings.approveShortcut")}
               desc={t("settings.approveShortcutHint")}

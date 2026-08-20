@@ -49,6 +49,8 @@ export interface AppSettings {
   importedFonts: string[];
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: string;
+  /** Master on/off switch for the quick-approve shortcut (in-window + OS-level). */
+  approveShortcutEnabled: boolean;
   /** Whether to raise native OS notifications for agent/CLI approval prompts. */
   approvalNotifications: boolean;
   /** HOOK-based approval detection (primary) + legacy scan compat switch. */
@@ -99,6 +101,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   importedFonts: [],
   /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
   approveShortcut: "ctrl+shift+Enter",
+  /** Master on/off switch for the quick-approve shortcut (in-window + OS-level). */
+  approveShortcutEnabled: true,
   approvalNotifications: true,
   approval: {
     enabled: true,

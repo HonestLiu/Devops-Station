@@ -12,7 +12,9 @@ import {
   PencilRuler,
   Play,
   Plus,
+  RefreshCw,
   Save,
+  Server,
   Settings2,
   Trash2,
   Upload,
@@ -24,7 +26,7 @@ import {
 import { Button, SideIconButton } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqtt, mqttConnections } from "@/lib/api";
-import type { DashPanel, DashPanelJson, DashWidget, MqttMessage } from "@/lib/types";
+import type { DashPanel, DashPanelJson, DashWidget, MqttConnection, MqttMessage } from "@/lib/types";
 import { CATEGORY_KEYS, WIDGETS, widgetMeta, type WidgetMeta } from "./registry";
 import { runParse, runPublish, base64ToUtf8, utf8ToBase64, topicCovered } from "./exec";
 import { WidgetRenderer, widgetIcon, type DashLogEntry } from "./WidgetRenderer";
@@ -106,6 +108,19 @@ export function DashBoard({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connStatus, setConnStatus] = useState<"connecting" | "connected" | "error" | "off">("off");
   const [connError, setConnError] = useState("");
+  // Bound MQTT server (editable in-place). Drives the live session and is
+  // persisted back via autosave, so changing it here reconnects + updates the
+  // panel's stored binding without leaving the panel.
+  const [connId, setConnId] = useState(panel.connectionId);
+  const [conns, setConns] = useState<MqttConnection[]>([]);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const brokerSelRef = useRef<HTMLSelectElement>(null);
+  const reconnect = () => setReconnectNonce((n) => n + 1);
+
+  // Load the broker profiles so the toolbar picker can list them.
+  useEffect(() => {
+    void mqttConnections.list(false).then(setConns).catch(() => undefined);
+  }, []);
   const [runtimes, setRuntimes] = useState<Record<string, { raw: string; rawAt: number; values: Record<string, unknown>; parseError?: string }>>({});
   const [log, setLog] = useState<DashLogEntry[]>([]);
   const [saving, setSaving] = useState(false);
@@ -177,14 +192,14 @@ export function DashBoard({
     };
 
     (async () => {
-      if (!panel.connectionId) {
+      if (!connId) {
         setConnStatus("off");
         return;
       }
       setConnStatus("connecting");
       try {
         const conns = await mqttConnections.list(true);
-        const conn = conns.find((c) => c.id === panel.connectionId);
+        const conn = conns.find((c) => c.id === connId);
         if (!conn || disposed) {
           setConnStatus("off");
           return;
@@ -228,8 +243,9 @@ export function DashBoard({
       unSt?.();
       if (sid) void mqtt.disconnect(sid);
     };
+    // Reconnect whenever the bound server changes or the user forces a reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [connId, reconnectNonce]);
 
   // Resubscribe when the widget topic set grows (initial connect is in effect 1).
   const topicSig = widgets.flatMap((w) => w.topics).join("\n");
@@ -251,7 +267,13 @@ export function DashBoard({
     const timer = window.setTimeout(() => {
       setSaving(true);
       dash
-        .save({ ...panel, name, json: JSON.stringify(json) })
+        .save({
+          ...panel,
+          name,
+          json: JSON.stringify(json),
+          connectionId: connId,
+          connectionName: conns.find((c) => c.id === connId)?.name ?? "",
+        })
         .then((p) => {
           onSaved(p);
           setSaving(false);
@@ -260,7 +282,7 @@ export function DashBoard({
     }, 600);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [json, name]);
+  }, [json, name, connId]);
 
   // --- actions -----------------------------------------------------------------
   const publishValue = async (w: DashWidget, value: unknown) => {
@@ -369,15 +391,59 @@ export function DashBoard({
     },
   ];
 
-  // Right-click menu shown on empty canvas (edit mode).
-  const canvasMenu = (): MenuItem[] => [
-    {
-      id: "add",
-      label: t("dash.ctx.addWidget"),
-      icon: <Plus size={14} />,
-      onClick: () => setShowLib(true),
-    },
-  ];
+  // Right-click menu shown on the panel canvas (both edit and preview modes).
+  // Takes over the native menu and surfaces MQTT-related actions for the bound
+  // server; the widget-library action is appended in edit mode.
+  const canvasMenu = (): MenuItem[] => {
+    const conn = conns.find((c) => c.id === connId);
+    const addr = conn ? `${conn.protocol}://${conn.host}:${conn.port}` : "";
+    const statusLabel =
+      connStatus === "connected"
+        ? t("dash.connected")
+        : connStatus === "connecting"
+          ? t("dash.connecting")
+          : connStatus === "error"
+            ? t("dash.connError")
+            : t("dash.offline");
+    const items: MenuItem[] = [
+      {
+        id: "mqtt-header",
+        header: true,
+        label: `${conn?.name ?? t("dash.noBroker")} · ${statusLabel}`,
+      },
+      {
+        id: "reconnect",
+        label: t("dash.reconnect"),
+        icon: <RefreshCw size={14} />,
+        onClick: () => reconnect(),
+      },
+      {
+        id: "copy-addr",
+        label: t("dash.copyServerAddr"),
+        icon: <Copy size={14} />,
+        disabled: !addr,
+        onClick: () => addr && void navigator.clipboard.writeText(addr),
+      },
+      { id: "sep1", separator: true, label: "" },
+      {
+        id: "change-broker",
+        label: t("dash.changeBroker"),
+        icon: <Server size={14} />,
+        disabled: conns.length === 0,
+        onClick: () => brokerSelRef.current?.focus(),
+      },
+    ];
+    if (editMode) {
+      items.push({ id: "sep2", separator: true, label: "" });
+      items.push({
+        id: "add",
+        label: t("dash.ctx.addWidget"),
+        icon: <Plus size={14} />,
+        onClick: () => setShowLib(true),
+      });
+    }
+    return items;
+  };
 
   const onPointerDown = (e: ReactPointerEvent, w: DashWidget, mode: "move" | "resize") => {
     if (!editMode) return;
@@ -476,6 +542,22 @@ export function DashBoard({
             <WifiOff size={11} /> {t("dash.connError")}
           </span>
         )}
+        {conns.length > 0 && (
+          <select
+            ref={brokerSelRef}
+            value={connId}
+            onChange={(e) => setConnId(e.target.value)}
+            title={t("dash.broker")}
+            className="max-w-[170px] truncate rounded border border-border/60 bg-bg px-1.5 py-1 text-[11px] text-fg outline-none focus:border-accent/60"
+          >
+            <option value="">{t("dash.noBroker")}</option>
+            {conns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.protocol}://{c.host}:{c.port})
+              </option>
+            ))}
+          </select>
+        )}
         {saving ? (
           <span className="flex items-center gap-1 text-[11px] text-subtle">
             <Loader2 size={11} className="animate-spin" /> {t("dash.saving")}
@@ -516,7 +598,7 @@ export function DashBoard({
         </div>
       </div>
 
-      {connStatus !== "connected" && connStatus !== "connecting" && panel.connectionId && (
+      {connStatus !== "connected" && connStatus !== "connecting" && connId && (
         <div className="border-b border-warning/30 bg-warning/10 px-3 py-1 text-[11px] text-warning">
           {connStatus === "error" ? `${t("dash.connError")}: ${connError}` : t("dash.offline")}
         </div>
@@ -563,9 +645,8 @@ export function DashBoard({
         <div
           className="relative min-w-0 flex-1 overflow-auto"
           onContextMenu={(e) => {
-            // Edit mode: suppress the native menu and show the app menu.
-            // Preview mode: let it bubble to the app root (global nav menu).
-            if (!editMode) return;
+            // Take over the native menu across the whole panel (edit and
+            // preview) and show the MQTT-aware panel menu instead.
             e.preventDefault();
             e.stopPropagation();
             showCtx(e.clientX, e.clientY, canvasMenu());

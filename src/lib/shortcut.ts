@@ -165,6 +165,12 @@ export function isShortcutRecording(): boolean {
  * Normalize a front-end shortcut spec ("ctrl+shift+Enter", KeyboardEvent.code
  * based) into the accelerator string the OS-level global-shortcut plugin
  * accepts ("Ctrl+Shift+Enter"). Returns null when the spec has no key.
+ *
+ * `e.code` is already a valid `keyboard_types::Code` name — exactly what the
+ * underlying accelerator parser (muda) expects, e.g. "Enter", "KeyK",
+ * "ArrowUp", "Digit1", "Slash". Passing it through directly avoids a brittle
+ * name table that previously returned null for any key it didn't list, which
+ * silently dropped the global registration with no feedback to the user.
  */
 export function shortcutToAccelerator(spec: string): string | null {
   const s = parseShortcut(spec);
@@ -174,41 +180,5 @@ export function shortcutToAccelerator(spec: string): string | null {
   if (s.alt) mods.push("Alt");
   if (s.shift) mods.push("Shift");
   if (s.meta) mods.push("Super");
-  // KeyboardEvent.code → accelerator key name.
-  const KEY_NAMES: Record<string, string> = {
-    Enter: "Enter",
-    Space: "Space",
-    Tab: "Tab",
-    Escape: "Esc",
-    Backspace: "Backspace",
-    Delete: "Delete",
-    ArrowUp: "Up",
-    ArrowDown: "Down",
-    ArrowLeft: "Left",
-    ArrowRight: "Right",
-    PageUp: "PageUp",
-    PageDown: "PageDown",
-    Home: "Home",
-    End: "End",
-    Insert: "Insert",
-    Slash: "/",
-    Period: ".",
-    Comma: ",",
-    Semicolon: ";",
-    Quote: "'",
-    BracketLeft: "[",
-    BracketRight: "]",
-    Backslash: "\\",
-    Minus: "-",
-    Equal: "=",
-    Backquote: "`",
-  };
-  let key = KEY_NAMES[s.code];
-  if (!key) {
-    if (s.code.startsWith("Key")) key = s.code.slice(3);
-    else if (s.code.startsWith("Digit")) key = s.code.slice(5);
-    else if (/^F\d{1,2}$/.test(s.code)) key = s.code;
-    else return null;
-  }
-  return [...mods, key].join("+");
+  return [...mods, s.code].join("+");
 }
