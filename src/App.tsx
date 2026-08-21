@@ -28,6 +28,7 @@ import { SftpPage } from "./pages/SftpPage";
 import { SerialPage } from "./pages/SerialPage";
 import { JLinkPage } from "./pages/JLinkPage";
 import { MqttPage } from "./pages/MqttPage";
+import { DashPage } from "./pages/DashPage";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
@@ -88,7 +89,11 @@ function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
   if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
   if (tab.kind === "jlink") return <JLinkWorkspace tab={tab} />;
-  if (tab.kind === "mqtt") return <MqttWorkspace tab={tab} />;
+  // `mqtt` with a profile is a live connection; `mqttModule: "dash"` is the
+  // HMI dashboard module tab opened from the module picker page.
+  if (tab.kind === "mqtt" && tab.mqtt) return <MqttWorkspace tab={tab} />;
+  if (tab.kind === "mqtt" && tab.mqttModule === "dash") return <DashPage />;
+  if (tab.kind === "mqtt") return <MqttPage />;
   return <LocalWorkspace tab={tab} />;
 }
 
@@ -266,6 +271,7 @@ export default function App() {
         onClick: () => {
           closeCtx();
           setPageCtx("mqtt");
+          useTabsStore.getState().focusPage();
         },
       },
       { id: "sep2", separator: true, label: "" },
@@ -534,7 +540,15 @@ export default function App() {
                   return (
                     <div
                       key={tab.id}
-                      onClick={() => setActive(tab.id)}
+                      onClick={(e) => {
+                        // Ignore clicks on interactive controls inside the tab:
+                        // a child handler (e.g. a "连接" button that opens
+                        // another tab via openMqtt) may have just switched the
+                        // active tab — bubbling here would yank it right back.
+                        const target = e.target as HTMLElement;
+                        if (target.closest("button, a, input, select, textarea, [role='button']")) return;
+                        setActive(tab.id);
+                      }}
                       aria-hidden={!inRegion}
                       className={cn(
                         "relative min-h-0 min-w-0 overflow-hidden bg-bg",

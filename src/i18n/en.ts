@@ -257,6 +257,13 @@ export const en: Record<keyof typeof zh, string> = {
   "dash.ctx.duplicate": "Duplicate widget",
   "dash.ctx.delete": "Delete widget",
   "dash.ctx.addWidget": "Add widget",
+  "dash.duplicate": "Duplicate",
+  "dash.disconnected": "Disconnected",
+  "dash.appearance": "Appearance",
+  "dash.addTopic": "Add Topic",
+  "dash.removeTopic": "Remove",
+  "dash.applyPreset": "Use preset topics",
+  "dash.noBrokerHint": "No MQTT connections yet — add one in the MQTT page.",
 
   // --- tab bar --------------------------------------------------------------
   "tabs.duplicate": "Duplicate Tab",

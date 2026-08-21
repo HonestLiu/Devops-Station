@@ -362,6 +362,12 @@ export interface Tab {
   sshConfig?: SshConnectConfig;
   /** MQTT only — the saved connection profile backing this live session. */
   mqtt?: MqttConnection;
+  /**
+   * MQTT module tabs only: which module this tab hosts. A tab with `mqtt`
+   * set is a live connection (`MqttWorkspace`); a tab with `mqttModule` but
+   * no `mqtt` is the standalone HMI dashboard module (`DashPage`).
+   */
+  mqttModule?: "dash";
   /** Split panes (2/4 terminals in one tab). Undefined = single terminal. */
   panes?: TermPane[];
   /** Which pane is focused (used for split keyboard nav + shared sessionId). */

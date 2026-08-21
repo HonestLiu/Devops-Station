@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Save,
   Server,
-  Settings2,
   Trash2,
   Upload,
   Wand2,
@@ -23,11 +22,11 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { Button, SideIconButton } from "@/components/ui";
+import { Button, Dialog, Drawer, SideIconButton } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqtt, mqttConnections } from "@/lib/api";
 import type { DashPanel, DashPanelJson, DashWidget, MqttConnection, MqttMessage } from "@/lib/types";
-import { CATEGORY_KEYS, WIDGETS, widgetMeta, type WidgetMeta } from "./registry";
+import { CATEGORY_KEYS, PRESET_TOPICS, WIDGETS, widgetMeta, type WidgetConfigField, type WidgetMeta } from "./registry";
 import { runParse, runPublish, base64ToUtf8, utf8ToBase64, topicCovered } from "./exec";
 import { WidgetRenderer, widgetIcon, type DashLogEntry } from "./WidgetRenderer";
 import { MiniEditor } from "./miniEditor";
@@ -104,6 +103,10 @@ export function DashBoard({
   const [name, setName] = useState(panel.name);
   const [editMode, setEditMode] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Widget whose settings Drawer is open. Kept separate from selectedId so
+  // selecting/ringing a widget (even mid-drag) never pops the panel over the
+  // canvas — the Drawer only opens on an explicit action (toolbar/dbl-click).
+  const [settingsId, setSettingsId] = useState<string | null>(null);
   const [showLib, setShowLib] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connStatus, setConnStatus] = useState<"connecting" | "connected" | "error" | "off">("off");
@@ -114,7 +117,7 @@ export function DashBoard({
   const [connId, setConnId] = useState(panel.connectionId);
   const [conns, setConns] = useState<MqttConnection[]>([]);
   const [reconnectNonce, setReconnectNonce] = useState(0);
-  const brokerSelRef = useRef<HTMLSelectElement>(null);
+  const [connDialog, setConnDialog] = useState(false);
   const reconnect = () => setReconnectNonce((n) => n + 1);
 
   // Load the broker profiles so the toolbar picker can list them.
@@ -328,6 +331,7 @@ export function DashBoard({
     const maxY = widgets.reduce((m, w) => Math.max(m, w.y + w.h), 0);
     const cfg: Record<string, unknown> = {};
     for (const f of meta.config ?? []) cfg[f.key] = f.def;
+    const preset = PRESET_TOPICS[type] ?? { topics: [], pubTopic: "" };
     const w: DashWidget = {
       id: uid(),
       type,
@@ -336,14 +340,15 @@ export function DashBoard({
       w: Math.min(meta.w, COLS),
       h: meta.h,
       title: t(meta.labelKey as never),
-      topics: [],
-      pubTopic: "",
+      topics: [...preset.topics],
+      pubTopic: preset.pubTopic,
       parseFn: meta.parse,
       publishFn: meta.publish ?? "",
       config: cfg,
     };
     setWidgets((ws) => [...ws, w]);
     setSelectedId(w.id);
+    setSettingsId(w.id);
     setEditMode(true);
   };
 
@@ -353,6 +358,7 @@ export function DashBoard({
   const removeWidget = (id: string) => {
     setWidgets((ws) => ws.filter((x) => x.id !== id));
     setSelectedId((s) => (s === id ? null : s));
+    setSettingsId((s) => (s === id ? null : s));
   };
 
   const duplicateWidget = (w: DashWidget) => {
@@ -430,7 +436,7 @@ export function DashBoard({
         label: t("dash.changeBroker"),
         icon: <Server size={14} />,
         disabled: conns.length === 0,
-        onClick: () => brokerSelRef.current?.focus(),
+        onClick: () => setConnDialog(true),
       },
     ];
     if (editMode) {
@@ -484,10 +490,19 @@ export function DashBoard({
   };
 
   // --- derived ------------------------------------------------------------------
-  const selected = widgets.find((w) => w.id === selectedId) ?? null;
-  const maxRow = Math.max(1, ...widgets.map((w) => w.y + w.h));
+  const settingsWidget = widgets.find((w) => w.id === settingsId) ?? null;  const maxRow = Math.max(1, ...widgets.map((w) => w.y + w.h));
   const connected = connStatus === "connected";
   const bg = json.background;
+  const conn = conns.find((c) => c.id === connId) ?? null;
+  const connAddr = conn ? `${conn.protocol}://${conn.host}:${conn.port}` : "";
+  const statusLabel =
+    connStatus === "connected"
+      ? t("dash.connected")
+      : connStatus === "connecting"
+        ? t("dash.connecting")
+        : connStatus === "error"
+          ? t("dash.connError")
+          : t("dash.disconnected");
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
@@ -527,37 +542,34 @@ export function DashBoard({
           onChange={(e) => setName(e.target.value)}
           className="w-40 truncate rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] font-semibold text-fg outline-none hover:border-border focus:border-accent/60"
         />
-        {connStatus === "connected" && (
-          <span className="flex items-center gap-1 rounded bg-success/15 px-1.5 py-0.5 text-[11px] text-success">
-            <Wifi size={11} /> {t("dash.connected")}
-          </span>
-        )}
-        {connStatus === "connecting" && (
-          <span className="flex items-center gap-1 rounded bg-hover px-1.5 py-0.5 text-[11px] text-subtle">
-            <Loader2 size={11} className="animate-spin" /> {t("dash.connecting")}
-          </span>
-        )}
-        {connStatus === "error" && (
-          <span className="flex items-center gap-1 rounded bg-danger/15 px-1.5 py-0.5 text-[11px] text-danger" title={connError}>
-            <WifiOff size={11} /> {t("dash.connError")}
-          </span>
-        )}
-        {conns.length > 0 && (
-          <select
-            ref={brokerSelRef}
-            value={connId}
-            onChange={(e) => setConnId(e.target.value)}
-            title={t("dash.broker")}
-            className="max-w-[170px] truncate rounded border border-border/60 bg-bg px-1.5 py-1 text-[11px] text-fg outline-none focus:border-accent/60"
-          >
-            <option value="">{t("dash.noBroker")}</option>
-            {conns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.protocol}://{c.host}:{c.port})
-              </option>
-            ))}
-          </select>
-        )}
+        <button
+          type="button"
+          onClick={() => setConnDialog(true)}
+          title={t("dash.changeBroker")}
+          className={cn(
+            "flex max-w-[220px] items-center gap-1.5 truncate rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+            connStatus === "connected"
+              ? "border-success/40 bg-success/10 text-success hover:bg-success/15"
+              : connStatus === "connecting"
+                ? "border-border bg-hover text-subtle"
+                : connStatus === "error"
+                  ? "border-danger/40 bg-danger/10 text-danger hover:bg-danger/15"
+                  : "border-border bg-bg text-subtle hover:border-accent/40",
+          )}
+        >
+          {connStatus === "connected" ? (
+            <Wifi size={11} className="shrink-0" />
+          ) : connStatus === "connecting" ? (
+            <Loader2 size={11} className="shrink-0 animate-spin" />
+          ) : connStatus === "error" ? (
+            <WifiOff size={11} className="shrink-0" />
+          ) : (
+            <Server size={11} className="shrink-0" />
+          )}
+          <span className="truncate">{conn?.name ?? t("dash.noBroker")}</span>
+          <span className="shrink-0 opacity-60">·</span>
+          <span className="shrink-0">{statusLabel}</span>
+        </button>
         {saving ? (
           <span className="flex items-center gap-1 text-[11px] text-subtle">
             <Loader2 size={11} className="animate-spin" /> {t("dash.saving")}
@@ -627,7 +639,7 @@ export function DashBoard({
                         <button
                           key={m.type}
                           onClick={() => addWidget(m.type)}
-                          className="flex items-center gap-1 rounded-md border border-border/60 bg-bg/50 px-1.5 py-1 text-[11px] text-fg transition-colors hover:border-accent/50 hover:bg-hover"
+                          className="flex items-center gap-1.5 rounded-md border border-border/60 bg-bg/50 px-1.5 py-1.5 text-[11px] text-fg transition-all hover:border-accent/50 hover:bg-hover hover:shadow-[0_2px_10px_rgb(var(--c-accent)/0.18)]"
                         >
                           <span className="text-accent">{widgetIcon(m.type)}</span>
                           <span className="truncate">{t(m.labelKey as never)}</span>
@@ -710,7 +722,8 @@ export function DashBoard({
                     className={cn("absolute select-none", editMode && "cursor-grab")}
                     style={{ left: `${leftPct}%`, top: w.y * ROW_H, width: `${widthPct}%`, height: w.h * ROW_H }}
                     onPointerDown={editMode ? (e) => onPointerDown(e, w, "move") : undefined}
-                    onClick={editMode ? (e) => { e.stopPropagation(); setSelectedId(w.id); } : undefined}
+                    onClick={editMode ? (e) => { e.stopPropagation(); if (dragMovedRef.current) return; setSelectedId(w.id); } : undefined}
+                    onDoubleClick={editMode ? (e) => { e.stopPropagation(); setSelectedId(w.id); setSettingsId(w.id); } : undefined}
                     onContextMenu={editMode ? (e) => { e.preventDefault(); e.stopPropagation(); setSelectedId(w.id); showCtx(e.clientX, e.clientY, widgetMenu(w)); } : undefined}
                   >
                     <WidgetRenderer
@@ -724,22 +737,56 @@ export function DashBoard({
                       onCommands={(cmds) => publishCommands(w, cmds)}
                       editing={editMode}
                       selected={isSel}
-                      onSelect={() => setSelectedId(w.id)}
+                      onSelect={() => {
+                        if (dragMovedRef.current) return;
+                        setSelectedId(w.id);
+                      }}
                     />
                     {editMode && isSel && (
                       <>
+                        {/* floating action toolbar */}
                         <div
-                          className="absolute -right-1 -top-1 z-30 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-danger text-white shadow"
+                          className="absolute -top-3 right-2 z-30 flex items-center gap-0.5 rounded-lg border border-border bg-elevated/95 px-1 py-0.5 shadow-lg backdrop-blur"
                           onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeWidget(w.id);
-                          }}
                         >
-                          <Trash2 size={11} />
+                          <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-accent transition-colors hover:bg-accent/15"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedId(w.id);
+                              setSettingsId(w.id);
+                            }}
+                            title={t("dash.settings")}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-subtle transition-colors hover:bg-hover hover:text-fg"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              duplicateWidget(w);
+                            }}
+                            title={t("dash.ctx.duplicate")}
+                          >
+                            <Copy size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-danger transition-colors hover:bg-danger/15"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeWidget(w.id);
+                            }}
+                            title={t("dash.ctx.delete")}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
+                        {/* resize handle */}
                         <div
-                          className="absolute -bottom-1 -right-1 z-30 h-4 w-4 cursor-nwse-resize rounded-sm border border-border bg-accent"
+                          className="absolute -bottom-1 -right-1 z-30 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-accent bg-accent shadow"
                           onPointerDown={(e) => {
                             e.stopPropagation();
                             onPointerDown(e, w, "resize");
@@ -752,32 +799,122 @@ export function DashBoard({
                 );
               })}
               {widgets.length === 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-subtle">
-                  <LayoutGrid size={30} />
-                  <p className="text-[13px]">{t("dash.empty")}</p>
-                  {editMode && (
-                    <Button variant="secondary" size="sm" onClick={() => setShowLib(true)}>
-                      <Plus size={13} /> {t("dash.addWidget")}
-                    </Button>
-                  )}
+                <div className="absolute inset-0 flex items-center justify-center p-6">
+                  <div className="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border border-dashed border-border/80 bg-surface/30 px-6 py-10 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                      <LayoutGrid size={22} />
+                    </div>
+                    <p className="text-[13px] text-fg/80">{t("dash.empty")}</p>
+                    {editMode && (
+                      <Button variant="primary" size="sm" onClick={() => setShowLib(true)}>
+                        <Plus size={13} /> {t("dash.addWidget")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* settings sidebar */}
-        {selected && editMode && (
+        {/* widget settings drawer — opens on explicit action only */}
+        {settingsWidget && editMode && (
           <WidgetSettings
-            key={selected.id}
-            widget={selected}
-            rt={runtimes[selected.id]}
-            update={(patch) => updateWidget(selected.id, patch)}
-            onDelete={() => removeWidget(selected.id)}
-            onClose={() => setSelectedId(null)}
+            key={settingsWidget.id}
+            widget={settingsWidget}
+            rt={runtimes[settingsWidget.id]}
+            update={(patch) => updateWidget(settingsWidget.id, patch)}
+            onDelete={() => removeWidget(settingsWidget.id)}
+            onClose={() => setSettingsId(null)}
             showToast={showToast}
           />
         )}
+
+        {/* MQTT connection picker */}
+        <Dialog
+          open={connDialog}
+          onClose={() => setConnDialog(false)}
+          title={t("dash.broker")}
+          description={connAddr || undefined}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!connAddr}
+                onClick={() => connAddr && void navigator.clipboard.writeText(connAddr)}
+              >
+                <Copy size={13} /> {t("dash.copyServerAddr")}
+              </Button>
+              <Button variant="secondary" onClick={() => setConnDialog(false)}>
+                {t("common.close")}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                setConnId("");
+                setConnDialog(false);
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[12px] transition-colors",
+                connId === ""
+                  ? "border-accent bg-accent/10 text-fg"
+                  : "border-border bg-bg text-subtle hover:border-accent/40",
+              )}
+            >
+              <Server size={14} className="shrink-0" />
+              <span className="truncate">{t("dash.noBroker")}</span>
+            </button>
+            {conns.map((c) => {
+              const addr = `${c.protocol}://${c.host}:${c.port}`;
+              const active = c.id === connId;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    setConnId(c.id);
+                    setConnDialog(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+                    active ? "border-accent bg-accent/10" : "border-border bg-bg hover:border-accent/40",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      active && connStatus === "connected"
+                        ? "bg-success"
+                        : active
+                          ? "bg-accent"
+                          : "bg-subtle",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-medium text-fg">{c.name}</span>
+                    <span className="block truncate font-mono text-[10px] text-subtle">{addr}</span>
+                  </span>
+                  {active && connStatus === "connected" && <Wifi size={13} className="shrink-0 text-success" />}
+                </button>
+              );
+            })}
+            {conns.length === 0 && (
+              <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-[11px] text-subtle">
+                {t("dash.noBrokerHint")}
+              </div>
+            )}
+            <div className="flex items-center gap-2 pt-1">
+              <Button variant="secondary" size="sm" disabled={!connId} onClick={() => reconnect()}>
+                <RefreshCw size={13} /> {t("dash.reconnect")}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
       </div>
     </div>
   );
@@ -804,6 +941,11 @@ function WidgetSettings({
 }) {
   const t = useT();
   const meta = widgetMeta(widget.type);
+  const preset = PRESET_TOPICS[widget.type];
+  const applyPreset = () => {
+    if (!preset) return;
+    update({ topics: [...preset.topics], pubTopic: preset.pubTopic });
+  };
   const [testRes, setTestRes] = useState<{ ok: boolean; detail: string } | null>(null);
   const [pubPreview, setPubPreview] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -867,28 +1009,33 @@ function WidgetSettings({
   };
 
   return (
-    <aside className="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-surface/40">
-      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-        <span className="flex items-center gap-1.5 text-[12px] font-semibold text-fg">
-          <Settings2 size={13} className="text-accent" />
-          {widget.title || t("dash.settings")}
-        </span>
-        <SideIconButton label={t("dash.collapseSettings")} icon={<X size={13} />} onClick={onClose} />
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+    <Drawer
+      open
+      onClose={onClose}
+      title={widget.title || t("dash.settings")}
+      description={t(`dash.w.${widget.type}` as never)}
+    >
+      <div className="space-y-3">
         {/* 基础设置 */}
-        <Section title={t("dash.basic")}>
+        <Section
+          title={t("dash.basic")}
+          action={
+            preset && (preset.topics.length > 0 || preset.pubTopic) ? (
+              <button
+                type="button"
+                className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-accent transition-colors hover:underline"
+                onClick={applyPreset}
+              >
+                <RefreshCw size={10} /> {t("dash.applyPreset")}
+              </button>
+            ) : undefined
+          }
+        >
           <Field label={t("dash.name")}>
             <input className={inputCls} value={widget.title} onChange={(e) => update({ title: e.target.value })} />
           </Field>
           <Field label={t("dash.subTopics")}>
-            <textarea
-              className={cn(inputCls, "min-h-[54px] font-mono text-[11px]")}
-              value={widget.topics.join("\n")}
-              placeholder="sensor/temp&#10;sensor/#"
-              onChange={(e) => update({ topics: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
-            />
+            <TopicList topics={widget.topics} onChange={(topics) => update({ topics })} />
           </Field>
           <Field label={t("dash.pubTopic")}>
             <input className={cn(inputCls, "font-mono text-[11px]")} value={widget.pubTopic} placeholder="device/1/set" onChange={(e) => update({ pubTopic: e.target.value.trim() })} />
@@ -902,6 +1049,22 @@ function WidgetSettings({
             </Field>
           </div>
         </Section>
+
+        {/* 外观（按控件类型的配置项） */}
+        {meta && meta.config && meta.config.length > 0 && (
+          <Section title={t("dash.appearance")}>
+            <div className="space-y-2.5">
+              {meta.config.map((f) => (
+                <ConfigField
+                  key={f.key}
+                  field={f}
+                  value={widget.config[f.key] ?? f.def}
+                  onChange={(v) => update({ config: { ...widget.config, [f.key]: v } })}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Payload 示例（MQTTX 测试） */}
         {(meta && (meta.template.trim() !== "{}" || meta.publish)) && (
@@ -1050,18 +1213,129 @@ function WidgetSettings({
           <Trash2 size={13} /> {t("dash.delete")}
         </Button>
       </div>
-    </aside>
+    </Drawer>
+  );
+}
+
+/** Per-widget config field renderer (mode/min/max/color/…). */
+function ConfigField({
+  field,
+  value,
+  onChange,
+}: {
+  field: WidgetConfigField;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const t = useT();
+  if (field.type === "boolean") {
+    const on = !!value;
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-subtle">{field.label}</span>
+        <button
+          type="button"
+          onClick={() => onChange(!on)}
+          className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", on ? "bg-accent" : "bg-border")}
+        >
+          <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", on ? "left-[18px]" : "left-0.5")} />
+        </button>
+      </div>
+    );
+  }
+  if (field.type === "color") {
+    return (
+      <Field label={field.label}>
+        <input
+          type="color"
+          value={typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#FFFFFF"}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-full cursor-pointer rounded border border-border bg-transparent p-0.5"
+        />
+      </Field>
+    );
+  }
+  if (field.type === "textarea") {
+    return (
+      <Field label={field.label}>
+        <textarea className={cn(inputCls, "min-h-[54px]")} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+    );
+  }
+  if (field.type === "number") {
+    return (
+      <Field label={field.label}>
+        <input type="number" className={inputCls} value={Number(value ?? 0)} onChange={(e) => onChange(Number(e.target.value))} />
+      </Field>
+    );
+  }
+  if (field.options && field.options.length) {
+    return (
+      <Field label={field.label}>
+        <select className={inputCls} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
+          {field.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      </Field>
+    );
+  }
+  return (
+    <Field label={field.label}>
+      <input className={inputCls} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+}
+
+/** Editable list of subscribe topics (one row per topic). */
+function TopicList({ topics, onChange }: { topics: string[]; onChange: (t: string[]) => void }) {
+  const t = useT();
+  const setTopic = (i: number, v: string) => onChange(topics.map((x, k) => (k === i ? v : x)));
+  const removeAt = (i: number) => onChange(topics.filter((_, k) => k !== i));
+  return (
+    <div className="space-y-1">
+      {topics.map((tp, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <input
+            className={cn(inputCls, "font-mono text-[11px]")}
+            value={tp}
+            placeholder="sensor/temp"
+            onChange={(e) => setTopic(i, e.target.value)}
+          />
+          <button
+            type="button"
+            className="shrink-0 rounded border border-border/70 p-1 text-subtle transition-colors hover:border-danger/40 hover:text-danger"
+            onClick={() => removeAt(i)}
+            title={t("dash.removeTopic")}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-border px-2 py-1 text-[11px] text-subtle transition-colors hover:border-accent/40 hover:text-accent"
+        onClick={() => onChange([...topics, ""])}
+      >
+        <Plus size={12} /> {t("dash.addTopic")}
+      </button>
+    </div>
   );
 }
 
 const inputCls =
   "w-full rounded-md border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none focus:border-accent/60";
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="mb-1.5 text-[11px] font-semibold text-fg/80">{title}</div>
-      <div className="space-y-2">{children}</div>
+    <div className="rounded-lg border border-border/60 bg-bg/40 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold text-fg/80">{title}</span>
+        {action}
+      </div>
+      <div className="space-y-2.5">{children}</div>
     </div>
   );
 }

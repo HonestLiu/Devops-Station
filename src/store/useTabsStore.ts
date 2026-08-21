@@ -92,6 +92,8 @@ interface TabsState {
   openJlink: (title?: string) => Promise<string>;
   /** Open a live MQTT session tab backed by a saved connection profile. */
   openMqtt: (conn: MqttConnection, title?: string) => Promise<string>;
+  /** Open (or focus) the singleton HMI dashboard module tab. */
+  openMqttDash: () => string;
   openFromHost: (host: Host) => Promise<string>;
 
   /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
@@ -280,7 +282,45 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return id;
   },
 
+  /**
+   * Open (or focus) the singleton HMI dashboard module tab. The MQTT client
+   * list stays an in-page module (a launcher); only live connections and the
+   * dashboard module live in the tab bar.
+   */
+  openMqttDash: () => {
+    const existing = get().tabs.find((t) => t.kind === "mqtt" && t.mqttModule === "dash");
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextId();
+    set((s) => ({
+      tabs: [
+        ...s.tabs,
+        {
+          id,
+          kind: "mqtt",
+          title: lang("dash.title"),
+          subtitle: "",
+          status: "connected",
+          mqttModule: "dash",
+          mqtt: undefined,
+        },
+      ],
+      activeId: id,
+    }));
+    return id;
+  },
+
   openMqtt: async (conn, title) => {
+    // A connection that is already open is focused, not duplicated.
+    if (conn.id) {
+      const existing = get().tabs.find((t) => t.kind === "mqtt" && t.mqtt?.id === conn.id);
+      if (existing) {
+        set({ activeId: existing.id });
+        return existing.id;
+      }
+    }
     const id = nextId();
     set((s) => ({
       tabs: [

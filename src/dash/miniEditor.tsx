@@ -58,7 +58,7 @@ export function MiniEditor({
   return (
     <div
       className={cn(
-        "flex overflow-hidden rounded-md border border-border/70 bg-[#1e1e1e] font-mono text-[12px] leading-[1.5]",
+        "flex overflow-hidden rounded-md border border-border/70 bg-surface font-mono text-[12px] leading-[1.5]",
         className,
       )}
       style={{ height }}
@@ -66,7 +66,7 @@ export function MiniEditor({
       {/* line numbers */}
       <div
         ref={numRef}
-        className="shrink-0 select-none overflow-hidden border-r border-white/10 bg-[#252526] px-2 py-2 text-right text-[#858585]"
+        className="shrink-0 select-none overflow-hidden border-r border-border/60 bg-elevated px-2 py-2 text-right text-subtle"
         style={{ width: 40 }}
         aria-hidden
       >
@@ -79,7 +79,7 @@ export function MiniEditor({
         <pre
           ref={preRef}
           aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-2 text-[#d4d4d4]"
+          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-2 text-fg"
         >
           <code dangerouslySetInnerHTML={{ __html: highlight(value) + "\n" }} />
         </pre>
@@ -91,7 +91,7 @@ export function MiniEditor({
           onScroll={syncScroll}
           // Text itself is transparent — the highlight <pre> underneath shows
           // the tokens; only the caret stays visible.
-          className="absolute inset-0 resize-none overflow-auto whitespace-pre bg-transparent px-2 py-2 text-transparent caret-white outline-none"
+          className="absolute inset-0 resize-none overflow-auto whitespace-pre bg-transparent px-2 py-2 text-transparent caret-accent outline-none"
         />
       </div>
     </div>

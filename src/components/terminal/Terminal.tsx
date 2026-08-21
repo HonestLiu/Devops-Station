@@ -29,6 +29,38 @@ import { SNIPPET_GROUPS } from "@/ai/TerminalInlineAsk";
 import { registerTerminal, unregisterTerminal, useTerminalSelection } from "@/ai/terminalBridge";
 import { SelectionMenu } from "@/ai/SelectionMenu";
 
+// ---------------------------------------------------------------------------
+// Backslash-continuation merging for pasted multi-line commands.
+//
+// When a user pastes a multi-line command that uses `\` as the line-continuation
+// character (e.g. a `docker run` copied from Docker Hub), the pasted text
+// contains literal `\` followed by a newline.  In bash/zsh this works because the
+// shell treats `\`+newline as a continuation.  In PowerShell and cmd.exe, `\` is
+// just a character — each line becomes an independent (and broken) command.
+//
+// The fix: merge continuation lines into a single line before feeding the text
+// to xterm.js.  This is harmless in bash/zsh (a single-line command is
+// equivalent) and makes PowerShell / cmd work correctly.
+// ---------------------------------------------------------------------------
+function mergeContinuationLines(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const merged: string[] = [];
+  let buf = "";
+  for (const line of lines) {
+    // For continuation lines, strip leading whitespace and join with a space.
+    const trimmed = buf === "" ? line : line.replace(/^\s+/, "");
+    buf += trimmed;
+    if (buf.endsWith("\\")) {
+      buf = buf.slice(0, -1); // drop trailing backslash, keep accumulating
+    } else {
+      merged.push(buf);
+      buf = "";
+    }
+  }
+  if (buf) merged.push(buf);
+  return merged.join("\n");
+}
+
 // Snippets submenu — mirrors the "Snippets" flyout in the terminal's AI bar. Each
 // group becomes its own nested submenu (e.g. "Snippets → Git → <command>") so the
 // top-level entry stays short. Every command is *inserted* into the active
@@ -506,13 +538,19 @@ export function Terminal(props: TerminalProps) {
     // newline (the copy artifacts) and re-feed the cleaned text through xterm
     // so it lands at the cursor and waits for a deliberate Enter. Internal
     // newlines are kept so multi-line pastes still work line-by-line.
+    //
+    // Backslash continuations (e.g. `docker run -d \<NL>  --name foo`) are
+    // merged into a single line before pasting.  Without this, each line is
+    // sent to the shell as an independent command — harmless in bash/zsh (where
+    // `\`+newline is a continuation) but fatal in PowerShell / cmd where `\` is
+    // a literal character.
     const onPaste = (e: ClipboardEvent) => {
       const text = e.clipboardData?.getData("text/plain");
       if (text == null) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       const cleaned = text.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
-      term.paste(cleaned);
+      term.paste(mergeContinuationLines(cleaned));
     };
     term.textarea?.addEventListener("paste", onPaste, true);
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Copy,
   Download,
   Eye,
   LayoutDashboard,
@@ -10,7 +11,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, Dialog, EmptyState } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqttConnections } from "@/lib/api";
 import type { DashPanel, MqttConnection } from "@/lib/types";
@@ -85,10 +86,25 @@ export function DashPage() {
     load();
   };
 
+  // Duplicate a panel (deep-copy its layout json, reset id/sortOrder).
+  const duplicate = async (p: DashPanel) => {
+    const np = await dash.save({
+      id: "",
+      name: `${p.name} 副本`,
+      connectionId: p.connectionId,
+      connectionName: p.connectionName,
+      json: p.json,
+      sortOrder: panels.length,
+      updatedAt: 0,
+    });
+    load();
+  };
+
   // Right-click menu on a panel row: reuses the same actions as the buttons.
   const panelMenu = (p: DashPanel, i: number): MenuItem[] => [
     { id: "edit", label: t("dash.ctx.edit"), icon: <Pencil size={14} />, onClick: () => openEdit(p) },
     { id: "open", label: t("dash.open"), icon: <Eye size={14} />, onClick: () => setActiveId(p.id) },
+    { id: "duplicate", label: t("dash.ctx.duplicate"), icon: <Copy size={14} />, onClick: () => void duplicate(p) },
     { id: "export", label: t("dash.export"), icon: <Download size={14} />, onClick: () => exportOne(p) },
     { id: "sep1", separator: true, label: "" },
     { id: "up", label: t("dash.moveUp"), icon: <ArrowUp size={14} />, disabled: i === 0, onClick: () => void move(i, -1) },
@@ -192,156 +208,171 @@ export function DashPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {panels.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-24 text-center text-muted">
-            <LayoutDashboard size={30} />
-            <p className="text-[13px]">{t("dash.noPanels")}</p>
-            <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
-              <Plus size={13} /> {t("dash.newPanel")}
-            </Button>
-          </div>
+          <EmptyState
+            icon={<LayoutDashboard size={30} />}
+            title={t("dash.noPanels")}
+            description={t("dash.moduleDesc")}
+            action={
+              <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
+                <Plus size={13} /> {t("dash.newPanel")}
+              </Button>
+            }
+          />
         ) : (
-          <div className="mx-auto grid max-w-3xl gap-2">
-            {panels.map((p, i) => (
-              <div
-                key={p.id}
-                className="flex items-center gap-3 rounded-lg border border-border/60 bg-bg/40 px-3 py-2.5 transition-colors hover:border-accent/40"
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  useContextMenu.getState().show(e.clientX, e.clientY, panelMenu(p, i));
-                }}
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-[13px] font-semibold text-accent">
-                  {p.name.slice(0, 1).toUpperCase() || "D"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-fg">{p.name}</div>
-                  <div className="truncate text-[11px] text-subtle">
-                    {p.connectionName || t("dash.noConnection")}
-                    {" · "}
-                    {(() => {
-                      try {
-                        const j = JSON.parse(p.json);
-                        return `${j.widgets?.length ?? 0} ${t("dash.widgets")}`;
-                      } catch {
-                        return `0 ${t("dash.widgets")}`;
-                      }
-                    })()}
+          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {panels.map((p, i) => {
+              let widgetCount = 0;
+              try {
+                widgetCount = JSON.parse(p.json)?.widgets?.length ?? 0;
+              } catch {
+                /* ignore */
+              }
+              const hasConn = !!p.connectionName;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setActiveId(p.id)}
+                  className="card card-interactive group relative flex cursor-pointer flex-col gap-3 p-3.5"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    useContextMenu.getState().show(e.clientX, e.clientY, panelMenu(p, i));
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-[15px] font-semibold text-accent">
+                      {p.name.slice(0, 1).toUpperCase() || "D"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-fg">{p.name}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-subtle">
+                        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", hasConn ? "bg-accent" : "bg-subtle")} />
+                        <span className="truncate">{hasConn ? p.connectionName : t("dash.noConnection")}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="rounded-md bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
+                      {widgetCount} {t("dash.widgets")}
+                    </span>
+                    <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(p); }} title={t("dash.ctx.edit")}>
+                        <Pencil size={13} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); void duplicate(p); }} title={t("dash.duplicate")}>
+                        <Copy size={13} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); exportOne(p); }} title={t("dash.export")}>
+                        <Download size={13} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); void remove(p); }} title={t("dash.delete")}>
+                        <Trash2 size={13} className="text-danger" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button variant="ghost" size="sm" disabled={i === 0} onClick={() => void move(i, -1)} title={t("dash.moveUp")}>
-                    <ArrowUp size={13} />
-                  </Button>
-                  <Button variant="ghost" size="sm" disabled={i === panels.length - 1} onClick={() => void move(i, 1)} title={t("dash.moveDown")}>
-                    <ArrowDown size={13} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(p)} title={t("dash.ctx.edit")}>
-                    <Pencil size={13} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => exportOne(p)} title={t("dash.export")}>
-                    <Download size={13} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => void remove(p)} title={t("dash.delete")}>
-                    <Trash2 size={13} className="text-danger" />
-                  </Button>
-                  <Button variant="primary" size="sm" className="ml-1" onClick={() => setActiveId(p.id)}>
-                    {t("dash.open")}
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+            <button
+              onClick={() => setShowNew(true)}
+              className="card card-interactive flex min-h-[88px] flex-col items-center justify-center gap-1 border-dashed text-subtle hover:text-accent"
+            >
+              <Plus size={18} />
+              <span className="text-[12px] font-medium">{t("dash.newPanel")}</span>
+            </button>
           </div>
         )}
       </div>
 
-      {showNew && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowNew(false)}>
-          <div className="card w-[380px] max-w-full p-0 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-border/70 px-5 py-3 text-[14px] font-semibold text-fg">{t("dash.newPanel")}</div>
-            <div className="space-y-3 p-5">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.name")}</label>
-                <input
-                  autoFocus
-                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
-                  value={newName}
-                  placeholder="我的客厅面板"
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void create()}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
-                <select
-                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
-                  value={newConn}
-                  onChange={(e) => setNewConn(e.target.value)}
-                >
-                  {conns.length === 0 && <option value="">{t("dash.noConnection")}</option>}
-                  {conns.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.host}:{c.port})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-border/70 px-5 py-3">
-              <Button variant="secondary" onClick={() => setShowNew(false)}>
-                {t("common.cancel")}
-              </Button>
-              <Button variant="primary" disabled={!newName.trim() || !newConn} onClick={() => void create()}>
-                {t("common.save")}
-              </Button>
-            </div>
+      <Dialog
+        open={showNew}
+        onClose={() => setShowNew(false)}
+        title={t("dash.newPanel")}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowNew(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" disabled={!newName.trim() || !newConn} onClick={() => void create()}>
+              {t("common.save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.name")}</label>
+            <input
+              autoFocus
+              className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+              value={newName}
+              placeholder="我的客厅面板"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void create()}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
+            <select
+              className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+              value={newConn}
+              onChange={(e) => setNewConn(e.target.value)}
+            >
+              {conns.length === 0 && <option value="">{t("dash.noConnection")}</option>}
+              {conns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.host}:{c.port})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-      )}
+      </Dialog>
 
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
-          <div className="card w-[380px] max-w-full p-0 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-border/70 px-5 py-3 text-[14px] font-semibold text-fg">{t("dash.editPanel")}</div>
-            <div className="space-y-3 p-5">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.name")}</label>
-                <input
-                  autoFocus
-                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
-                  value={editName}
-                  placeholder="我的客厅面板"
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && void saveEdit()}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
-                <select
-                  className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
-                  value={editConn}
-                  onChange={(e) => setEditConn(e.target.value)}
-                >
-                  {conns.length === 0 && <option value="">{t("dash.noConnection")}</option>}
-                  {conns.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.protocol}://{c.host}:{c.port})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-border/70 px-5 py-3">
-              <Button variant="secondary" onClick={() => setEditing(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button variant="primary" disabled={!editName.trim()} onClick={() => void saveEdit()}>
-                {t("common.save")}
-              </Button>
-            </div>
+      <Dialog
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={t("dash.editPanel")}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" disabled={!editName.trim()} onClick={() => void saveEdit()}>
+              {t("common.save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.name")}</label>
+            <input
+              autoFocus
+              className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+              value={editName}
+              placeholder="我的客厅面板"
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void saveEdit()}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
+            <select
+              className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
+              value={editConn}
+              onChange={(e) => setEditConn(e.target.value)}
+            >
+              {conns.length === 0 && <option value="">{t("dash.noConnection")}</option>}
+              {conns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.protocol}://{c.host}:{c.port})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

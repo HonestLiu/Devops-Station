@@ -645,3 +645,75 @@ return { alarm: data.alarm ?? false, message: data.message ?? data.msg ?? "" };`
 export function widgetMeta(type: string): WidgetMeta | undefined {
   return WIDGETS[type];
 }
+
+/**
+ * Out-of-the-box MQTT topics per widget type.
+ *
+ * - Widgets with both parse (subscribe) and publish get a `<state>` subscribe
+ *   topic and a `<set>` publish topic.
+ * - Display-only widgets get just a subscribe topic.
+ * - Pure-local widgets (clock / divider) get none.
+ *
+ * Every topic below is globally unique across types so a fresh panel never has
+ * two widgets fighting over the same topic. Users can freely edit/append these
+ * in the widget settings drawer.
+ */
+export const PRESET_TOPICS: Record<string, { topics: string[]; pubTopic: string }> = {
+  // 基础操作 (read/write)
+  button: { topics: ["dev/button/state"], pubTopic: "dev/button/set" },
+  toggle: { topics: ["dev/toggle/state"], pubTopic: "dev/toggle/set" },
+  slider: { topics: ["dev/slider/state"], pubTopic: "dev/slider/set" },
+  knob: { topics: ["dev/knob/state"], pubTopic: "dev/knob/set" },
+
+  // 颜色 / 光效 (read/write)
+  colorPicker: { topics: ["dev/color/state"], pubTopic: "dev/color/set" },
+  colorTemp: { topics: ["dev/light/colortemp/state"], pubTopic: "dev/light/colortemp/set" },
+  rgbInput: { topics: ["dev/rgb/state"], pubTopic: "dev/rgb/set" },
+
+  // 数据显示 (display only)
+  gauge: { topics: ["dev/gauge/value"], pubTopic: "" },
+  numberText: { topics: ["dev/number/value"], pubTopic: "" },
+  progress: { topics: ["dev/progress/value"], pubTopic: "" },
+  battery: { topics: ["dev/battery/state"], pubTopic: "" },
+
+  // 环境监测 (display only)
+  tempCard: { topics: ["dev/env/temperature"], pubTopic: "" },
+  humidityCard: { topics: ["dev/env/humidity"], pubTopic: "" },
+  pm25Card: { topics: ["dev/env/pm25"], pubTopic: "" },
+  envCard: { topics: ["dev/env"], pubTopic: "" },
+
+  // 媒体控制 (read/write)
+  mediaControls: { topics: ["dev/media/state"], pubTopic: "dev/media/control" },
+  volumeSlider: { topics: ["dev/media/volume/state"], pubTopic: "dev/media/volume/set" },
+  songInfo: { topics: ["dev/media/info"], pubTopic: "" },
+
+  // 安防 / 门窗
+  lockCard: { topics: ["dev/lock/state"], pubTopic: "dev/lock/set" },
+  doorSensor: { topics: ["dev/security/door"], pubTopic: "" },
+  motionSensor: { topics: ["dev/security/motion"], pubTopic: "" },
+  cameraCard: { topics: ["dev/camera/snapshot"], pubTopic: "" },
+
+  // 场景 / 自动化
+  sceneButton: { topics: ["dev/scene/state"], pubTopic: "dev/scene/trigger" },
+  timerCard: { topics: ["dev/timer/state"], pubTopic: "" },
+
+  // 信息展示
+  textLabel: { topics: ["dev/text/display"], pubTopic: "" },
+  logList: { topics: ["dev/log/#"], pubTopic: "" },
+  imageCard: { topics: ["dev/image/url"], pubTopic: "" },
+  divider: { topics: [], pubTopic: "" },
+  clockCard: { topics: [], pubTopic: "" },
+
+  // 复合卡片 (read/write)
+  lightCard: { topics: ["dev/light/state"], pubTopic: "dev/light/set" },
+  acCard: { topics: ["dev/ac/state"], pubTopic: "dev/ac/set" },
+  curtainCard: { topics: ["dev/curtain/state"], pubTopic: "dev/curtain/set" },
+
+  // 图表类 (display only)
+  lineChart: { topics: ["dev/chart/line"], pubTopic: "" },
+  barChart: { topics: ["dev/chart/bar"], pubTopic: "" },
+
+  // 告警类 (display only)
+  alarmLight: { topics: ["dev/alarm/light"], pubTopic: "" },
+  alarmPopup: { topics: ["dev/alarm/popup"], pubTopic: "" },
+};

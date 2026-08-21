@@ -266,6 +266,13 @@ export const zh = {
   "dash.ctx.duplicate": "复制控件",
   "dash.ctx.delete": "删除控件",
   "dash.ctx.addWidget": "添加控件",
+  "dash.duplicate": "复制",
+  "dash.disconnected": "未连接",
+  "dash.appearance": "外观",
+  "dash.addTopic": "添加 Topic",
+  "dash.removeTopic": "删除",
+  "dash.applyPreset": "使用预置 Topic",
+  "dash.noBrokerHint": "还没有 MQTT 连接，请先在 MQTT 页面添加",
 
   // --- tab bar --------------------------------------------------------------
   "tabs.duplicate": "复制标签页",

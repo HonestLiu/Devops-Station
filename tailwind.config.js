@@ -38,10 +38,15 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        "slide-in": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 140ms ease-out",
         "scale-in": "scale-in 120ms ease-out",
+        "slide-in": "slide-in 180ms cubic-bezier(0.22, 1, 0.36, 1)",
       },
     },
   },

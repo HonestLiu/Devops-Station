@@ -79,8 +79,6 @@ function findTabForNav(navId: Page): string | undefined {
       return tabs.find((t) => t.kind === "serial" || t.kind === "ble")?.id;
     case "jlink":
       return tabs.find((t) => t.kind === "jlink")?.id;
-    case "mqtt":
-      return tabs.find((t) => t.kind === "mqtt")?.id;
     default:
       return undefined;
   }
@@ -132,12 +130,12 @@ export function Sidebar() {
         return;
       }
     }
+    // MQTT opens the module picker as a PAGE (not a tab). Picking a module from
+    // it turns that module into its own tab.
     if (id === "mqtt") {
-      const existing = findTabForNav("mqtt");
-      if (existing) {
-        setActive(existing);
-        return;
-      }
+      setPage("mqtt");
+      focusPage();
+      return;
     }
     // Serial: the launcher page IS the "add another device" entry point. Always
     // open it instead of refocusing the first tab, so after connecting one port

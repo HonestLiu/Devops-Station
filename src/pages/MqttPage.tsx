@@ -16,7 +16,6 @@ import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections, dash } from "@/lib/api";
 import type { MqttConnection, MqttProtocol } from "@/lib/types";
-import { DashPage } from "./DashPage";
 
 const PROTOCOLS: MqttProtocol[] = ["mqtt", "mqtts", "ws", "wss"];
 
@@ -42,10 +41,13 @@ function emptyConn(): MqttConnection {
 
 export function MqttPage() {
   const t = useT();
-  // null = the dashboard-style module picker (replaces the old side sub-nav).
-  const [mode, setMode] = useState<"client" | "dash" | null>(null);
+  // The MQTT client list is an in-page module (a launcher — only the live
+  // connections become tabs). The HMI dashboard module opens directly as its
+  // own tab from the picker.
+  const [mode, setMode] = useState<"client" | null>(null);
   const [connCount, setConnCount] = useState<number | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
+  const openMqttDash = useTabsStore((s) => s.openMqttDash);
 
   useEffect(() => {
     let alive = true;
@@ -57,13 +59,21 @@ export function MqttPage() {
   }, []);
 
   if (mode === null) {
-    return <MqttModuleCards connCount={connCount} panelCount={panelCount} onPick={(m) => setMode(m)} />;
+    return (
+      <MqttModuleCards
+        connCount={connCount}
+        panelCount={panelCount}
+        onPick={(m) => {
+          if (m === "client") setMode("client");
+          else openMqttDash();
+        }}
+      />
+    );
   }
 
   return (
     <div className="flex h-full flex-col">
-      {/* Breadcrumb header (single row, NOT a tab bar — keeps the page from
-          colliding with the app TabBar like the old top tabs did). */}
+      {/* Breadcrumb header — back to the module picker. */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
         <button
           onClick={() => setMode(null)}
@@ -74,11 +84,11 @@ export function MqttPage() {
           {t("mqtt.modules")}
         </button>
         <span className="text-muted">/</span>
-        <span className="text-[13px] font-semibold text-fg">
-          {mode === "client" ? t("mqtt.title") : t("dash.title")}
-        </span>
+        <span className="text-[13px] font-semibold text-fg">{t("mqtt.title")}</span>
       </div>
-      <div className="min-h-0 flex-1">{mode === "dash" ? <DashPage /> : <MqttClientView />}</div>
+      <div className="min-h-0 flex-1">
+        <MqttClientView />
+      </div>
     </div>
   );
 }
@@ -159,7 +169,7 @@ function MqttModuleCards({
   );
 }
 
-function MqttClientView() {
+export function MqttClientView() {
   const t = useT();
   const openMqtt = useTabsStore((s) => s.openMqtt);
   const [conns, setConns] = useState<MqttConnection[]>([]);

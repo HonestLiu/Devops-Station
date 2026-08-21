@@ -237,10 +237,32 @@ export async function injectCommandLines(
   const { sessionId: sid, kind } = target;
   if (kind === "sftp") return;
 
-  const lines = cmd
+  const rawLines = cmd
     .split(/\r?\n/)
-    .map((l) => l.replace(/\s+$/u, ""))
-    .filter((l) => l.length > 0);
+    .map((l) => l.replace(/\s+$/u, ""));
+
+  // Merge lines that end with a backslash continuation (`\` + newline).
+  // The shell treats `<line>\` + newline as a single logical command, so we
+  // must deliver it in one write rather than splitting on newlines.
+  const lines: string[] = [];
+  let pending = "";
+  for (const raw of rawLines) {
+    if (pending !== "") {
+      // continuation – join with previous line (strip leading whitespace)
+      pending += " " + raw.replace(/^\s+/, "");
+    } else {
+      pending = raw;
+    }
+    if (pending.endsWith("\\") && pending.length > 0) {
+      // Strip the trailing backslash and keep accumulating.
+      pending = pending.slice(0, -1);
+    } else {
+      if (pending.length > 0) lines.push(pending);
+      pending = "";
+    }
+  }
+  // Flush any leftover continuation-only tail.
+  if (pending.length > 0) lines.push(pending);
   if (lines.length === 0) return;
 
   const writer = writerFor(kind);

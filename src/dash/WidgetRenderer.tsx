@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Camera,
+  ChevronsLeft,
+  ChevronsRight,
   Droplets,
+  Fan,
   Gauge as GaugeIcon,
   Lock,
   LockOpen,
-  Play,
+  Minus,
   Pause,
+  Play,
+  Plus,
   SkipBack,
   SkipForward,
   Thermometer,
@@ -94,8 +99,11 @@ function Card({
     <div
       onClick={onClick}
       className={cn(
-        "flex h-full w-full select-none flex-col overflow-hidden rounded-lg border bg-surface/70",
-        ctx.selected ? "border-accent ring-1 ring-accent/50" : "border-border/60",
+        "flex h-full w-full select-none flex-col overflow-hidden rounded-[14px] border border-border/70 bg-elevated transition-colors",
+        ctx.selected
+          ? "border-accent shadow-[0_0_0_1px_rgb(var(--c-accent))] ring-2 ring-accent/30"
+          : "hover:border-border",
+        ctx.editing && !ctx.selected && "hover:border-accent/40",
         onClick && "cursor-pointer",
         className,
       )}
@@ -772,53 +780,114 @@ export function WidgetRenderer(ctx: RenderCtx) {
     }
     case "acCard": {
       const on = bool(v.power);
+      const temp = clamp(num(v.temp, 26), 16, 30);
+      const fan = pct(v.fan);
+      const mode = str(v.mode, "auto");
+      const modes: { key: string; label: string }[] = [
+        { key: "auto", label: "自动" },
+        { key: "cool", label: "制冷" },
+        { key: "heat", label: "制热" },
+        { key: "fan", label: "送风" },
+      ];
       return (
-        <Card ctx={ctx} className="gap-1 p-2">
+        <Card ctx={ctx} className="gap-1.5 p-2">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1 text-[12px] font-medium text-fg">
-              <Snowflake size={13} className={on ? "text-info" : "text-subtle"} />
+            <span className="flex items-center gap-1.5 text-[12px] font-medium text-fg">
+              <span className={cn("flex h-5 w-5 items-center justify-center rounded-md", on ? "bg-info/15 text-info" : "bg-hover text-subtle")}>
+                <Snowflake size={12} />
+              </span>
               {widget.title || "空调"}
             </span>
             <Switch on={on} onChange={() => running && ctx.onPublish({ ...v, power: !on })} />
           </div>
-          <div className="flex items-center justify-between gap-1 text-[11px]">
-            <span className="text-subtle">模式</span>
-            <div className="flex gap-0.5">
-              {["auto", "cool", "heat", "fan"].map((m) => (
-                <CtrlBtn key={m} active={str(v.mode) === m} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ ...v, mode: m }))}>
-                  {m}
-                </CtrlBtn>
-              ))}
+
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-bg/40 px-2 py-1.5">
+            <div className="flex items-center gap-1">
+              <CtrlBtn disabled={!running} className="h-6 w-6 p-0" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: temp - 1 }))}>
+                <Minus size={12} />
+              </CtrlBtn>
+              <span className="min-w-[48px] text-center font-mono text-[22px] font-semibold leading-none text-fg">
+                {temp}
+                <span className="text-[11px] font-normal text-subtle">°C</span>
+              </span>
+              <CtrlBtn disabled={!running} className="h-6 w-6 p-0" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: temp + 1 }))}>
+                <Plus size={12} />
+              </CtrlBtn>
+            </div>
+            <div className="flex w-24 flex-col items-center gap-0.5">
+              <span className="flex items-center gap-1 text-[10px] text-subtle">
+                <Fan size={10} /> 风速
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={fan}
+                disabled={!running}
+                onChange={(e) => ctx.onPublish({ ...v, fan: Number(e.target.value) })}
+                className="w-full accent-[rgb(var(--c-info))]"
+              />
             </div>
           </div>
-          <div className="flex items-center justify-between gap-1 text-[11px]">
-            <span className="text-subtle">温度</span>
-            <span className="flex items-center gap-1">
-              <CtrlBtn disabled={!running} className="h-5 px-1.5" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) - 1, 16, 30) }))}>−</CtrlBtn>
-              <span className="w-7 text-center font-mono text-[13px] text-fg">{Math.round(num(v.temp, 26))}°</span>
-              <CtrlBtn disabled={!running} className="h-5 px-1.5" onClick={click(ctx, () => ctx.onPublish({ ...v, temp: clamp(num(v.temp, 26) + 1, 16, 30) }))}>+</CtrlBtn>
-            </span>
+
+          <div className="grid grid-cols-4 gap-1">
+            {modes.map((m) => (
+              <button
+                key={m.key}
+                disabled={!running}
+                onClick={click(ctx, () => ctx.onPublish({ ...v, mode: m.key }))}
+                className={cn(
+                  "rounded-md border px-1 py-1 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                  mode === m.key
+                    ? "border-info/50 bg-info/15 text-info"
+                    : "border-border/60 bg-bg/40 text-subtle hover:border-border hover:text-fg",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
-          <input type="range" min={0} max={100} value={pct(v.fan)} disabled={!running} onChange={(e) => ctx.onPublish({ ...v, fan: Number(e.target.value) })} className="w-full accent-[rgb(var(--c-info))]" />
         </Card>
       );
     }
     case "curtainCard": {
       const pos = pct(v.position);
+      const closed = pos <= 2;
+      const open = pos >= 98;
       return (
-        <Card ctx={ctx} className="gap-1 p-2">
-          <span className="text-[12px] font-medium text-fg">{widget.title || "窗帘"}</span>
-          <div className="flex min-h-0 flex-1 items-end justify-center overflow-hidden rounded bg-hover/40">
-            <div className="flex items-end transition-all" style={{ height: "100%" }}>
-              <div className="h-full bg-accent/40" style={{ width: 14 }} />
-              <div className="h-full bg-accent/70" style={{ width: 14 }} />
-            </div>
-            <span className="absolute self-center font-mono text-[14px] font-semibold text-fg">{Math.round(pos)}%</span>
+        <Card ctx={ctx} className="gap-1.5 p-2">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-[12px] font-medium text-fg">
+              <span className={cn("flex h-5 w-5 items-center justify-center rounded-md", closed ? "bg-hover text-subtle" : "bg-accent/15 text-accent")}>
+                <Home size={12} />
+              </span>
+              {widget.title || "窗帘"}
+            </span>
+            <span className="font-mono text-[12px] font-semibold text-fg">{Math.round(pos)}%</span>
           </div>
-          <div className="flex items-center justify-center gap-1">
-            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 0, moving: "close" }))}>全关</CtrlBtn>
-            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 50, moving: "stop" }))}>停</CtrlBtn>
-            <CtrlBtn disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 100, moving: "open" }))}>全开</CtrlBtn>
+
+          <div className="relative min-h-[46px] flex-1 overflow-hidden rounded-lg border border-border/60 bg-bg/40">
+            <div className="absolute inset-0 flex items-center justify-center text-[10px] text-subtle/60">窗</div>
+            <div
+              className="absolute inset-y-0 left-0 bg-gradient-to-b from-accent/35 via-accent/50 to-accent/65 transition-all duration-300"
+              style={{ width: `${(100 - pos) / 2}%` }}
+            />
+            <div
+              className="absolute inset-y-0 right-0 bg-gradient-to-b from-accent/35 via-accent/50 to-accent/65 transition-all duration-300"
+              style={{ width: `${(100 - pos) / 2}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-1">
+            <CtrlBtn active={closed} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 0, moving: "close" }))}>
+              <ChevronsLeft size={12} /> 全关
+            </CtrlBtn>
+            <CtrlBtn active={!closed && !open} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 50, moving: "stop" }))}>
+              <Pause size={12} /> 停
+            </CtrlBtn>
+            <CtrlBtn active={open} disabled={!running} onClick={click(ctx, () => ctx.onPublish({ position: 100, moving: "open" }))}>
+              <ChevronsRight size={12} /> 全开
+            </CtrlBtn>
           </div>
         </Card>
       );
@@ -895,7 +964,7 @@ function ClockWidget({ title }: { title: string }) {
     return () => window.clearInterval(t);
   }, []);
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-border/60 bg-surface/70 p-1">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-[14px] border border-border/70 bg-elevated p-1">
       {title && <div className="truncate text-[11px] text-fg/70">{title}</div>}
       <span className="font-mono text-[20px] font-semibold text-fg">
         {now.toLocaleTimeString("zh-CN", { hour12: false })}

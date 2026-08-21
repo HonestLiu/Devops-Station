@@ -316,6 +316,73 @@ export function Dialog({
           </footer>
         )}
       </div>
+      </div>,
+    document.body,
+  );
+}
+
+// --- Drawer (right-side slide-in) ------------------------------------------
+
+export function Drawer({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  width = "w-[360px]",
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  width?: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className={cn(
+          "absolute right-0 top-0 flex h-full max-w-full flex-col border-l border-border bg-elevated shadow-2xl animate-slide-in",
+          width,
+        )}
+        role="dialog"
+        aria-modal="true"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-[14px] font-semibold text-fg">{title}</h2>
+            {description && <p className="mt-0.5 text-[12px] text-muted">{description}</p>}
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+            <X size={14} />
+          </Button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+
+        {footer && (
+          <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
+            {footer}
+          </footer>
+        )}
+      </div>
     </div>,
     document.body,
   );
