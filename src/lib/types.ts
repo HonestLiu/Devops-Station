@@ -634,21 +634,32 @@ export interface ApprovalSettings {
 }
 
 /**
- * Account / sync configuration. The server address, username and auth token
- * are local-only (they must NOT be synced); nickname & avatar are managed by
- * the sync server and mirrored here for the Settings page.
+ * Object-storage sync configuration (S3-compatible / MinIO / Tencent COS /
+ * Cloudflare R2). These are LOCAL credentials — they are stored on this device
+ * only and are intentionally NOT synced, so one device can never hijack
+ * another's sync target. `deviceId` is injected by the backend, so it is not
+ * part of this interface.
  */
-export interface AccountSettings {
-  /** Sync server base URL, e.g. `http://127.0.0.1:8765`. */
-  serverUrl: string;
-  /** Logged-in username (empty = logged out). */
-  username: string;
-  /** Bearer token from the sync server (not persisted in the synced data). */
-  token: string;
-  /** Display nickname (synced via the server profile). */
-  nickname: string;
-  /** Avatar as a data: URL (synced via the server profile). */
-  avatar: string;
+export interface SyncConfig {
+  /** S3-compatible endpoint, e.g. `https://s3.us-east-1.amazonaws.com` or
+   *  `http://127.0.0.1:9000` (MinIO). */
+  endpoint: string;
+  /** Signing region (`us-east-1` works for most non-AWS providers). */
+  region: string;
+  /** Bucket name. */
+  bucket: string;
+  /** Access Key ID. */
+  accessKeyId: string;
+  /** Secret Access Key. */
+  secretAccessKey: string;
+  /** Optional object prefix (folder) inside the bucket; empty = bucket root. */
+  prefix: string;
+  /** Path-style URLs (MinIO / R2 / COS usually need this). Virtual-host for AWS. */
+  pathStyle: boolean;
+  /** Embed saved plaintext passwords in the pushed profile so synced devices
+   *  work seamlessly without re-entering credentials. The profile is the user's
+   *  own object-storage object. */
+  includeSecrets: boolean;
   /** Epoch ms of the last successful sync. */
   lastSyncAt: number;
 }

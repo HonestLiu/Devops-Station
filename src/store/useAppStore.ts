@@ -4,7 +4,7 @@ import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
 import { defaultShortcutBindings, mergeShortcutSettings } from "@/lib/shortcuts";
-import type { AccountSettings, AISettings, ApprovalSettings, KeywordHighlightSettings, ShortcutSettings, ThemeId } from "@/lib/types";
+import type { SyncConfig, AISettings, ApprovalSettings, KeywordHighlightSettings, ShortcutSettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink" | "mqtt";
 
@@ -60,8 +60,12 @@ export interface AppSettings {
    *  and install it without waiting for the user to click "Update now".
    *  Manual checks always show the release notes first. */
   autoDownloadUpdates: boolean;
-  /** Multi-device sync account (server URL + auth token + profile). */
-  account: AccountSettings;
+  /** User's display name — synced across devices as identity info. */
+  username: string;
+  /** User's avatar as a data: URL — synced across devices as identity info. */
+  avatar: string;
+  /** Object-storage sync configuration (local credentials, not synced). */
+  sync: SyncConfig;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -108,12 +112,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   autoCheckUpdates: true,
   autoDownloadUpdates: false,
-  account: {
-    serverUrl: "",
-    username: "",
-    token: "",
-    nickname: "",
-    avatar: "",
+  username: "",
+  avatar: "",
+  sync: {
+    endpoint: "",
+    region: "us-east-1",
+    bucket: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    prefix: "",
+    pathStyle: false,
+    includeSecrets: true,
     lastSyncAt: 0,
   },
   ai: {
@@ -197,6 +206,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadSettings: async () => {
     try {
       const stored = await db.getSettings();
+      // Legacy migration: the pre-object-storage "account" (Python-server auth)
+      // key is obsolete — drop it so a stale `account` blob can't linger on top
+      // of the new `sync` config after the shallow spread below.
+      const legacyStored = { ...(stored as Partial<AppSettings>) };
+      delete (legacyStored as Record<string, unknown>).account;
       // Legacy migration: pre-registry builds persisted flat `approveShortcut` /
       // `approveShortcutEnabled` (removed from AppSettings). Seed `quickApprove`
       // from them; a persisted `shortcuts` object wins field-by-field over the
@@ -214,7 +228,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       const merged = {
         ...DEFAULT_SETTINGS,
-        ...(stored as Partial<AppSettings>),
+        ...legacyStored,
         // `ai` is a nested object — a shallow spread would let a persisted `ai`
         // object from an older build (one that predates fields like
         // `autoDiagnose`, `knowledgeBase`, …) clobber the whole subtree, leaving
@@ -244,6 +258,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           (stored as Partial<AppSettings>).shortcuts,
           migrated,
         ),
+        // `sync` is a nested object — merge field-by-field so a persisted older
+        // shape (e.g. before `includeSecrets` existed) can never drop keys.
+        sync: {
+          ...DEFAULT_SETTINGS.sync,
+          ...((stored as Partial<AppSettings>).sync ?? {}),
+        },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);
       // Persist the repair so it isn't re-detected on every startup.

@@ -47,6 +47,9 @@ pub struct SyncConfig {
     /// storage is shared infrastructure — keep this off unless you trust it.
     pub include_secrets: bool,
     /// Stable per-install id, recorded in the envelope for provenance.
+    /// Injected by the backend command handler; defaults to empty if a client
+    /// omits it (the frontend never sends it).
+    #[serde(default)]
     pub device_id: String,
 }
 

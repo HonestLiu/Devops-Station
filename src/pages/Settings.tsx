@@ -32,12 +32,10 @@ import { isWindows } from "@/lib/platform";
 import { formatShortcut, isShortcutRecording, setShortcutRecording, shortcutToAccelerator, MODIFIER_CODES } from "@/lib/shortcut";
 import { defaultShortcutBindings, defaultBinding, SHORTCUT_DEFS } from "@/lib/shortcuts";
 import {
-  loginAccount,
-  logoutAccount,
-  pullSyncData,
-  registerAccount,
-  saveProfile,
+  testConnection,
   syncNow,
+  saveIdentity,
+  isSyncConfigured,
 } from "@/lib/sync";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -454,74 +452,52 @@ export function Settings() {
   const setShortcut = (id: ShortcutId, v: ShortcutBinding) =>
     void updateSetting("shortcuts", { ...settings.shortcuts, [id]: v });
 
-  // --- Account / sync ------------------------------------------------------
-  const account = settings.account;
-  const [serverUrl, setServerUrl] = useState(account.serverUrl);
-  const [accUser, setAccUser] = useState("");
-  const [accPass, setAccPass] = useState("");
-  const [nickname, setNickname] = useState(account.nickname);
-  const [accBusy, setAccBusy] = useState(false);
-  const [accMsg, setAccMsg] = useState<string | null>(null);
+  // --- Object-storage sync ------------------------------------------------
+  const sync = settings.sync;
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [nickname, setNickname] = useState(settings.username);
+  const [avatar, setAvatar] = useState(settings.avatar);
 
-  const doAuth = async (mode: "login" | "register") => {
-    setAccBusy(true);
-    setAccMsg(null);
+  const setSync = (patch: Partial<typeof sync>) =>
+    void updateSetting("sync", { ...sync, ...patch });
+
+  const doTest = async () => {
+    setSyncBusy(true);
+    setSyncMsg(null);
     try {
-      const url = serverUrl.trim().replace(/\/+$/, "");
-      if (!url) throw new Error(t("settings.accNeedServer"));
-      if (!accUser.trim() || !accPass) throw new Error(t("settings.accNeedCred"));
-      const r =
-        mode === "login"
-          ? await loginAccount(url, accUser.trim(), accPass)
-          : await registerAccount(url, accUser.trim(), accPass);
-      await updateSetting("account", {
-        ...useAppStore.getState().settings.account,
-        serverUrl: url,
-        username: accUser.trim(),
-        token: r.token,
-        nickname: r.nickname,
-        avatar: r.avatar,
-        lastSyncAt: Date.now(),
-      });
-      setNickname(r.nickname);
-      // First sync right after login: pull the remote state onto this device.
-      try {
-        await pullSyncData(url, r.token);
-      } catch {
-        /* server data may be empty / unreachable — login itself succeeded */
-      }
-      setAccMsg(t("settings.accLoggedIn"));
+      const r = await testConnection();
+      setSyncMsg(r.message);
     } catch (e) {
-      setAccMsg(String(e));
+      setSyncMsg(String(e));
     } finally {
-      setAccBusy(false);
+      setSyncBusy(false);
     }
   };
 
   const doSync = async () => {
-    setAccBusy(true);
-    setAccMsg(null);
+    setSyncBusy(true);
+    setSyncMsg(null);
     try {
       await syncNow();
-      setAccMsg(t("settings.accSynced"));
+      setSyncMsg(t("settings.accSynced"));
     } catch (e) {
-      setAccMsg(String(e));
+      setSyncMsg(String(e));
     } finally {
-      setAccBusy(false);
+      setSyncBusy(false);
     }
   };
 
-  const doSaveNickname = async () => {
-    setAccBusy(true);
-    setAccMsg(null);
+  const doSaveIdentity = async () => {
+    setSyncBusy(true);
+    setSyncMsg(null);
     try {
-      const a = useAppStore.getState().settings.account;
-      await saveProfile(a.serverUrl, a.token, nickname.trim(), a.avatar);
-      setAccMsg(t("settings.accSaved"));
+      await saveIdentity(nickname.trim(), avatar);
+      setSyncMsg(t("settings.accSaved"));
     } catch (e) {
-      setAccMsg(String(e));
+      setSyncMsg(String(e));
     } finally {
-      setAccBusy(false);
+      setSyncBusy(false);
     }
   };
 
@@ -529,37 +505,37 @@ export function Settings() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
+    input.onclick = (ev) => ev.stopPropagation();
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = async () => {
+      reader.onload = () => {
         const dataUrl = String(reader.result ?? "");
         if (dataUrl.length > 1_400_000) {
-          setAccMsg(t("settings.accAvatarTooBig"));
+          setSyncMsg(t("settings.accAvatarTooBig"));
           return;
         }
-        setAccBusy(true);
-        setAccMsg(null);
-        try {
-          const a = useAppStore.getState().settings.account;
-          await saveProfile(a.serverUrl, a.token, a.nickname, dataUrl);
-          setAccMsg(t("settings.accSaved"));
-        } catch (e) {
-          setAccMsg(String(e));
-        } finally {
-          setAccBusy(false);
-        }
+        setAvatar(dataUrl);
       };
       reader.readAsDataURL(file);
     };
     input.click();
   };
 
-  const doLogout = () => {
-    logoutAccount();
-    setAccMsg(null);
-    setNickname("");
+  const doDisconnect = () => {
+    void updateSetting("sync", {
+      endpoint: "",
+      region: "us-east-1",
+      bucket: "",
+      accessKeyId: "",
+      secretAccessKey: "",
+      prefix: "",
+      pathStyle: false,
+      includeSecrets: true,
+      lastSyncAt: 0,
+    });
+    setSyncMsg(null);
   };
 
   // Section cards matching the current search query (empty query = all).
@@ -789,115 +765,132 @@ export function Settings() {
         <div className="min-w-0 flex-1 space-y-6 pb-6">
           {/* Account */}
           <Section id="account" hidden={!secVisible("settings.account")} icon={<Cloud size={15} />} title={t("settings.account")}>
-            {!account.token ? (
-              <>
-                <Row title={t("settings.accServerUrl")} desc={t("settings.accServerHint")}>
-                  <Input
-                    value={serverUrl}
-                    onChange={(e) => setServerUrl(e.target.value)}
-                    className="font-mono text-[12px]"
-                    placeholder="http://127.0.0.1:8765"
-                  />
-                </Row>
-                <Row title={t("settings.accUsername")}>
-                  <Input
-                    value={accUser}
-                    onChange={(e) => setAccUser(e.target.value)}
-                    className="font-mono text-[12px]"
-                    autoComplete="username"
-                  />
-                </Row>
-                <Row title={t("settings.accPassword")}>
-                  <PasswordInput
-                    value={accPass}
-                    onChange={(e) => setAccPass(e.target.value)}
-                    className="font-mono text-[12px]"
-                    autoComplete="current-password"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void doAuth("login");
-                    }}
-                  />
-                </Row>
-                <Row title={t("settings.accActions")} full>
+            <Row title={t("settings.syncEndpoint")} desc={t("settings.syncEndpointHint")}>
+              <Input
+                value={sync.endpoint}
+                onChange={(e) => setSync({ endpoint: e.target.value })}
+                className="font-mono text-[12px]"
+                placeholder="https://s3.amazonaws.com 或 http://127.0.0.1:9000"
+              />
+            </Row>
+            <Row title={t("settings.syncRegion")}>
+              <Input
+                value={sync.region}
+                onChange={(e) => setSync({ region: e.target.value })}
+                className="font-mono text-[12px]"
+                placeholder="us-east-1"
+              />
+            </Row>
+            <Row title={t("settings.syncBucket")}>
+              <Input
+                value={sync.bucket}
+                onChange={(e) => setSync({ bucket: e.target.value })}
+                className="font-mono text-[12px]"
+              />
+            </Row>
+            <Row title={t("settings.syncAccessKey")}>
+              <Input
+                value={sync.accessKeyId}
+                onChange={(e) => setSync({ accessKeyId: e.target.value })}
+                className="font-mono text-[12px]"
+                autoComplete="username"
+              />
+            </Row>
+            <Row title={t("settings.syncSecretKey")}>
+              <PasswordInput
+                value={sync.secretAccessKey}
+                onChange={(e) => setSync({ secretAccessKey: e.target.value })}
+                className="font-mono text-[12px]"
+                autoComplete="current-password"
+              />
+            </Row>
+            <Row title={t("settings.syncPrefix")} desc={t("settings.syncPrefixHint")}>
+              <Input
+                value={sync.prefix}
+                onChange={(e) => setSync({ prefix: e.target.value })}
+                className="font-mono text-[12px]"
+                placeholder="（可选）devops-station"
+              />
+            </Row>
+            <Row title={t("settings.syncPathStyle")} desc={t("settings.syncPathStyleHint")}>
+              <Switch checked={sync.pathStyle} onChange={(v) => setSync({ pathStyle: v })} label="" />
+            </Row>
+            <Row title={t("settings.syncIncludeSecrets")} desc={t("settings.syncIncludeSecretsHint")}>
+              <Switch checked={sync.includeSecrets} onChange={(v) => setSync({ includeSecrets: v })} label="" />
+            </Row>
+            <Row title={t("settings.accActions")} full>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={syncBusy || !isSyncConfigured()}
+                  onClick={() => void doTest()}
+                >
+                  {syncBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                  {t("settings.syncTest")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={syncBusy || !isSyncConfigured()}
+                  onClick={doDisconnect}
+                >
+                  {t("settings.syncDisconnect")}
+                </Button>
+              </div>
+            </Row>
+
+            <Row title={t("settings.accIdentity")} full>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={pickAvatar}
+                  title={t("settings.accChangeAvatar")}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-hover text-[10px] text-muted transition-colors hover:border-accent"
+                >
+                  {avatar ? (
+                    <img src={avatar} alt="avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    <Cloud size={20} />
+                  )}
+                </button>
+                <div className="flex min-w-0 flex-col gap-1">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={accBusy}
-                      onClick={() => void doAuth("login")}
-                    >
-                      {accBusy ? <Loader2 size={13} className="animate-spin" /> : null}
-                      {t("settings.accLogin")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={accBusy}
-                      onClick={() => void doAuth("register")}
-                    >
-                      {t("settings.accRegister")}
+                    <Input
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      className="h-8 w-44 font-mono text-[12px]"
+                      placeholder={t("settings.accNicknamePh")}
+                    />
+                    <Button size="sm" variant="ghost" disabled={syncBusy} onClick={() => void doSaveIdentity()}>
+                      {t("settings.accSave")}
                     </Button>
                   </div>
-                </Row>
-              </>
-            ) : (
-              <>
-                <Row title={t("settings.accIdentity")} full>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={pickAvatar}
-                      title={t("settings.accChangeAvatar")}
-                      className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-hover text-[10px] text-muted transition-colors hover:border-accent"
-                    >
-                      {account.avatar ? (
-                        <img src={account.avatar} alt="avatar" className="h-full w-full object-cover" />
-                      ) : (
-                        <Cloud size={20} />
-                      )}
-                    </button>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={nickname}
-                          onChange={(e) => setNickname(e.target.value)}
-                          className="h-8 w-44 font-mono text-[12px]"
-                          placeholder={t("settings.accNicknamePh")}
-                        />
-                        <Button size="sm" variant="ghost" disabled={accBusy} onClick={() => void doSaveNickname()}>
-                          {t("settings.accSave")}
-                        </Button>
-                      </div>
-                      <span className="truncate text-[11px] text-subtle">
-                        {account.username} · {account.serverUrl}
-                      </span>
-                    </div>
-                  </div>
-                </Row>
-                <Row title={t("settings.accSync")} desc={t("settings.accSyncHint")}>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" disabled={accBusy} onClick={() => void doSync()}>
-                      {accBusy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                      {t("settings.accSyncNow")}
-                    </Button>
-                    {account.lastSyncAt > 0 && (
-                      <span className="text-[11px] text-subtle">
-                        {t("settings.accLastSync")}{" "}
-                        {new Date(account.lastSyncAt).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </Row>
-                <Row title={t("settings.accActions")} full>
-                  <Button variant="danger" size="sm" disabled={accBusy} onClick={doLogout}>
-                    {t("settings.accLogout")}
-                  </Button>
-                </Row>
-              </>
-            )}
-            {accMsg && (
+                  <span className="truncate text-[11px] text-subtle">
+                    {t("settings.accIdentityHint")}
+                  </span>
+                </div>
+              </div>
+            </Row>
+
+            <Row title={t("settings.accSync")} desc={t("settings.accSyncHint")}>
+              <div className="flex items-center gap-2">
+                <Button size="sm" disabled={syncBusy || !isSyncConfigured()} onClick={() => void doSync()}>
+                  {syncBusy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                  {t("settings.accSyncNow")}
+                </Button>
+                {sync.lastSyncAt > 0 && (
+                  <span className="text-[11px] text-subtle">
+                    {t("settings.accLastSync")}{" "}
+                    {new Date(sync.lastSyncAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </Row>
+
+            {syncMsg && (
               <Row title={t("settings.accResult")} full>
                 <span className="break-all font-mono text-[11px] leading-relaxed text-muted">
-                  {accMsg}
+                  {syncMsg}
                 </span>
               </Row>
             )}

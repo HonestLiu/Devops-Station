@@ -1,311 +1,112 @@
 /**
- * Multi-device account & config sync.
+ * Cross-device data sync through object storage (S3-compatible / MinIO /
+ * Tencent COS / Cloudflare R2).
  *
- * Talks to the self-hosted Python sync server (Server/server.py):
- *   register / login  → Bearer token
- *   GET/POST /api/sync → whole-config push/pull (last-write-wins)
- *   GET/POST /api/profile → nickname + avatar
+ * Replaces the old self-hosted Python account server. There is no account or
+ * login: the user configures their own object-storage bucket, and every device
+ * that points at the same bucket can push/pull a single profile object.
  *
- * What gets synced:
- *   - A whitelist of *cross-platform* settings (theme, language, AI config,
- *     approval settings, shortcuts, …). Machine-specific values
- *     (localShell, jlinkPath, importedFonts, sidebarCollapsed) are excluded —
- *     they differ per OS / per device.
- *   - The hosts list and quick commands (any kind; credentials are stored
- *     plaintext on the server — it is your own deployment, see Server/README).
- *   - Nickname / avatar (server profile).
- * Nothing sensitive about the sync *server* (serverUrl / token) is synced.
+ * What gets synced (nearly everything, for a seamless move to a new device):
+ *   - All cross-platform settings, EXCEPT purely device-specific ones
+ *     (localShell, jlinkPath, importedFonts, sidebarCollapsed) which are
+ *     stripped on push by the backend (`profile_doc`).
+ *   - The hosts list and quick commands, including saved passwords when
+ *     `includeSecrets` is on (default) — so cloud-server credentials work on
+ *     every synced device without re-entering them.
+ *   - Imported fonts.
+ *   - The user's display name (`username`) and avatar — synced identity info.
+ *
+ * What is intentionally NOT synced:
+ *   - The object-storage config itself (`sync` setting) — it's local
+ *     credentials, so one device can never hijack another's sync target. The
+ *     backend also strips the remote `sync` block on pull as a belt-and-braces
+ *     measure.
+ *
+ * The actual transport (AWS SigV4 over reqwest) lives in the Rust `sync`
+ * module; this file is a thin typed wrapper around the `sync_test` /
+ * `sync_push` / `sync_pull` Tauri commands. `deviceId` is injected by the
+ * backend, so we never send it from the frontend.
  */
-import { useAppStore, DEFAULT_SETTINGS } from "@/store/useAppStore";
-import { useHostsStore } from "@/store/useHostsStore";
+import { useAppStore } from "@/store/useAppStore";
 import { tFrom } from "@/i18n";
-import { db, mqttConnections } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
-import { mergeShortcutSettings } from "@/lib/shortcuts";
-import type { Host, MqttConnection, QuickCommand, ShortcutSettings } from "@/lib/types";
+import type { SyncConfig } from "@/lib/types";
 
-/** Settings keys shared across platforms. Everything else stays device-local. */
-export const SYNC_SETTING_KEYS = [
-  "theme",
-  "language",
-  "fontFamily",
-  "fontSize",
-  "lineHeight",
-  "cursorBlink",
-  "cursorStyle",
-  "cursorColor",
-  "cursorInactiveStyle",
-  "scrollback",
-  "copyOnSelect",
-  "metricsInterval",
-  "confirmOnClose",
-  "shortcuts",
-  "approvalNotifications",
-  "approval",
-  "autoCheckUpdates",
-  "autoDownloadUpdates",
-  "ai",
-] as const;
-
-export interface SyncData {
-  settings: Record<string, unknown>;
-  hosts: Host[];
-  quickCommands: QuickCommand[];
-  /** MQTT connections (incl. persisted subscriptions + publish form, and
-   *  decrypted passwords) so they work seamlessly on every synced device. */
-  mqttConnections: MqttConnection[];
+/** Read the (local) object-storage sync config from the store. */
+export function getSyncConfig(): SyncConfig {
+  return useAppStore.getState().settings.sync;
 }
 
-export interface Profile {
-  nickname: string;
-  avatar: string;
+/** Whether a sync target has been configured. */
+export function isSyncConfigured(): boolean {
+  const s = getSyncConfig();
+  return (
+    s.endpoint.trim() !== "" &&
+    s.bucket.trim() !== "" &&
+    s.accessKeyId.trim() !== "" &&
+    s.secretAccessKey.trim() !== ""
+  );
 }
 
-// ------------------------------------------------------------------ HTTP
-//
-// Requests go through the Rust `sync_fetch` command (reqwest), NOT browser
-// fetch: the packaged page runs on https://tauri.localhost, and browser-level
-// restrictions (CSP connect-src, mixed content, Chromium Private Network
-// Access) would block calls to a self-hosted plain-http sync server. reqwest
-// is not subject to any of them.
-
-async function api<T>(
-  url: string,
-  method: "GET" | "POST",
-  token: string | null,
-  body?: unknown,
-): Promise<T> {
-  let status: number;
-  let text: string;
-  try {
-    [status, text] = await invoke<[number, string]>("sync_fetch", {
-      method,
-      url,
-      token: token || null,
-      body: body === undefined ? null : JSON.stringify(body),
-    });
-  } catch {
-    // Transport failure (server unreachable / wrong URL / DNS). Surface
-    // something actionable instead of the raw error.
-    throw new Error(tFrom(useAppStore.getState().settings.language, "sync.networkError"));
+/** Verify the bucket + credentials are reachable (HEAD the sync object). */
+export async function testConnection(): Promise<{ success: boolean; message: string }> {
+  if (!isSyncConfigured()) {
+    throw new Error(tFrom(useAppStore.getState().settings.language, "settings.sync.needConfig"));
   }
-  let data: Record<string, unknown> = {};
-  try {
-    data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-  } catch {
-    data = {};
+  const res = await invoke<{ success: boolean; status: number; message: string }>(
+    "sync_test",
+    { cfg: getSyncConfig() },
+  );
+  if (!res.success) throw new Error(res.message);
+  return { success: true, message: res.message };
+}
+
+/** Upload the local profile to object storage (local changes win). */
+export async function pushSync(): Promise<void> {
+  if (!isSyncConfigured()) {
+    throw new Error(tFrom(useAppStore.getState().settings.language, "settings.sync.needConfig"));
   }
-  if (status >= 400) throw new Error((data.error as string) || `HTTP ${status}`);
-  return data as T;
+  await invoke("sync_push", { cfg: getSyncConfig() });
+  markSynced();
 }
 
-function base(serverUrl: string): string {
-  return serverUrl.replace(/\/+$/, "");
+/** Download the remote profile and merge it into the local database. */
+export async function pullSync(): Promise<void> {
+  if (!isSyncConfigured()) {
+    throw new Error(tFrom(useAppStore.getState().settings.language, "settings.sync.needConfig"));
+  }
+  await invoke("sync_pull", { cfg: getSyncConfig() });
+  markSynced();
 }
-
-// ------------------------------------------------------------------ auth
-
-export async function registerAccount(
-  serverUrl: string,
-  username: string,
-  password: string,
-): Promise<{ token: string; nickname: string; avatar: string }> {
-  return api(`${base(serverUrl)}/api/register`, "POST", null, { username, password });
-}
-
-export async function loginAccount(
-  serverUrl: string,
-  username: string,
-  password: string,
-): Promise<{ token: string; nickname: string; avatar: string }> {
-  return api(`${base(serverUrl)}/api/login`, "POST", null, { username, password });
-}
-
-// ------------------------------------------------------------------ sync
 
 /**
- * Gather what gets pushed. Hosts are fetched WITH their real (decrypted)
- * credentials via `db.listHosts(true)` — without that, the payload would only
- * carry the `__saved__` sentinel and the password would vanish on the other
- * device. The server is the user's own deployment (plaintext-at-rest is an
- * accepted tradeoff, see Server/README).
+ * One-shot "sync now": push the local state first (this device's changes win,
+ * as the user explicitly initiated the sync), then pull the reconciled remote
+ * state back so every device ends up identical.
  */
-async function collectSyncData(): Promise<SyncData> {
-  const s = useAppStore.getState().settings;
-  const { quickCommands } = useHostsStore.getState();
-  const hosts = await db.listHosts(true);
-  // MQTT connections are pulled WITH their decrypted credentials + persisted
-  // subscriptions/publish form, exactly like hosts (plaintext-at-rest is an
-  // accepted tradeoff on the user's own sync server).
-  const mqttConns = await mqttConnections.list(true);
-  const settings: Record<string, unknown> = {};
-  for (const k of SYNC_SETTING_KEYS) settings[k] = s[k];
-  return { settings, hosts, quickCommands, mqttConnections: mqttConns };
-}
-
-/** Push the current local state to the server (last-write-wins). */
-export async function pushSyncData(serverUrl: string, token: string): Promise<void> {
-  const data = await collectSyncData();
-  await api(`${base(serverUrl)}/api/sync`, "POST", token, { data });
-  useAppStore.getState().updateSetting("account", {
-    ...useAppStore.getState().settings.account,
-    lastSyncAt: Date.now(),
-  });
-}
-
-/** Apply remote data onto the local stores (settings whitelist + hosts + commands). */
-export async function applySyncData(data: Partial<SyncData>): Promise<void> {
-  const remoteSettings = (data.settings ?? {}) as Record<string, unknown>;
-  const local = useAppStore.getState().settings;
-  const updateSetting = useAppStore.getState().updateSetting;
-
-  // Settings: apply each whitelisted key that differs. Nested objects are
-  // merged field-by-field so a remote payload from an older build can never
-  // clobber newer keys with `undefined`.
-  for (const k of SYNC_SETTING_KEYS) {
-    const remote = remoteSettings[k];
-    if (remote === undefined) continue;
-    if (k === "ai" || k === "approval" || k === "shortcuts") {
-      const merged = {
-        ...(DEFAULT_SETTINGS[k] as unknown as Record<string, unknown>),
-        ...(remote as Record<string, unknown>),
-      };
-      if (k === "approval" && typeof remote === "object" && remote !== null) {
-        merged.tools = {
-          ...((DEFAULT_SETTINGS.approval.tools as unknown as Record<string, unknown>) ?? {}),
-          ...(((remote as Record<string, unknown>).tools as Record<string, unknown>) ?? {}),
-        };
-      }
-      if (k === "shortcuts" && typeof remote === "object" && remote !== null) {
-        // Per-id merge so a remote payload missing some bindings (older build /
-        // newer registry) can't drop the local ones.
-        Object.assign(
-          merged,
-          mergeShortcutSettings(remote as Partial<ShortcutSettings>),
-        );
-      }
-      if (JSON.stringify(merged) !== JSON.stringify(local[k])) {
-        await updateSetting(k, merged as never);
-      }
-      continue;
-    }
-    if (JSON.stringify(remote) !== JSON.stringify(local[k])) {
-      await updateSetting(k, remote as never);
-    }
-  }
-
-  // Hosts: the server holds the latest writer's state — reconcile to it, but
-  // ONLY when the remote payload actually carries the field. A brand-new
-  // account has `data: {}` on the server; applying an implicit empty list
-  // would wipe this device's hosts before the user ever pushed anything.
-  const hs = useHostsStore.getState();
-  if (data.hosts !== undefined) {
-    const remoteHosts = data.hosts as Host[];
-    const remoteCommands = (data.quickCommands ?? []) as QuickCommand[];
-    for (const h of hs.hosts) {
-      if (!remoteHosts.some((r) => r.id === h.id)) await hs.deleteHost(h.id);
-    }
-    for (const h of remoteHosts) {
-      // A plaintext (non-`__saved__`) credential arriving from sync must be
-      // persisted into this device's own vault, so force `savePassword` on.
-      // Otherwise `save_host` drops it (save_password=false) and the password
-      // is lost again on this device.
-      const hasPlainSecret =
-        (typeof h.password === "string" && h.password.length > 0 && h.password !== "__saved__") ||
-        (typeof h.passphrase === "string" && h.passphrase.length > 0 && h.passphrase !== "__saved__");
-      await hs.saveHost(hasPlainSecret ? { ...h, savePassword: true } : h);
-    }
-    for (const c of hs.quickCommands) {
-      if (!remoteCommands.some((r) => r.id === c.id)) await hs.deleteQuickCommand(c.id);
-    }
-    for (const c of remoteCommands) await hs.saveQuickCommand(c);
-  } else if (data.quickCommands !== undefined) {
-    const remoteCommands = data.quickCommands as QuickCommand[];
-    for (const c of hs.quickCommands) {
-      if (!remoteCommands.some((r) => r.id === c.id)) await hs.deleteQuickCommand(c.id);
-    }
-    for (const c of remoteCommands) await hs.saveQuickCommand(c);
-  }
-
-  // MQTT connections: same reconcile + re-seal logic as hosts. A plaintext
-  // password arriving from sync must be sealed into this device's own vault, so
-  // force `savePassword` on — otherwise `save_mqtt_connection` drops it.
-  if (data.mqttConnections !== undefined) {
-    const localMqtt = await mqttConnections.list(false);
-    const remoteMqtt = data.mqttConnections as MqttConnection[];
-    for (const c of localMqtt) {
-      if (!remoteMqtt.some((r) => r.id === c.id)) await mqttConnections.delete(c.id);
-    }
-    for (const c of remoteMqtt) {
-      const hasPlainSecret =
-        typeof c.password === "string" && c.password.length > 0 && c.password !== "__saved__";
-      await mqttConnections.save(hasPlainSecret ? { ...c, savePassword: true } : c);
-    }
-  }
-}
-
-/** Pull the remote state and apply it locally. Returns true on success. */
-export async function pullSyncData(serverUrl: string, token: string): Promise<boolean> {
-  const res = await api<{ data: Partial<SyncData> }>(
-    `${base(serverUrl)}/api/sync`,
-    "GET",
-    token,
-  );
-  if (res.data) await applySyncData(res.data);
-  useAppStore.getState().updateSetting("account", {
-    ...useAppStore.getState().settings.account,
-    lastSyncAt: Date.now(),
-  });
-  return true;
-}
-
-/** One-shot "sync now": push the local state (this device's changes win, as
- *  the user explicitly initiated the sync), then pull the reconciled remote
- *  state back so every device ends up identical. */
 export async function syncNow(): Promise<void> {
-  const a = useAppStore.getState().settings.account;
-  if (!a.serverUrl || !a.token) throw new Error("not logged in");
-  await pushSyncData(a.serverUrl, a.token);
-  await pullSyncData(a.serverUrl, a.token);
+  await pushSync();
+  await pullSync();
 }
 
-// ------------------------------------------------------------------ profile
-
-/** Save nickname / avatar to the server and mirror them locally. */
-export async function saveProfile(
-  serverUrl: string,
-  token: string,
-  nickname?: string,
-  avatar?: string,
-): Promise<Profile> {
-  const body: Record<string, string> = {};
-  if (nickname !== undefined) body.nickname = nickname;
-  if (avatar !== undefined) body.avatar = avatar;
-  const profile = await api<Profile>(`${base(serverUrl)}/api/profile`, "POST", token, body);
-  useAppStore.getState().updateSetting("account", {
-    ...useAppStore.getState().settings.account,
-    nickname: profile.nickname,
-    avatar: profile.avatar,
-  });
-  return profile;
-}
-
-/** Clear the local login (token + identity), keeping the server address.
-
- *  Best-effort: also asks the server to invalidate this device's session so a
- *  logged-out device can't keep using a stale token. Network failures are
- *  ignored — the local clear always happens. */
-export function logoutAccount(): void {
-  const a = useAppStore.getState().settings.account;
-  if (a.serverUrl && a.token) {
-    api(`${base(a.serverUrl)}/api/logout`, "POST", a.token).catch(() => {});
+/**
+ * Save the user's display name / avatar and immediately push so the new
+ * identity is available on every synced device without a separate sync step.
+ */
+export async function saveIdentity(username: string, avatar: string): Promise<void> {
+  await useAppStore.getState().updateSetting("username", username);
+  await useAppStore.getState().updateSetting("avatar", avatar);
+  if (isSyncConfigured()) {
+    try {
+      await pushSync();
+    } catch {
+      // Identity is still saved locally; the next sync will carry it.
+    }
   }
-  useAppStore.getState().updateSetting("account", {
-    ...a,
-    username: "",
-    token: "",
-    nickname: "",
-    avatar: "",
-    lastSyncAt: 0,
-  });
+}
+
+/** Persist the last-successful-sync timestamp. */
+function markSynced(): void {
+  const sync = { ...getSyncConfig(), lastSyncAt: Date.now() };
+  void useAppStore.getState().updateSetting("sync", sync);
 }

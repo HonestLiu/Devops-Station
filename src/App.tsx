@@ -49,7 +49,7 @@ import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import { checkForUpdate } from "./lib/updater";
 import { permHook } from "./lib/api";
-import { pullSyncData } from "./lib/sync";
+import { pullSync, isSyncConfigured } from "./lib/sync";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { HostKeyPrompt } from "./components/HostKeyPrompt";
 import { approveWaitingNow } from "./lib/quickApprove";
@@ -451,15 +451,16 @@ export default function App() {
     }
   }, [settingsLoaded, approval.enabled, approval.port, approval.scanFallback]);
 
-  // Auto-pull cloud config on startup when logged in (silent — failures just
-  // leave the local state as-is; the user can sync manually in Settings).
-  const account = useAppStore((s) => s.settings.account);
+  // Auto-pull cloud config on startup when a sync target is configured
+  // (silent — failures just leave the local state as-is; the user can sync
+  // manually in Settings).
+  const syncConfigured = useAppStore((s) => isSyncConfigured());
   useEffect(() => {
     if (!settingsLoaded) return;
-    if (account.token) {
-      void pullSyncData(account.serverUrl, account.token).catch(() => undefined);
+    if (syncConfigured) {
+      void pullSync().catch(() => undefined);
     }
-  }, [settingsLoaded, account.token, account.serverUrl]);
+  }, [settingsLoaded, syncConfigured]);
 
   // Keep the OS-level (system-wide) quick-approve shortcut in sync with the
   // setting — it works even when this window has no focus, e.g. the user is

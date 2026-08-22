@@ -264,6 +264,22 @@ impl Store {
         Ok(store)
     }
 
+    /// Stable per-install device id, persisted at `<data_dir>/device_id`.
+    /// Used as the provenance marker on synced profiles so a pull can report
+    /// which device the data came from. Auto-generated once and reused.
+    pub fn device_id(&self) -> String {
+        let path = self.data_dir.join("device_id");
+        if let Ok(s) = std::fs::read_to_string(&path) {
+            let s = s.trim();
+            if !s.is_empty() {
+                return s.to_string();
+            }
+        }
+        let id = Uuid::new_v4().to_string();
+        let _ = std::fs::write(&path, &id);
+        id
+    }
+
     fn seed_defaults(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         let count: i64 =
@@ -1093,7 +1109,16 @@ impl Store {
             }
         }
         let quick_commands = self.list_quick_commands()?;
-        let settings = self.get_settings()?;
+        let mut settings = self.get_settings()?;
+        // Strip device-specific (non-portable) settings before syncing so a
+        // pull on another machine never overrides its own local shell, J-Link
+        // path, imported fonts or sidebar layout. The `sync` block holds this
+        // device's object-storage credentials and must NEVER travel.
+        if let Some(obj) = settings.as_object_mut() {
+            for k in ["localShell", "jlinkPath", "importedFonts", "sidebarCollapsed", "sync"] {
+                obj.remove(k);
+            }
+        }
         let fonts = self.collect_fonts()?;
         Ok(json!({
             "format": PROFILE_FORMAT,

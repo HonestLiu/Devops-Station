@@ -741,43 +741,6 @@ fn set_global_approve_shortcut(app: tauri::AppHandle, accelerator: String) -> Re
     Ok(())
 }
 
-/// Forward an HTTP request to the sync server from the Rust side. The frontend
-/// uses this instead of `fetch`: reqwest is not subject to webview restrictions
-/// (CSP, mixed content, Chromium Private Network Access), which would otherwise
-/// block calls to a self-hosted plain-http server from the packaged https page.
-/// Returns (status, raw body); transport errors surface as Err.
-#[tauri::command]
-async fn sync_fetch(
-    method: String,
-    url: String,
-    token: Option<String>,
-    body: Option<String>,
-) -> Result<(u16, String), String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("client init: {e}"))?;
-    let mut builder = client.request(
-        match method.as_str() {
-            "POST" => reqwest::Method::POST,
-            _ => reqwest::Method::GET,
-        },
-        &url,
-    );
-    if let Some(t) = token {
-        if !t.is_empty() {
-            builder = builder.header("Authorization", format!("Bearer {t}"));
-        }
-    }
-    if let Some(b) = body {
-        builder = builder.header("Content-Type", "application/json").body(b);
-    }
-    let resp = builder.send().await.map_err(|e| format!("net: {e}"))?;
-    let status = resp.status().as_u16();
-    let text = resp.text().await.unwrap_or_default();
-    Ok((status, text))
-}
-
 // ===========================================================================
 // Storage
 // ===========================================================================
@@ -862,23 +825,29 @@ fn profile_import(
 }
 
 #[tauri::command]
-async fn sync_test(cfg: sync::SyncConfig) -> AppResult<sync::SyncTestResult> {
+async fn sync_test(
+    state: State<'_, AppState>,
+    mut cfg: sync::SyncConfig,
+) -> AppResult<sync::SyncTestResult> {
+    cfg.device_id = state.store.device_id();
     sync::sync_test(cfg).await
 }
 
 #[tauri::command]
 async fn sync_push(
     state: State<'_, AppState>,
-    cfg: sync::SyncConfig,
+    mut cfg: sync::SyncConfig,
 ) -> AppResult<sync::SyncPushResult> {
+    cfg.device_id = state.store.device_id();
     sync::sync_push(cfg, &state.store).await
 }
 
 #[tauri::command]
 async fn sync_pull(
     state: State<'_, AppState>,
-    cfg: sync::SyncConfig,
+    mut cfg: sync::SyncConfig,
 ) -> AppResult<sync::SyncPullResult> {
+    cfg.device_id = state.store.device_id();
     sync::sync_pull(cfg, &state.store).await
 }
 
@@ -1289,7 +1258,6 @@ pub fn run() {
             set_approval_notifications,
             set_scan_fallback,
             set_global_approve_shortcut,
-            sync_fetch,
             perm_hook::perm_hook_start,
             perm_hook::perm_hook_stop,
             perm_hook::perm_hook_install,
