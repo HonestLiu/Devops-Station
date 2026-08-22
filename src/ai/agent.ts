@@ -1,6 +1,6 @@
 import { tFrom } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
-import { buildContext } from "./context";
+import { buildAgentContext, buildContext } from "./context";
 import { getTargetSession, getTerminalTypeDescription, injectCommandLines, writeToTerminal, extractTool } from "./terminalAi";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { useAiAgent, type AgentStep } from "./useAiAgent";
@@ -179,8 +179,15 @@ export async function runAgent(
 
     // Context is built from the PINNED session so the model sees the terminal
     // the agent actually drives, even if the user switches tabs mid-run.
-    const ctx = useAppStore.getState().settings.ai.terminalContext
+    // `ctx0` additionally attaches the terminal's recent scrollback so the model
+    // knows what a previous task in this shell already did; later steps use only
+    // the small env context (fresh cwd) plus the per-command TOOL RESULT deltas.
+    const terminalContext = useAppStore.getState().settings.ai.terminalContext;
+    const ctx = terminalContext
       ? buildContext(sessionId ?? undefined) ?? undefined
+      : undefined;
+    const ctx0 = terminalContext
+      ? buildAgentContext(sessionId ?? undefined) ?? ctx
       : undefined;
 
     const typeDesc = getTerminalTypeDescription(sessionId);
@@ -197,14 +204,20 @@ export async function runAgent(
           { role: "system", content: typeDesc },
           ...history,
         ],
-        ctx,
+        step === 0 ? ctx0 : ctx,
       );
       history.push({ role: "assistant", content: text });
 
       const cmd = extractTool(text);
-      if (isDone(text)) {
+      // A model may emit `DONE:` in the SAME turn as its tool call (common for
+      // simple tasks where it plans ahead and concludes in one shot). Treat the
+      // turn as finished ONLY when there is no pending command — otherwise the
+      // command would be dropped un-executed and the raw `TOOL:` text would
+      // surface as the "conclusion". Run the command first; the model concludes
+      // properly in the following turn once it sees the output.
+      if (!cmd && isDone(text)) {
         if (agent) {
-          const summary = text.replace(/^DONE:/i, "").trim();
+          const summary = text.replace(/^[\s\S]*?\bDONE:\s*/i, "").trim();
           agent.setSummary(summary || null);
           agent.setRunning(false);
         }

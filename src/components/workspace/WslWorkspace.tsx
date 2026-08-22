@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { FolderClosed, FolderOpen, RotateCw, Usb } from "lucide-react";
+import { Code2, FolderClosed, FolderOpen, RotateCw, Usb } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createWslAdapter } from "@/components/files/FileBrowserPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
+import { SnippetPanel } from "@/components/snippets/SnippetPanel";
+import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -20,6 +22,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
   const t = useT();
   const [filesOpen, setFilesOpen] = useState(false);
   const [usbOpen, setUsbOpen] = useState(false);
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
   const closePane = useTabsStore((s) => s.closePane);
@@ -53,6 +56,15 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           >
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
             {t("ws.files")}
+          </Button>
+          <Button
+            variant={snippetsOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setSnippetsOpen((v) => !v)}
+            title={t("ws.snippetsTitle")}
+          >
+            <Code2 size={14} />
+            {t("ws.snippets")}
           </Button>
           <Button
             variant={usbOpen ? "primary" : "ghost"}
@@ -89,6 +101,14 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             onClose={() => setFilesOpen(false)}
             title="WSL"
             chipIcon={<FolderOpen size={13} />}
+          />
+        )}
+
+        {snippetsOpen && (
+          <SnippetPanel
+            sessionId={tab.sessionId}
+            terminalHint={getTerminalTypeDescription(tab.sessionId)}
+            onClose={() => setSnippetsOpen(false)}
           />
         )}
 

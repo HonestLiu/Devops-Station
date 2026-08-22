@@ -11,6 +11,7 @@ import {
   injectCommandLines,
   extractTool,
 } from "./terminalAi";
+import { buildAgentContext, buildContext } from "./context";
 import { getTerminalLineCount, getTerminalTail } from "./terminalBridge";
 import { completeText, streamChat } from "./client";
 import type { AgentStep } from "./useAiAgent";
@@ -153,6 +154,12 @@ async function runSingleHost(
   const langDir =
     appLang === "zh" ? "请始终用中文回答用户。" : "Always respond in English.";
   const typeDesc = getTerminalTypeDescription(sessionId);
+  // Same policy as the single-host agent: the first step gets the terminal's
+  // recent scrollback attached so the model knows what already ran on this host;
+  // later steps use the small env context plus per-command TOOL RESULT deltas.
+  const terminalContext = useAppStore.getState().settings.ai.terminalContext;
+  const ctx = terminalContext ? buildContext(sessionId) ?? undefined : undefined;
+  const ctx0 = terminalContext ? buildAgentContext(sessionId) ?? ctx : undefined;
   const history: Turn[] = [{ role: "user", content: goal }];
   const steps: AgentStep[] = [];
   let transcript = "";
@@ -170,14 +177,17 @@ async function runSingleHost(
       const { text, error } = await completeText({
         provider: currentProvider(),
         messages: msgs,
-        context: undefined,
+        context: step === 0 ? ctx0 : ctx,
       });
       if (error) throw new Error(error);
       history.push({ role: "assistant", content: text });
 
       const cmd = extractTool(text);
-      if (isDone(text)) {
-        summary = text.replace(/^DONE:/i, "").trim();
+      // A model may emit `DONE:` in the SAME turn as its tool call (see
+      // `agent.ts`). Only finish when there is no pending command — otherwise
+      // the command is dropped and the raw `TOOL:` text leaks into the summary.
+      if (!cmd && isDone(text)) {
+        summary = text.replace(/^[\s\S]*?\bDONE:\s*/i, "").trim();
         break;
       }
       if (!cmd) {

@@ -21,7 +21,8 @@ import { useHostsStore } from "@/store/useHostsStore";
 import { tFrom } from "@/i18n";
 import { db, mqttConnections } from "@/lib/api";
 import { invoke } from "@tauri-apps/api/core";
-import type { Host, MqttConnection, QuickCommand } from "@/lib/types";
+import { mergeShortcutSettings } from "@/lib/shortcuts";
+import type { Host, MqttConnection, QuickCommand, ShortcutSettings } from "@/lib/types";
 
 /** Settings keys shared across platforms. Everything else stays device-local. */
 export const SYNC_SETTING_KEYS = [
@@ -38,7 +39,7 @@ export const SYNC_SETTING_KEYS = [
   "copyOnSelect",
   "metricsInterval",
   "confirmOnClose",
-  "approveShortcut",
+  "shortcuts",
   "approvalNotifications",
   "approval",
   "autoCheckUpdates",
@@ -164,7 +165,7 @@ export async function applySyncData(data: Partial<SyncData>): Promise<void> {
   for (const k of SYNC_SETTING_KEYS) {
     const remote = remoteSettings[k];
     if (remote === undefined) continue;
-    if (k === "ai" || k === "approval") {
+    if (k === "ai" || k === "approval" || k === "shortcuts") {
       const merged = {
         ...(DEFAULT_SETTINGS[k] as unknown as Record<string, unknown>),
         ...(remote as Record<string, unknown>),
@@ -174,6 +175,14 @@ export async function applySyncData(data: Partial<SyncData>): Promise<void> {
           ...((DEFAULT_SETTINGS.approval.tools as unknown as Record<string, unknown>) ?? {}),
           ...(((remote as Record<string, unknown>).tools as Record<string, unknown>) ?? {}),
         };
+      }
+      if (k === "shortcuts" && typeof remote === "object" && remote !== null) {
+        // Per-id merge so a remote payload missing some bindings (older build /
+        // newer registry) can't drop the local ones.
+        Object.assign(
+          merged,
+          mergeShortcutSettings(remote as Partial<ShortcutSettings>),
+        );
       }
       if (JSON.stringify(merged) !== JSON.stringify(local[k])) {
         await updateSetting(k, merged as never);

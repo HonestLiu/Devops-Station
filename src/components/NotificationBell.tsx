@@ -5,7 +5,9 @@ import { Bell, BellRing, Check, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT, type TKey } from "@/i18n";
 import { usePermStore, type PermItem } from "@/store/usePermStore";
+import { useAppStore } from "@/store/useAppStore";
 import { approveSession, rejectSession } from "@/lib/quickApprove";
+import { formatShortcut } from "@/lib/shortcut";
 
 function timeAgo(
   t: (key: TKey, params?: Record<string, string | number>) => string,
@@ -22,6 +24,12 @@ function timeAgo(
 function Row({ item }: { item: PermItem }) {
   const t = useT();
   const dismiss = usePermStore((s) => s.dismiss);
+  // Reflect the configured quick-approve combination in the approve-button
+  // tooltip (falls back to the plain hint when the shortcut is disabled).
+  const quickApprove = useAppStore((s) => s.settings.shortcuts?.quickApprove);
+  const approveHint = quickApprove?.enabled
+    ? `${t("perm.approveHint")} · ${formatShortcut(quickApprove.spec)}`
+    : t("perm.approveHint");
 
   // HOOK events carry the agent's own session id, which no local tab owns —
   // target the linked local session when we have one.
@@ -61,7 +69,7 @@ function Row({ item }: { item: PermItem }) {
       <div className="mt-0.5 grid grid-cols-2 gap-1.5">
         <button
           onClick={approve}
-          title={t("perm.approveHint")}
+          title={approveHint}
           className="flex items-center justify-center gap-1 rounded-md bg-accent/15 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/25"
         >
           <Check size={12} /> {t("perm.approve")}

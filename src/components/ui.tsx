@@ -7,6 +7,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -109,6 +110,32 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ),
 );
 Input.displayName = "Input";
+
+// --- Textarea --------------------------------------------------------------
+// Multi-line input (snippet content, logs, …). Same visual language as `Input`,
+// but `resize-y` + `whitespace-pre` + `font-mono` so command text keeps its
+// line breaks and indentation.
+
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ className, ...props }, ref) => (
+  <textarea
+    ref={ref}
+    spellCheck={false}
+    autoComplete="off"
+    className={cn(
+      "w-full rounded-lg border border-border bg-bg px-2.5 py-2 text-[13px] text-fg",
+      "placeholder:text-subtle",
+      "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40",
+      "disabled:opacity-50",
+      "min-h-[96px] resize-y whitespace-pre font-mono leading-relaxed",
+      className,
+    )}
+    {...props}
+  />
+));
+Textarea.displayName = "Textarea";
 
 // --- PasswordInput ---------------------------------------------------------
 

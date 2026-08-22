@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Cable,
@@ -56,10 +56,12 @@ import { approveWaitingNow } from "./lib/quickApprove";
 import { focusActiveTerminal } from "./ai/terminalBridge";
 import {
   isShortcutRecording,
-  matchesShortcut,
+  parseShortcut,
   shortcutToAccelerator,
+  type Shortcut,
 } from "./lib/shortcut";
-import type { PermRequest, Tab } from "./lib/types";
+import { SHORTCUT_DEFS, isSplitShortcut } from "./lib/shortcuts";
+import type { PermRequest, ShortcutId, Tab } from "./lib/types";
 
 function PageContent({ page }: { page: Page }) {
   switch (page) {
@@ -79,6 +81,58 @@ function PageContent({ page }: { page: Page }) {
       return <JLinkPage />;
     case "mqtt":
       return <MqttPage />;
+  }
+}
+
+/**
+ * Run a split/close/focus-pane shortcut against the active tab. Only consumes
+ * the keystroke (preventDefault/stopPropagation) when an action actually fires,
+ * so a single-pane terminal still receives e.g. Ctrl+Shift+Arrow for the shell.
+ * Returns true when the event was handled.
+ */
+function dispatchSplit(
+  id: ShortcutId,
+  e: KeyboardEvent,
+  tab: Tab,
+  ts: ReturnType<typeof useTabsStore.getState>,
+): boolean {
+  const guard = () => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  switch (id) {
+    case "splitPaneCol":
+      guard();
+      void ts.splitPane(tab.id, "col");
+      return true;
+    case "splitPaneRow":
+      guard();
+      void ts.splitPane(tab.id, "row");
+      return true;
+    case "closePane": {
+      const fid = tab.focusedPaneId ?? tab.panes?.[0]?.id;
+      if (!fid || (tab.panes?.length ?? 0) <= 1) return false;
+      guard();
+      void ts.closePane(tab.id, fid);
+      return true;
+    }
+    case "focusPaneLeft":
+    case "focusPaneRight":
+    case "focusPaneUp":
+    case "focusPaneDown": {
+      if (!tab.panes || tab.panes.length < 2) return false;
+      const order = tab.panes.map((p) => p.id);
+      const cur = order.indexOf(tab.focusedPaneId ?? order[0]);
+      const leftUp = id === "focusPaneLeft" || id === "focusPaneUp";
+      const next = leftUp
+        ? Math.max(0, cur - 1)
+        : Math.min(order.length - 1, cur + 1);
+      guard();
+      ts.focusPane(tab.id, order[next]);
+      return true;
+    }
+    default:
+      return false;
   }
 }
 
@@ -296,21 +350,63 @@ export default function App() {
 
   const showTabs = tabs.length > 0;
 
-  // Toggle the AI panel with Cmd+. (macOS) / Ctrl+. (Windows/Linux), capture phase
-  // so it wins over the terminal.
+  // Unified app-wide shortcut dispatch. Every configurable shortcut (Settings →
+  // Shortcuts, registry in src/lib/shortcuts.ts) is matched here in the CAPTURE
+  // phase and stopPropagation'd so the keystroke never reaches a focused xterm.
+  // Stands down while Settings is recording a shortcut (the recorder's own
+  // listener must consume the keystroke). First match in SHORTCUT_DEFS order
+  // wins, so a duplicate binding resolves deterministically.
   const toggleAi = useAiStore((s) => s.togglePanel);
+  const shortcuts = useAppStore((s) => s.settings.shortcuts);
+  const parsedShortcuts = useMemo(() => {
+    const m = new Map<ShortcutId, Shortcut>();
+    for (const def of SHORTCUT_DEFS) {
+      const b = shortcuts?.[def.id];
+      if (!b?.enabled) continue;
+      const s = parseShortcut(b.spec);
+      if (s) m.set(def.id, s);
+    }
+    return m;
+  }, [shortcuts]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isShortcutRecording()) return;
-      if ((e.metaKey || e.ctrlKey) && e.code === "Period") {
+      for (const def of SHORTCUT_DEFS) {
+        const s = parsedShortcuts.get(def.id);
+        if (!s) continue;
+        if (
+          e.ctrlKey !== s.ctrl ||
+          e.shiftKey !== s.shift ||
+          e.altKey !== s.alt ||
+          e.metaKey !== s.meta ||
+          e.code !== s.code
+        ) {
+          continue;
+        }
+
+        if (isSplitShortcut(def.id)) {
+          // Split/close/focus only applies to SSH/Local/WSL tabs; otherwise let
+          // the keystroke fall through to the shell (e.g. Ctrl+Shift+Arrow in a
+          // single-pane terminal).
+          const ts = useTabsStore.getState();
+          const tab = ts.tabs.find((t) => t.id === ts.activeId);
+          if (!tab || !["ssh", "local", "wsl"].includes(tab.kind)) continue;
+          if (!dispatchSplit(def.id, e, tab, ts)) continue;
+          return;
+        }
+
         e.preventDefault();
         e.stopPropagation();
-        toggleAi();
+        if (def.id === "quickApprove") void approveWaitingNow();
+        else if (def.id === "toggleAi") toggleAi();
+        else if (def.id === "togglePalette") togglePalette();
+        return;
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [toggleAi]);
+  }, [parsedShortcuts, toggleAi, togglePalette]);
   // Permission-request alerts from the backend (vibecoding CLI approval prompts).
   // The OS-level notification is raised in Rust; here we just feed the in-app bell.
   useEffect(() => {
@@ -365,46 +461,26 @@ export default function App() {
     }
   }, [settingsLoaded, account.token, account.serverUrl]);
 
-  // Quick approval shortcut (configurable in Settings → Shortcuts): sends Enter
-  // to the session that is currently waiting on an agent CLI approval prompt
-  // (Claude Code, Codex, …), confirming the highlighted "Yes" option. In-window
-  // keydown (capture phase + stopPropagation so the keystroke never reaches the
-  // terminal) — the OS-level registration below covers the no-focus case; the
-  // 400ms dedup in approveWaitingNow keeps the two from double-sending Enter.
-  const approveShortcut = useAppStore((s) => s.settings.approveShortcut);
-  const approveShortcutEnabled = useAppStore((s) => s.settings.approveShortcutEnabled);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Stand down while Settings is recording a shortcut: the recorder's own
-      // listener must be the one to consume the keystroke (capture-order).
-      if (isShortcutRecording()) return;
-      if (!approveShortcutEnabled) return;
-      if (matchesShortcut(e, approveShortcut)) {
-        e.preventDefault();
-        e.stopPropagation();
-        void approveWaitingNow();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [approveShortcut, approveShortcutEnabled]);
-
   // Keep the OS-level (system-wide) quick-approve shortcut in sync with the
   // setting — it works even when this window has no focus, e.g. the user is
-  // watching Claude Code in a separate terminal window. The master toggle
-  // unregisters it entirely so the hotkey never fires while disabled.
+  // watching Claude Code in a separate terminal window. The in-window keydown is
+  // handled by the unified dispatch above; the master toggle unregisters the OS
+  // hotkey entirely so it never fires while disabled.
+  const quickApprove = useAppStore((s) => s.settings.shortcuts?.quickApprove);
   useEffect(() => {
     if (!settingsLoaded) return;
-    const acc = approveShortcutEnabled ? shortcutToAccelerator(approveShortcut) : null;
+    const acc = quickApprove?.enabled
+      ? shortcutToAccelerator(quickApprove.spec)
+      : null;
     void permHook.setGlobalShortcut(acc).catch((e) =>
       console.error("[shortcut] failed to register global approve shortcut:", e),
     );
-  }, [settingsLoaded, approveShortcut, approveShortcutEnabled]);
+  }, [settingsLoaded, quickApprove?.spec, quickApprove?.enabled]);
 
   // OS-level quick-approve shortcut (tauri-plugin-global-shortcut): fires even
   // when the app window has no focus (e.g. the user is looking at Claude Code
   // in a separate terminal window). The Rust side re-registers it whenever
-  // settings.approveShortcut changes; here we just react to the event.
+  // settings.shortcuts.quickApprove changes; here we just react to the event.
   useEffect(() => {
     const un = listen("approval-shortcut", () => {
       void approveWaitingNow();
@@ -413,24 +489,6 @@ export default function App() {
       void un.then((fn) => fn());
     };
   }, []);
-
-  // Global command palette shortcut: Cmd+K on macOS, Ctrl+K on Windows/Linux.
-  // Registered in the CAPTURE phase and stopPropagation'd so the keystroke never
-  // reaches the focused xterm (otherwise Ctrl+K would also fire bash's kill-line
-  // inside the terminal, and the palette would feel unresponsive).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isShortcutRecording()) return;
-      const isK = e.code === "KeyK" || e.key.toLowerCase() === "k";
-      if ((e.metaKey || e.ctrlKey) && isK) {
-        e.preventDefault();
-        e.stopPropagation();
-        togglePalette();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [togglePalette]);
 
   // Auto-check for a newer release a couple of seconds after launch. Silent when
   // there's nothing new (the dialog only opens if an update is found). Guarded so
@@ -447,52 +505,6 @@ export default function App() {
     }, 2500);
     return () => window.clearTimeout(id);
   }, [settingsLoaded, autoCheckUpdates]);
-
-  // Split-pane shortcuts (active SSH tab only), capture phase so the shell never
-  // sees them: Ctrl+Shift+D split right · Ctrl+Shift+E split below ·
-  // Ctrl+Shift+W close focused pane · Ctrl+Shift+←/→/↑/↓ focus move.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
-      const tabs = useTabsStore.getState();
-      const tab = tabs.tabs.find((t) => t.id === tabs.activeId);
-      if (!tab || !["ssh", "local", "wsl"].includes(tab.kind)) return;
-
-      const guard = () => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-
-      if (e.code === "KeyD") {
-        guard();
-        void tabs.splitPane(tab.id, "col");
-      } else if (e.code === "KeyE") {
-        guard();
-        void tabs.splitPane(tab.id, "row");
-      } else if (e.code === "KeyW") {
-        guard();
-        const fid = tab.focusedPaneId ?? tab.panes?.[0]?.id;
-        if (fid && (tab.panes?.length ?? 0) > 1) void tabs.closePane(tab.id, fid);
-      } else if (
-        e.key === "ArrowLeft" ||
-        e.key === "ArrowRight" ||
-        e.key === "ArrowUp" ||
-        e.key === "ArrowDown"
-      ) {
-        if (!tab.panes || tab.panes.length < 2) return;
-        guard();
-        const order = tab.panes.map((p) => p.id);
-        const cur = order.indexOf(tab.focusedPaneId ?? order[0]);
-        const next =
-          e.key === "ArrowLeft" || e.key === "ArrowUp"
-            ? Math.max(0, cur - 1)
-            : Math.min(order.length - 1, cur + 1);
-        tabs.focusPane(tab.id, order[next]);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
 
   return (
     <div

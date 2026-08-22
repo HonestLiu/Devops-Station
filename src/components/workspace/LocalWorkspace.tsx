@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
-import { FolderClosed, FolderOpen, RotateCw } from "lucide-react";
+import { Code2, FolderClosed, FolderOpen, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createLocalAdapter } from "@/components/files/FileBrowserPanel";
+import { SnippetPanel } from "@/components/snippets/SnippetPanel";
+import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import type { Tab } from "@/lib/types";
@@ -20,6 +22,7 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
   const canClosePane = (tab.panes?.length ?? 0) > 1;
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
   const [filesOpen, setFilesOpen] = useState(false);
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const connected = tab.status === "connected" && !!tab.sessionId;
   // Stable adapter: recreating it per render would re-trigger the panel's
   // load effect and bounce the view back to the home directory.
@@ -46,6 +49,15 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
             {t("ws.files")}
           </Button>
+          <Button
+            variant={snippetsOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setSnippetsOpen((v) => !v)}
+            title={t("ws.snippetsTitle")}
+          >
+            <Code2 size={14} />
+            {t("ws.snippets")}
+          </Button>
           <SplitControls
             paneCount={paneCount}
             canSplit={canSplit}
@@ -70,6 +82,13 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             onClose={() => setFilesOpen(false)}
             title="Files"
             chipIcon={<FolderOpen size={13} />}
+          />
+        )}
+        {snippetsOpen && (
+          <SnippetPanel
+            sessionId={tab.sessionId}
+            terminalHint={getTerminalTypeDescription(tab.sessionId)}
+            onClose={() => setSnippetsOpen(false)}
           />
         )}
       </div>

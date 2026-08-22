@@ -265,6 +265,18 @@ export interface QuickCommand {
   updatedAt?: number | null;
 }
 
+/** A user-authored terminal snippet: a named, reusable multi-line command. */
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Sort order for the snippet list. */
+export type SnippetSortKey = "name" | "created" | "updated";
+
 export interface StreamChunk {
   sessionId: string;
   /** base64 */
@@ -667,6 +679,33 @@ export interface AISettings {  provider: AIProviderKind;
    */
   disableThinking: boolean;
 }
+
+/**
+ * Identities of every configurable keyboard shortcut (registry in
+ * `src/lib/shortcuts.ts`). All are app-window shortcuts except `quickApprove`,
+ * which is also registered as an OS-level global hotkey.
+ */
+export type ShortcutId =
+  | "quickApprove"
+  | "toggleAi"
+  | "togglePalette"
+  | "splitPaneCol"
+  | "splitPaneRow"
+  | "closePane"
+  | "focusPaneLeft"
+  | "focusPaneRight"
+  | "focusPaneUp"
+  | "focusPaneDown";
+
+/** One shortcut's user configuration. `spec` is a "modifier+Code" string, e.g.
+ *  "ctrl+shift+Enter" (see `parseShortcut` in lib/shortcut.ts). */
+export interface ShortcutBinding {
+  spec: string;
+  enabled: boolean;
+}
+
+/** Persisted per-shortcut bindings (stored under the `shortcuts` key). */
+export type ShortcutSettings = Record<ShortcutId, ShortcutBinding>;
 
 export interface AIChatMessage {
   id: string;

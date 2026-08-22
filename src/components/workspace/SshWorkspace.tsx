@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
+import { Code2, Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
@@ -8,6 +8,8 @@ import { FileBrowserPanel, createSftpAdapter } from "@/components/files/FileBrow
 import { RemoteFilePreview } from "@/components/sftp/RemoteFilePreview";
 import { PortForwardPanel } from "@/components/workspace/PortForwardPanel";
 import { KnownHostsDialog } from "@/components/workspace/KnownHostsDialog";
+import { SnippetPanel } from "@/components/snippets/SnippetPanel";
+import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { explainFile, diffFiles } from "@/ai/tasks";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -19,6 +21,7 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
   const [filesOpen, setFilesOpen] = useState(false);
   const [pfOpen, setPfOpen] = useState(false);
   const [khOpen, setKhOpen] = useState(false);
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [preview, setPreview] = useState<RemoteFile | null>(null);
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
@@ -97,6 +100,15 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             {t("ws.files")}
           </Button>
           <Button
+            variant={snippetsOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setSnippetsOpen((v) => !v)}
+            title={t("ws.snippetsTitle")}
+          >
+            <Code2 size={14} />
+            {t("ws.snippets")}
+          </Button>
+          <Button
             variant={pfOpen ? "primary" : "ghost"}
             size="sm"
             disabled={!connected}
@@ -147,6 +159,13 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             chipIcon={<FolderOpen size={13} />}
             onPreviewFile={(f) => setPreview(f)}
             aiActions={sftpAiActions}
+          />
+        )}
+        {snippetsOpen && (
+          <SnippetPanel
+            sessionId={tab.sessionId}
+            terminalHint={getTerminalTypeDescription(tab.sessionId)}
+            onClose={() => setSnippetsOpen(false)}
           />
         )}
         {preview && tab.sessionId && (

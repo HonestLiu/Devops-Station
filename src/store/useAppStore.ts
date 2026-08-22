@@ -3,7 +3,8 @@ import { create } from "zustand";
 import { db } from "@/lib/api";
 import { registerImportedFonts } from "@/lib/fontLoader";
 import { THEMES } from "@/lib/themes";
-import type { AccountSettings, AISettings, ApprovalSettings, KeywordHighlightSettings, ThemeId } from "@/lib/types";
+import { defaultShortcutBindings, mergeShortcutSettings } from "@/lib/shortcuts";
+import type { AccountSettings, AISettings, ApprovalSettings, KeywordHighlightSettings, ShortcutSettings, ThemeId } from "@/lib/types";
 
 export type Page = "dashboard" | "hosts" | "monitoring" | "settings" | "sftp" | "serial" | "jlink" | "mqtt";
 
@@ -47,10 +48,8 @@ export interface AppSettings {
   ai: AISettings;
   /** Families of user-imported fonts, re-registered at startup. */
   importedFonts: string[];
-  /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
-  approveShortcut: string;
-  /** Master on/off switch for the quick-approve shortcut (in-window + OS-level). */
-  approveShortcutEnabled: boolean;
+  /** All configurable keyboard shortcuts (registry in src/lib/shortcuts.ts). */
+  shortcuts: ShortcutSettings;
   /** Whether to raise native OS notifications for agent/CLI approval prompts. */
   approvalNotifications: boolean;
   /** HOOK-based approval detection (primary) + legacy scan compat switch. */
@@ -99,10 +98,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   jlinkPath: "",
   sidebarCollapsed: false,
   importedFonts: [],
-  /** Global "quick approve" shortcut: modifier+key spec, e.g. "ctrl+shift+Enter". */
-  approveShortcut: "ctrl+shift+Enter",
-  /** Master on/off switch for the quick-approve shortcut (in-window + OS-level). */
-  approveShortcutEnabled: true,
+  shortcuts: defaultShortcutBindings(),
   approvalNotifications: true,
   approval: {
     enabled: true,
@@ -201,6 +197,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadSettings: async () => {
     try {
       const stored = await db.getSettings();
+      // Legacy migration: pre-registry builds persisted flat `approveShortcut` /
+      // `approveShortcutEnabled` (removed from AppSettings). Seed `quickApprove`
+      // from them; a persisted `shortcuts` object wins field-by-field over the
+      // seed.
+      const migrated = defaultShortcutBindings();
+      const legacy = stored as Partial<AppSettings> & {
+        approveShortcut?: string;
+        approveShortcutEnabled?: boolean;
+      };
+      if (legacy.approveShortcut) {
+        migrated.quickApprove = {
+          spec: legacy.approveShortcut,
+          enabled: legacy.approveShortcutEnabled ?? migrated.quickApprove.enabled,
+        };
+      }
       const merged = {
         ...DEFAULT_SETTINGS,
         ...(stored as Partial<AppSettings>),
@@ -227,12 +238,21 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...DEFAULT_SETTINGS.keywordHighlight,
           ...((stored as Partial<AppSettings>).keywordHighlight ?? {}),
         },
+        // `shortcuts` is a per-id record — merge against the legacy-seeded
+        // defaults so a partial/older shape can't drop the other bindings.
+        shortcuts: mergeShortcutSettings(
+          (stored as Partial<AppSettings>).shortcuts,
+          migrated,
+        ),
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);
       // Persist the repair so it isn't re-detected on every startup.
       if (merged.fontFamily !== (stored as Partial<AppSettings>).fontFamily) {
         void db.setSetting("fontFamily", merged.fontFamily).catch(() => undefined);
       }
+      // Persist the migrated `shortcuts` once so the legacy flat keys are
+      // superseded by the nested object on the next write.
+      void db.setSetting("shortcuts", merged.shortcuts).catch(() => undefined);
       applySettings(merged);
       set({ settings: merged, settingsLoaded: true });
       // Re-register any fonts the user previously imported.
