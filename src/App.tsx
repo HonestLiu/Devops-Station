@@ -157,7 +157,6 @@ export default function App() {
   const togglePalette = useAppStore((s) => s.togglePalette);
 
   const openLocal = useTabsStore((s) => s.openLocal);
-  const openJlink = useTabsStore((s) => s.openJlink);
   const setPageCtx = useAppStore((s) => s.setPage);
   const showCtx = useContextMenu((s) => s.show);
   const closeCtx = useContextMenu((s) => s.close);
@@ -306,7 +305,8 @@ export default function App() {
         icon: <Microchip size={14} />,
         onClick: () => {
           closeCtx();
-          void openJlink();
+          setPageCtx("jlink");
+          useTabsStore.getState().focusPage();
         },
       },
       {

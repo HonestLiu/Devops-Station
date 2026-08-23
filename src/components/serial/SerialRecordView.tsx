@@ -13,6 +13,8 @@ interface SerialRecordViewProps {
   autoScroll: boolean;
   /** Copy helper from the browser clipboard. */
   onCopy?: (text: string) => void;
+  /** Empty-state hint; defaults to the serial port wording. */
+  emptyText?: string;
 }
 
 function pad(n: number, len = 2): string {
@@ -43,6 +45,7 @@ export function SerialRecordView({
   rxHex,
   autoScroll,
   onCopy,
+  emptyText,
 }: SerialRecordViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -154,7 +157,7 @@ export function SerialRecordView({
         {filtered.length === 0 && (
           <p className="p-4 text-center text-[12px] text-subtle">
             {logs.length === 0
-              ? "暂无接收记录。连接串口后数据将显示在这里，在下方输入内容即可发送。"
+              ? (emptyText ?? "暂无接收记录。连接串口后数据将显示在这里，在下方输入内容即可发送。")
               : "没有匹配的内容。"}
           </p>
         )}

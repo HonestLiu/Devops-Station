@@ -476,6 +476,19 @@ export const jlink = {
   /** Subscribe to J-Link GDB Server log lines. */
   onGdbLog: (cb: (line: string) => void): Promise<UnlistenFn> =>
     listen<string>("jlink-gdb-log", (e) => cb(e.payload)),
+  /** Start RTT: a J-Link Commander + JLinkRTTClient pair streaming channel 0. */
+  rttStart: (config: JLinkConfig, exePath?: string) =>
+    call<JLinkResponse>("jlink_rtt_start", { config, exePath: jlinkExe(exePath) }),
+  rttStop: () => call<JLinkResponse>("jlink_rtt_stop"),
+  rttRunning: () => call<boolean>("jlink_rtt_running"),
+  /** Send bytes (base64) to the target's RTT channel 0. */
+  rttSend: (data: string) => call<JLinkResponse>("jlink_rtt_send", { data }),
+  /** Subscribe to raw RTT channel-0 bytes (base64-encoded 4 KB chunks). */
+  onRttData: (cb: (b64: string) => void): Promise<UnlistenFn> =>
+    listen<string>("jlink-rtt-data", (e) => cb(e.payload)),
+  /** Subscribe to RTT host/client diagnostic lines. */
+  onRttLog: (cb: (line: string) => void): Promise<UnlistenFn> =>
+    listen<string>("jlink-rtt-log", (e) => cb(e.payload)),
 };
 
 // --- Unified data profile (export / import / future sync) -------------------

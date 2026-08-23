@@ -11,6 +11,7 @@ import type {
   FrpConfig,
   FrpLaunchConfig,
   Host,
+  JLinkModule,
   MqttConnection,
   SerialOpenConfig,
   SshConnectConfig,
@@ -88,12 +89,12 @@ interface TabsState {
   openFrp: (config: FrpLaunchConfig, title?: string) => Promise<string>;
   /** Open a dedicated SFTP tab backed by an SSH session to a saved host. */
   openSftp: (host: Host, title?: string) => Promise<string>;
-  /** Open a J-Link tool tab (persistent panel; GDB server lives in the backend). */
-  openJlink: (title?: string) => Promise<string>;
   /** Open a live MQTT session tab backed by a saved connection profile. */
   openMqtt: (conn: MqttConnection, title?: string) => Promise<string>;
   /** Open (or focus) the singleton HMI dashboard module tab. */
   openMqttDash: () => string;
+  /** Open (or focus) the singleton J-Link module tab (Flash / RTT / GDB). */
+  openJlinkModule: (module: JLinkModule, title?: string) => string;
   openFromHost: (host: Host) => Promise<string>;
 
   /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
@@ -264,17 +265,31 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return id;
   },
 
-  openJlink: async (title) => {
+  openJlinkModule: (module, title) => {
+    // A module that is already open is focused, not duplicated.
+    const existing = get().tabs.find(
+      (t) => t.kind === "jlink" && t.jlinkModule === module,
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
     const id = nextId();
+    const label =
+      title ||
+      lang(
+        module === "rtt" ? "jlink.rtt" : module === "gdb" ? "jlink.gdb" : "jlink.flash",
+      );
     set((s) => ({
       tabs: [
         ...s.tabs,
         {
           id,
           kind: "jlink",
-          title: title || "J-Link",
+          title: label,
           subtitle: lang("tabs.jlink"),
           status: "connected",
+          jlinkModule: module,
         },
       ],
       activeId: id,
@@ -735,7 +750,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         break;
       }
       case "jlink":
-        return void get().openJlink(tab.title);
+        return void get().openJlinkModule(tab.jlinkModule ?? "flash", tab.title);
       case "mqtt":
         if (tab.mqtt) return void get().openMqtt(tab.mqtt, tab.title);
         break;

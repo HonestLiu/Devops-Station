@@ -14,19 +14,27 @@
 //! - `jlink_program`          — download a firmware image (`loadfile`)
 //! - `jlink_gdb_start/stop`   — manage a J-Link GDB Server process
 //! - `jlink_gdb_running`      — GDB Server liveness probe
+//! - `jlink_rtt_start/stop`    — RTT: a J-Link Commander + JLinkRTTClient pair
+//! - `jlink_rtt_running`      — RTT pipe liveness probe
+//! - `jlink_rtt_send`         — write terminal input to RTT channel 0
 //!
 //! All one-shot operations are implemented by writing a temporary commander
 //! script and invoking `JLinkExe -CommanderScript`. The GDB server is a
 //! long-lived child process whose stdout/stderr are streamed back via the
-//! `jlink-gdb-log` event.
+//! `jlink-gdb-log` event. RTT uses a long-lived subprocess pair: J-Link
+//! Commander hosts the RTT server on TCP 19021, and `JLinkRTTClient` pipes
+//! channel-0 bytes (stdout) / input (stdin), streamed back via the
+//! `jlink-rtt-data` (base64 chunks) and `jlink-rtt-log` (diagnostics) events.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::Arc;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+use base64::Engine as _;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -57,6 +65,12 @@ pub struct JLinkResponse {
 
 /// Handle to the (optionally) running GDB server child process.
 static GDB: Mutex<Option<Child>> = Mutex::new(None);
+
+/// Long-lived J-Link Commander process hosting the RTT Server on TCP 19021.
+static RTT_HOST: Mutex<Option<Child>> = Mutex::new(None);
+/// Long-lived `JLinkRTTClient` pipe: stdout = RTT channel-0 bytes up, stdin =
+/// channel-0 input down.
+static RTT_CLIENT: Mutex<Option<Child>> = Mutex::new(None);
 
 /// Locate the J-Link Commander executable across platforms.
 ///
@@ -213,22 +227,143 @@ fn exe_name(base: &str) -> String {
     }
 }
 
-/// Curated fallback when the J-Link software (and its device database) is not
-/// installed — a small set of common targets so the UI still has options.
+/// Curated fallback when the J-Link software's device database cannot be read
+/// (e.g. J-Link V7.98 ships device names inside `JLinkARM.dll` and has no
+/// standalone `JLinkDevices.xml`, and does not support the `-DeviceList` CLI
+/// flag). A broad set of common targets so the UI still has useful options —
+/// users can always type an exact model name into the datalist input.
 fn curated_devices() -> Vec<String> {
-    vec![
+    let mut v = vec![
+        // --- ST STM32 ---
+        "STM32F030".to_string(),
+        "STM32F031".to_string(),
+        "STM32F051".to_string(),
+        "STM32F072".to_string(),
+        "STM32F100".to_string(),
         "STM32F103C8".to_string(),
+        "STM32F103RB".to_string(),
+        "STM32F103RE".to_string(),
+        "STM32F103ZE".to_string(),
+        "STM32F105".to_string(),
+        "STM32F107".to_string(),
+        "STM32F205".to_string(),
+        "STM32F207".to_string(),
+        "STM32F303".to_string(),
+        "STM32F334".to_string(),
+        "STM32F373".to_string(),
+        "STM32F401".to_string(),
+        "STM32F405".to_string(),
         "STM32F407VG".to_string(),
-        "STM32L4".to_string(),
+        "STM32F407ZE".to_string(),
+        "STM32F411".to_string(),
+        "STM32F412".to_string(),
+        "STM32F429".to_string(),
+        "STM32F446".to_string(),
+        "STM32F469".to_string(),
+        "STM32F722".to_string(),
+        "STM32F746".to_string(),
+        "STM32F767".to_string(),
+        "STM32F777".to_string(),
+        "STM32F103".to_string(),
+        "STM32F4".to_string(),
+        "STM32F7".to_string(),
+        "STM32G031".to_string(),
+        "STM32G071".to_string(),
+        "STM32G431".to_string(),
+        "STM32G474".to_string(),
+        "STM32G0".to_string(),
+        "STM32G4".to_string(),
+        "STM32H743".to_string(),
+        "STM32H750".to_string(),
         "STM32H7".to_string(),
+        "STM32L031".to_string(),
+        "STM32L072".to_string(),
+        "STM32L151".to_string(),
+        "STM32L152".to_string(),
+        "STM32L432".to_string(),
+        "STM32L433".to_string(),
+        "STM32L4".to_string(),
+        "STM32L0".to_string(),
+        "STM32U5".to_string(),
+        "STM32WB55".to_string(),
+        "STM32MP1".to_string(),
+        // --- GigaDevice GD32 ---
+        "GD32F103".to_string(),
+        "GD32F303".to_string(),
+        "GD32F305".to_string(),
+        "GD32F350".to_string(),
+        "GD32F450".to_string(),
+        "GD32E230".to_string(),
+        "GD32F1".to_string(),
+        "GD32F3".to_string(),
+        // --- Nordic nRF ---
+        "nRF51822".to_string(),
+        "nRF52810".to_string(),
+        "nRF52832".to_string(),
         "nRF52840_xxAA".to_string(),
         "nRF5340_xxAA".to_string(),
-        "GD32F303".to_string(),
-        "ATSAMD21G18".to_string(),
-        "RP2040".to_string(),
+        "nRF9160_xxAA".to_string(),
+        // --- NXP ---
         "MIMXRT1052".to_string(),
+        "MIMXRT1062".to_string(),
+        "MIMXRT1064".to_string(),
+        "MIMXRT1176".to_string(),
         "LPC1768".to_string(),
-    ]
+        "LPC1769".to_string(),
+        "LPC11U35".to_string(),
+        "LPC804".to_string(),
+        "MK20DX256".to_string(),
+        "MK64FN1M0".to_string(),
+        "K64F".to_string(),
+        "MKE18F".to_string(),
+        // --- Microchip / Atmel ---
+        "ATSAMD21G18".to_string(),
+        "ATSAMD21E18".to_string(),
+        "ATSAMD51".to_string(),
+        "ATSAMD11".to_string(),
+        "ATSAM3X8E".to_string(),
+        "ATSAM4S".to_string(),
+        "ATmega328P".to_string(),
+        "ATmega2560".to_string(),
+        "ATtiny85".to_string(),
+        // --- Raspberry Pi / RP family ---
+        "RP2040".to_string(),
+        "RP2350".to_string(),
+        "RaspberryPi".to_string(),
+        // --- Espressif ---
+        "ESP32".to_string(),
+        "ESP32C3".to_string(),
+        "ESP32S3".to_string(),
+        "ESP8266".to_string(),
+        // --- Silicon Labs / EFM32 ---
+        "EFM32GG".to_string(),
+        "EFM32HG".to_string(),
+        "EFR32BG13".to_string(),
+        "EFR32MG21".to_string(),
+        // --- TI ---
+        "TM4C123GH6PM".to_string(),
+        "CC2650".to_string(),
+        "CC3220".to_string(),
+        "MSP432".to_string(),
+        // --- Infineon / Cypress ---
+        "XMC1100".to_string(),
+        "XMC4200".to_string(),
+        "XMC4400".to_string(),
+        "XMC4700".to_string(),
+        "CY8C5868".to_string(),
+        "PSoC6".to_string(),
+        // --- Renesas ---
+        "R5F5111".to_string(),
+        "RA6M3".to_string(),
+        "RX65N".to_string(),
+        // --- Toshiba / others ---
+        "TMPM3H".to_string(),
+        "M481".to_string(),
+        "M031".to_string(),
+    ];
+    v.sort();
+    v.dedup();
+    v
 }
 
 /// Extract every `Name="..."` attribute from a JLinkDevices.xml document.
@@ -288,9 +423,21 @@ pub async fn jlink_devices(exe_path: Option<String>) -> AppResult<Vec<String>> {
         None => return Ok(curated_devices()),
     };
 
-    // Primary source: the device database shipped next to the executable.
+    // Primary source: the device database. SEGGER ships `JLinkDevices.xml` in
+    // different places depending on the version — directly next to the exe, in
+    // an `ETC/` subfolder, next to the DLL, or sometimes one level up. Probe
+    // all of those before giving up.
+    let mut xml_candidates: Vec<PathBuf> = Vec::new();
     if let Some(dir) = exe.parent() {
-        let xml = dir.join("JLinkDevices.xml");
+        xml_candidates.push(dir.join("JLinkDevices.xml"));
+        xml_candidates.push(dir.join("ETC").join("JLinkDevices.xml"));
+        xml_candidates.push(dir.join("JLinkARM.dll").with_file_name("JLinkDevices.xml"));
+        if let Some(parent) = dir.parent() {
+            xml_candidates.push(parent.join("JLinkDevices.xml"));
+        }
+    }
+    xml_candidates.dedup();
+    for xml in xml_candidates {
         if let Ok(text) = std::fs::read_to_string(&xml) {
             let mut names: Vec<String> = parse_device_names(&text);
             if !names.is_empty() {
@@ -613,5 +760,265 @@ pub async fn jlink_gdb_running() -> bool {
             alive
         }
         None => false,
+    }
+}
+
+// ===========================================================================
+// RTT — a long-lived subprocess PAIR. J-Link Commander owns the probe
+// connection and hosts the RTT Server on TCP 19021 (`RTTClient` command);
+// `JLinkRTTClient` (a pure console pipe) connects to it, so its stdout is a
+// clean RTT channel-0 byte stream (base64'd in 4 KB chunks) and its stdin is
+// the channel-0 input path.
+// ===========================================================================
+
+/// Default RTT server TCP port hosted by J-Link Commander's `RTTClient` command.
+const RTT_SERVER_PORT: u16 = 19021;
+
+#[tauri::command]
+pub async fn jlink_rtt_start(
+    app: tauri::AppHandle,
+    config: JLinkConfig,
+    exe_path: Option<String>,
+) -> AppResult<JLinkResponse> {
+    let exe = find_jlink(exe_path).ok_or_else(|| AppError::Other("未找到 J-Link 软件".into()))?;
+
+    // Refuse to start a second instance.
+    {
+        let mut h = RTT_HOST.lock();
+        if let Some(c) = h.as_mut() {
+            if c.try_wait().map(|s| s.is_none()).unwrap_or(false) {
+                return Err(AppError::Other("RTT 已在运行".into()));
+            }
+        }
+    }
+
+    // The companion console client lives next to the Commander executable.
+    let client = exe.with_file_name(exe_name("JLinkRTTClient"));
+    if !client.is_file() {
+        return Err(AppError::Other(format!(
+            "未找到 JLinkRTTClient: {}",
+            client.display()
+        )));
+    }
+
+    // --- Host: J-Link Commander owns the probe connection + RTT server -------
+    let mut script = connect_prefix(&config);
+    script.push_str("RTTClient\n");
+    script.push_str("Sleep 0xFFFFFFFF\n");
+    script.push_str("exit\n");
+
+    let script_path = std::env::temp_dir().join(format!(
+        "devops-jlink-rtt-{}.jlink",
+        std::process::id()
+    ));
+    {
+        let mut f = std::fs::File::create(&script_path)
+            .map_err(|e| AppError::Other(format!("无法创建临时脚本: {e}")))?;
+        f.write_all(script.as_bytes())
+            .map_err(|e| AppError::Other(format!("无法写入临时脚本: {e}")))?;
+    }
+
+    let host_log: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("-CommanderScript").arg(&script_path).arg("-ExitOnError");
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut host = cmd
+        .spawn()
+        .map_err(|e| AppError::Other(format!("启动 J-Link Commander 失败: {e}")))?;
+
+    // Buffer host stdout/stderr so an early exit can be reported with the
+    // captured text. Deliberately NOT streamed to `jlink-rtt-log`: Commander's
+    // RTTClient may echo channel-0 data to its own console, which would double
+    // the RTT output once the client pipe is also streaming it.
+    if let Some(out) = host.stdout.take() {
+        let buf = host_log.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(out).lines().flatten() {
+                buf.lock().push_str(&line);
+                buf.lock().push('\n');
+            }
+        });
+    }
+    if let Some(err) = host.stderr.take() {
+        let buf = host_log.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(err).lines().flatten() {
+                buf.lock().push_str(&line);
+                buf.lock().push('\n');
+            }
+        });
+    }
+
+    // Early-exit detection: with no probe/target attached, Commander prints its
+    // banner + ERROR and quits — surface that instead of a hanging "running"
+    // state. ~2.5s @ 100ms is enough to consider the server stable.
+    let mut waited = 0u32;
+    loop {
+        match host.try_wait() {
+            Ok(Some(status)) => {
+                let _ = std::fs::remove_file(&script_path);
+                let out = host_log.lock().clone();
+                return Ok(JLinkResponse {
+                    success: false,
+                    output: format!("RTT 服务器启动失败（退出码 {status}）:\n{out}"),
+                });
+            }
+            Ok(None) => {}
+            Err(_) => break,
+        }
+        if waited >= 25 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        waited += 1;
+    }
+    *RTT_HOST.lock() = Some(host);
+
+    // --- Client: JLinkRTTClient pipes RTT channel 0 (stdout up, stdin down) --
+    let mut cc = std::process::Command::new(&client);
+    cc.stdout(std::process::Stdio::piped());
+    cc.stderr(std::process::Stdio::piped());
+    cc.stdin(std::process::Stdio::piped());
+    #[cfg(windows)]
+    cc.creation_flags(CREATE_NO_WINDOW);
+
+    let mut cclient = cc
+        .spawn()
+        .map_err(|e| AppError::Other(format!("启动 JLinkRTTClient 失败: {e}")))?;
+
+    // Raw 4 KB chunk reads — RTT is NOT line-buffered — base64 → `jlink-rtt-data`.
+    if let Some(out) = cclient.stdout.take() {
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::with_capacity(4096, out);
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                        if app2.emit("jlink-rtt-data", b64).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+    if let Some(err) = cclient.stderr.take() {
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(err).lines().flatten() {
+                let _ = app2.emit("jlink-rtt-log", line);
+            }
+        });
+    }
+
+    // Give the client a moment to attach; if it bails immediately (could not
+    // reach the RTT server), kill the host and report the failure.
+    let mut waited = 0u32;
+    loop {
+        match cclient.try_wait() {
+            Ok(Some(status)) => {
+                if let Some(mut h) = RTT_HOST.lock().take() {
+                    let _ = h.kill();
+                    let _ = h.wait();
+                }
+                let _ = std::fs::remove_file(&script_path);
+                let out = host_log.lock().clone();
+                return Ok(JLinkResponse {
+                    success: false,
+                    output: format!("RTT 客户端连接失败（退出码 {status}）:\n{out}"),
+                });
+            }
+            Ok(None) => {}
+            Err(_) => break,
+        }
+        if waited >= 20 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        waited += 1;
+    }
+    *RTT_CLIENT.lock() = Some(cclient);
+
+    Ok(JLinkResponse {
+        success: true,
+        output: format!("RTT 已启动（{}，端口 {RTT_SERVER_PORT}）", config.device),
+    })
+}
+
+#[tauri::command]
+pub async fn jlink_rtt_stop() -> AppResult<JLinkResponse> {
+    let client = RTT_CLIENT.lock().take();
+    let host = RTT_HOST.lock().take();
+    let mut parts = Vec::new();
+    if let Some(mut c) = client {
+        let _ = c.kill();
+        let _ = c.wait();
+        parts.push("RTT 客户端已停止".to_string());
+    }
+    if let Some(mut h) = host {
+        let _ = h.kill();
+        let _ = h.wait();
+        parts.push("RTT 服务器已停止".to_string());
+    }
+    if parts.is_empty() {
+        return Ok(JLinkResponse {
+            success: false,
+            output: "RTT 未运行".into(),
+        });
+    }
+    Ok(JLinkResponse {
+        success: true,
+        output: parts.join("\n"),
+    })
+}
+
+#[tauri::command]
+pub async fn jlink_rtt_running() -> bool {
+    let mut h = RTT_HOST.lock();
+    let alive = match h.as_mut() {
+        Some(c) => {
+            let alive = c.try_wait().map(|s| s.is_none()).unwrap_or(false);
+            if !alive {
+                *h = None; // reap dead host…
+                *RTT_CLIENT.lock() = None; // …and its client pipe
+            }
+            alive
+        }
+        None => false,
+    };
+    alive
+}
+
+#[tauri::command]
+pub async fn jlink_rtt_send(data: String) -> AppResult<JLinkResponse> {
+    // Arbitrary bytes (base64) so TEXT/HEX/DEC composers all map onto the same
+    // channel-0 input path.
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim())
+        .map_err(|e| AppError::Other(format!("无效的 RTT 数据（应为 base64）: {e}")))?;
+    let mut c = RTT_CLIENT.lock();
+    match c.as_mut() {
+        Some(child) => {
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| AppError::Other("RTT 客户端输入管道不可用".into()))?;
+            stdin
+                .write_all(&bytes)
+                .and_then(|_| stdin.flush())
+                .map_err(|e| AppError::Other(format!("写入 RTT 失败: {e}")))?;
+            Ok(JLinkResponse {
+                success: true,
+                output: String::new(),
+            })
+        }
+        None => Err(AppError::Other("RTT 客户端未运行".into())),
     }
 }

@@ -77,8 +77,6 @@ function findTabForNav(navId: Page): string | undefined {
       return tabs.find((t) => t.kind === "sftp")?.id;
     case "serial":
       return tabs.find((t) => t.kind === "serial" || t.kind === "ble")?.id;
-    case "jlink":
-      return tabs.find((t) => t.kind === "jlink")?.id;
     default:
       return undefined;
   }
@@ -95,7 +93,6 @@ export function Sidebar() {
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
   const focusPage = useTabsStore((s) => s.focusPage);
-  const openJlink = useTabsStore((s) => s.openJlink);
   const setActive = useTabsStore((s) => s.setActive);
   // The active tab drives the sidebar highlight: when a connection tab is open
   // the matching nav item lights up, so the sidebar and the current tab stay
@@ -111,14 +108,11 @@ export function Sidebar() {
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const go = (id: Page) => {
-    // J-Link is a single persistent tool tab — reuse it if already open.
+    // J-Link opens the module picker as a PAGE (not a tab), like MQTT. Picking
+    // a module from it turns that module into its own singleton tab.
     if (id === "jlink") {
-      const existing = findTabForNav("jlink");
-      if (existing) {
-        setActive(existing);
-        return;
-      }
-      void openJlink();
+      setPage("jlink");
+      focusPage();
       return;
     }
     // SFTP tabs are per-host and individually listed in the TabBar; from the

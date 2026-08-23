@@ -331,6 +331,9 @@ export type ThemeId =
 
 export type TabKind = "ssh" | "serial" | "ble" | "local" | "wsl" | "frp" | "sftp" | "jlink" | "mqtt";
 
+/** Which J-Link module a `jlink` tab hosts (mirrors `mqttModule`). */
+export type JLinkModule = "flash" | "rtt" | "gdb";
+
 export type TabStatus = "connecting" | "connected" | "closed" | "error";
 
 /** One terminal in a split-pane tab. The first pane mirrors the tab itself. */
@@ -370,6 +373,12 @@ export interface Tab {
   sftpConfig?: SshConnectConfig;
   /** J-Link only — the probe config kept so Reconnect/Duplicate can reopen. */
   jlink?: JLinkConfig;
+  /**
+   * J-Link module tabs only: which module this tab hosts. A tab with
+   * `jlinkModule` set renders the matching workspace (Flash / RTT / GDB);
+   * `jlink` (the probe config) seeds its connection settings.
+   */
+  jlinkModule?: JLinkModule;
   /** SSH only — cached credentials/config so Reconnect and Split can reconnect. */
   sshConfig?: SshConnectConfig;
   /** MQTT only — the saved connection profile backing this live session. */
