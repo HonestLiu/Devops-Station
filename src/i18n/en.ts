@@ -280,7 +280,17 @@ export const en: Record<keyof typeof zh, string> = {
   "tabs.frpTunnel": "Frp Tunnel",
   "tabs.ble": "BLE",
   "tabs.local": "local",
+  "tabs.ssh": "SSH",
+  "tabs.wsl": "WSL",
+  "tabs.serial": "Serial",
+  "tabs.sftp": "SFTP",
   "tabs.jlink": "debug probe",
+  "tabs.mqtt": "MQTT",
+  "tabs.middleClose": "middle-click to close",
+  "tabs.closeConfirm": "Close this tab? The session will be disconnected.",
+  "tabs.closeConfirmTitle": "Close tab",
+  "tabs.closeOthersConfirm": "Close {n} tab(s)? The session(s) will be disconnected.",
+  "tabs.hostSeq": "Opened as the {n}th tab for this host",
 
   "sync.networkError": "Cannot reach object storage (network request failed). Check that the endpoint and credentials are correct, the network is reachable, and the object-storage service is available.",
 

@@ -79,6 +79,13 @@ interface TabsState {
   patch: (id: string, patch: Partial<Tab>) => void;
   /** Update a single pane inside a tab. */
   patchPane: (tabId: string, paneId: string, patch: Partial<TermPane>) => void;
+  /**
+   * Append a freshly-created tab and make it active. Stamps `hostSeq` — the
+   * per-host (or per-kind, when hostless) monotonically increasing open index —
+   * onto the tab so the tab bar can badge it with "which number open" (1st, 2nd,
+   * 3rd …) for that host. Closing a middle tab does NOT renumber the survivors.
+   */
+  addTab: (tab: Tab) => void;
 
   openSsh: (config: SshConnectConfig, title?: string) => Promise<string>;
   openSerial: (config: SerialOpenConfig, title?: string) => Promise<string>;
@@ -147,6 +154,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       ),
     })),
 
+  addTab: (tab) =>
+    set((s) => {
+      // Per-host open index: tabs that share a hostId (or, when hostless, the
+      // same kind) form one sequence. The next index is 1 + the highest seq
+      // already used by that group, so it never renumbers when a middle tab
+      // closes — it only ever grows for new openings.
+      const key = tab.hostId ?? tab.kind;
+      let maxSeq = 0;
+      for (const t of s.tabs) {
+        if ((t.hostId ?? t.kind) === key) maxSeq = Math.max(maxSeq, t.hostSeq ?? 0);
+      }
+      return {
+        tabs: [...s.tabs, { ...tab, hostSeq: maxSeq + 1 }],
+        activeId: tab.id,
+      };
+    }),
+
   closeTab: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
     const teardown =
@@ -187,22 +211,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   openSsh: async (config, title) => {
     const id = nextId();
     const label = title || `${config.username}@${config.hostname}`;
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "ssh",
-          title: label,
-          subtitle: `${config.hostname}:${config.port}`,
-          status: "connecting",
-          hostId: config.hostId,
-          // Cache the connect config so Reconnect / Split can re-open sessions.
-          sshConfig: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "ssh",
+      title: label,
+      subtitle: `${config.hostname}:${config.port}`,
+      status: "connecting",
+      hostId: config.hostId,
+      // Cache the connect config so Reconnect / Split can re-open sessions.
+      sshConfig: config,
+    });
 
     try {
       const result = await connectSshWithHostKeyPrompt(config);
@@ -234,22 +252,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     };
 
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "sftp",
-          title: title || `${config.username}@${config.hostname}`,
-          subtitle: `${config.hostname}:${config.port} · SFTP`,
-          status: "connecting",
-          hostId: host.id,
-          // Stash the config so Reconnect can re-resolve saved credentials.
-          sftpConfig: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "sftp",
+      title: title || `${config.username}@${config.hostname}`,
+      subtitle: `${config.hostname}:${config.port} · SFTP`,
+      status: "connecting",
+      hostId: host.id,
+      // Stash the config so Reconnect can re-resolve saved credentials.
+      sftpConfig: config,
+    });
 
     try {
       const result = await connectSshWithHostKeyPrompt(config);
@@ -280,20 +292,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       lang(
         module === "rtt" ? "jlink.rtt" : module === "gdb" ? "jlink.gdb" : "jlink.flash",
       );
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "jlink",
-          title: label,
-          subtitle: lang("tabs.jlink"),
-          status: "connected",
-          jlinkModule: module,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "jlink",
+      title: label,
+      subtitle: lang("tabs.jlink"),
+      status: "connected",
+      jlinkModule: module,
+    });
     return id;
   },
 
@@ -309,21 +315,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       return existing.id;
     }
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "mqtt",
-          title: lang("dash.title"),
-          subtitle: "",
-          status: "connected",
-          mqttModule: "dash",
-          mqtt: undefined,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "mqtt",
+      title: lang("dash.title"),
+      subtitle: "",
+      status: "connected",
+      mqttModule: "dash",
+      mqtt: undefined,
+    });
     return id;
   },
 
@@ -337,20 +337,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       }
     }
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "mqtt",
-          title: title || conn.name,
-          subtitle: `${conn.protocol}://${conn.host}:${conn.port}`,
-          status: "connecting",
-          mqtt: conn,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "mqtt",
+      title: title || conn.name,
+      subtitle: `${conn.protocol}://${conn.host}:${conn.port}`,
+      status: "connecting",
+      mqtt: conn,
+    });
 
     try {
       const sessionId = await mqtt.connect({
@@ -378,21 +372,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   openSerial: async (config, title) => {
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "serial",
-          title: title || config.port,
-          subtitle: `${config.baudRate} baud`,
-          status: "connecting",
-          hostId: config.hostId,
-          serial: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "serial",
+      title: title || config.port,
+      subtitle: `${config.baudRate} baud`,
+      status: "connecting",
+      hostId: config.hostId,
+      serial: config,
+    });
 
     try {
       const sessionId = await serial.open(config);
@@ -406,21 +394,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   openBle: async (config, title) => {
     const id = nextId();
     const label = title || config.deviceName || config.deviceId;
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "ble",
-          title: label,
-          subtitle: lang("tabs.ble"),
-          status: "connecting",
-          hostId: config.hostId,
-          ble: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "ble",
+      title: label,
+      subtitle: lang("tabs.ble"),
+      status: "connecting",
+      hostId: config.hostId,
+      ble: config,
+    });
 
     try {
       const sessionId = await ble.open(config);
@@ -441,21 +423,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       shellPref && shellPref !== "default"
         ? shellPref
         : await pty.defaultShell().catch(() => undefined);
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "local",
-          title: lang("ws.localShell"),
-          subtitle: lang("tabs.local"),
-          status: "connecting",
-          cwd,
-          shell,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "local",
+      title: lang("ws.localShell"),
+      subtitle: lang("tabs.local"),
+      status: "connecting",
+      cwd,
+      shell,
+    });
 
     try {
       const sessionId = await pty.spawn(120, 32, shell, cwd);
@@ -468,22 +444,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   openWsl: async (config, title) => {
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "wsl",
-          title: title || (config.distro ? lang("hosts.wslDistro", { distro: config.distro }) : "WSL"),
-          subtitle: config.distro || lang("tabs.defaultDistro"),
-          status: "connecting",
-          hostId: config.hostId,
-          // Stash the launch config so Reconnect can respawn identically.
-          wsl: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "wsl",
+      title: title || (config.distro ? lang("hosts.wslDistro", { distro: config.distro }) : "WSL"),
+      subtitle: config.distro || lang("tabs.defaultDistro"),
+      status: "connecting",
+      hostId: config.hostId,
+      // Stash the launch config so Reconnect can respawn identically.
+      wsl: config,
+    });
 
     try {
       // WSL sessions are plain PTY sessions — wsl.spawn returns a pty session id.
@@ -497,22 +467,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   openFrp: async (config, title) => {
     const id = nextId();
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "frp",
-          title: title || lang("tabs.frpTunnel"),
-          subtitle: config.config.server?.serverAddr || "frpc",
-          status: "connecting",
-          hostId: config.hostId,
-          // Stash the launch config so Reconnect can respawn identically.
-          frp: config,
-        },
-      ],
-      activeId: id,
-    }));
+    get().addTab({
+      id,
+      kind: "frp",
+      title: title || lang("tabs.frpTunnel"),
+      subtitle: config.config.server?.serverAddr || "frpc",
+      status: "connecting",
+      hostId: config.hostId,
+      // Stash the launch config so Reconnect can respawn identically.
+      frp: config,
+    });
 
     try {
       // Frp tunnels are plain PTY sessions — frp.spawn returns a pty session id.

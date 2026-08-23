@@ -61,6 +61,48 @@ function mergeContinuationLines(text: string): string {
   return merged.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Bracketed paste.
+//
+// The terminal used to forward every paste through `term.paste()`, which feeds
+// the text to the PTY as if it were typed on the keyboard. Editors like vim
+// then auto-indent every line (and, with `cindent`/`smartindent`, reformat or
+// even drop leading characters), so a pasted shell script arrives hopelessly
+// mangled — exactly the bug reported.
+//
+// A real terminal solves this with *bracketed paste mode*: it wraps the pasted
+// bytes in `\x1b[200~` (start) … `\x1b[201~` (end). When the remote program has
+// enabled bracketed paste (vim does by default; bash/zsh/fish do too), it
+// disables auto-indent and inserts the text verbatim. Programs that never
+// negotiated the mode simply ignore the markers (they appear as inert escape
+// sequences on the line), so this is safe everywhere.
+//
+// We write the markers straight to the PTY via `api.write` rather than
+// `term.paste`, which would re-route them through the keyboard-input path and
+// could let the existing bracketed-paste-stripping in `onData` delete them.
+// ---------------------------------------------------------------------------
+function sendBracketedPaste(
+  text: string,
+  sessionId: string,
+  api: TransportApi,
+) {
+  if (!text) return;
+  const payload = `\x1b[200~${text}\x1b[201~`;
+  void api.write(sessionId, textToBase64(payload)).catch(() => undefined);
+}
+
+/**
+ * Prepare raw clipboard text for pasting: strip the single leading/trailing
+ * newline that a copy almost always carries (so it doesn't auto-submit the
+ * current line before the pasted text lands) and merge `\`-continuation lines
+ * so PowerShell/cmd receive a single valid command. Bracketed paste is applied
+ * later by `sendBracketedPaste`.
+ */
+function preparePasteText(text: string): string {
+  const cleaned = text.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+  return mergeContinuationLines(cleaned);
+}
+
 // Snippets submenu — mirrors the "Snippets" flyout in the terminal's AI bar. Each
 // group becomes its own nested submenu (e.g. "Snippets → Git → <command>") so the
 // top-level entry stays short. Every command is *inserted* into the active
@@ -374,7 +416,7 @@ export function Terminal(props: TerminalProps) {
         icon: <ClipboardPaste size={14} />,
         onClick: () => {
           navigator.clipboard?.readText().then((t) => {
-            if (t) term.paste(t.replace(/^\r?\n/, "").replace(/\r?\n$/, ""));
+            if (t) sendBracketedPaste(preparePasteText(t), sessionId, api);
           }).catch(() => undefined);
         },
       },
@@ -527,7 +569,7 @@ export function Terminal(props: TerminalProps) {
     term.open(host);
     fit.fit();
 
-    // --- paste: append without auto-submitting ---------------------------------
+    // --- paste: bracketed, without auto-submitting ----------------------------
     // A copied line almost always carries a trailing newline. If we let xterm
     // forward that newline straight to the PTY it is read as Enter, which
     // submits the command already on the line *before* the pasted text is
@@ -535,9 +577,15 @@ export function Terminal(props: TerminalProps) {
     // run as a separate (broken) command. We intercept the DOM paste in the
     // capture phase (so xterm's own bubble-phase paste listener never fires —
     // otherwise we'd get a double paste), strip one leading and one trailing
-    // newline (the copy artifacts) and re-feed the cleaned text through xterm
-    // so it lands at the cursor and waits for a deliberate Enter. Internal
-    // newlines are kept so multi-line pastes still work line-by-line.
+    // newline (the copy artifacts) and feed the cleaned text to the PTY.
+    //
+    // Crucially we wrap the paste in bracketed-paste markers (`ESC[200~` …
+    // `ESC[201~`) instead of calling `term.paste()`. `term.paste()` forwards the
+    // bytes as if they were typed, so an editor like vim would auto-indent
+    // every line and mangle the text (the reported bug). The markers tell the
+    // remote program (vim, and most shells) that this is a paste, so it inserts
+    // the text verbatim with auto-indent disabled. Programs that never enabled
+    // bracketed paste ignore the markers harmlessly.
     //
     // Backslash continuations (e.g. `docker run -d \<NL>  --name foo`) are
     // merged into a single line before pasting.  Without this, each line is
@@ -549,8 +597,7 @@ export function Terminal(props: TerminalProps) {
       if (text == null) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const cleaned = text.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
-      term.paste(mergeContinuationLines(cleaned));
+      sendBracketedPaste(preparePasteText(text), sessionRef.current, api);
     };
     term.textarea?.addEventListener("paste", onPaste, true);
 

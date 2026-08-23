@@ -350,6 +350,10 @@ export interface Tab {
   title: string;
   subtitle: string;
   status: TabStatus;
+  /** Per-host (or per-kind, when hostless) monotonically increasing open
+   *  index — 1st/2nd/3rd… tab opened for that host. Used by the tab bar to
+   *  badge "which number open". Stays fixed even after a middle tab closes. */
+  hostSeq?: number;
   /** Backend session id of the FOCUSED pane; absent while connecting. */
   sessionId?: string;
   hostId?: string;
