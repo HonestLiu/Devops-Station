@@ -43,6 +43,9 @@ import type {
   GitDiff,
   GitCommit,
   GitSnapshot,
+  DockerContainer,
+  DockerImage,
+  DockerRunOptions,
 } from "./types";
 
 /**
@@ -601,4 +604,47 @@ export const git = {
     call<string>("git_reset", { cwd, mode, target, distro: distro ?? null, sshSession: sessionId ?? null }),
   checkoutCommit: (cwd: string, hash: string, distro?: string, sessionId?: string) =>
     call<string>("git_checkout_commit", { cwd, hash, distro: distro ?? null, sshSession: sessionId ?? null }),
+};
+
+// --- Docker ----------------------------------------------------------------
+// `distro` is only set for WSL sessions; `sessionId` routes the call over an
+// SSH session (remote hosts). Local sessions pass both as undefined.
+
+export const docker = {
+  /** Whether a Docker daemon is reachable in the target environment. */
+  available: (distro?: string, sessionId?: string) =>
+    call<boolean>("docker_available", { distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** List all containers (running + stopped). */
+  ps: (distro?: string, sessionId?: string) =>
+    call<DockerContainer[]>("docker_ps", { distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** List images. */
+  images: (distro?: string, sessionId?: string) =>
+    call<DockerImage[]>("docker_images", { distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Start a container. */
+  start: (id: string, distro?: string, sessionId?: string) =>
+    call<void>("docker_start", { id, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Stop a container. */
+  stop: (id: string, distro?: string, sessionId?: string) =>
+    call<void>("docker_stop", { id, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Restart a container. */
+  restart: (id: string, distro?: string, sessionId?: string) =>
+    call<void>("docker_restart", { id, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Remove a container. */
+  remove: (id: string, force: boolean, distro?: string, sessionId?: string) =>
+    call<void>("docker_remove", { id, force, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Remove an image. */
+  rmi: (id: string, force: boolean, distro?: string, sessionId?: string) =>
+    call<void>("docker_rmi", { id, force, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Pull an image. Returns the pull progress text. */
+  pull: (name: string, distro?: string, sessionId?: string) =>
+    call<string>("docker_pull", { name, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Fetch the last `tail` lines of a container's logs. */
+  logs: (id: string, tail: number, distro?: string, sessionId?: string) =>
+    call<string>("docker_logs", { id, tail, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Create and start a container from `opts`. Returns the new container id. */
+  run: (opts: DockerRunOptions, distro?: string, sessionId?: string) =>
+    call<string>("docker_run", { opts, distro: distro ?? null, sshSession: sessionId ?? null }),
+  /** Run a docker compose action against the compose file at `path`. */
+  compose: (path: string, action: string, distro?: string, sessionId?: string) =>
+    call<string>("docker_compose", { path, action, distro: distro ?? null, sshSession: sessionId ?? null }),
 };

@@ -955,3 +955,42 @@ export interface GitSnapshot {
   branches: GitBranches;
 }
 
+// --- Docker sidebar --------------------------------------------------------
+
+/** One container, as reported by `docker ps --format '{{json .}}'`. */
+export interface DockerContainer {
+  id: string;
+  names: string;
+  image: string;
+  status: string;
+  /** Coarse lifecycle state: running | exited | paused | created | ... */
+  state: string;
+  ports: string;
+  created: string;
+  command: string;
+  size: string;
+}
+
+/** One image, as reported by `docker images --format '{{json .}}'`. */
+export interface DockerImage {
+  id: string;
+  repo: string;
+  tag: string;
+  size: string;
+  created: string;
+}
+
+/** Options for `docker run`, sent from the run-container form. */
+export interface DockerRunOptions {
+  image: string;
+  name?: string;
+  ports: string[];
+  envs: string[];
+  cmd?: string;
+  detach: boolean;
+  rm: boolean;
+}
+
+/** Valid `docker compose` actions exposed in the UI. */
+export type DockerComposeAction = "up" | "down" | "ps" | "restart";
+

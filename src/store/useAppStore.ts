@@ -66,6 +66,28 @@ export interface AppSettings {
   avatar: string;
   /** Object-storage sync configuration (local credentials, not synced). */
   sync: SyncConfig;
+  /** Per-feature toolbar visibility. When a feature is off, its toolbar
+   *  button is hidden and any open panel is force-closed (unmounting it and
+   *  stopping its work). */
+  features: FeatureSettings;
+}
+
+/** Which toolbar panels/features are enabled. */
+export interface FeatureSettings {
+  /** File browser (SFTP / WSL / local) panel. */
+  files: boolean;
+  /** Git panel. */
+  git: boolean;
+  /** Docker panel. */
+  docker: boolean;
+  /** Snippets panel. */
+  snippets: boolean;
+  /** Port forwarding panel (SSH workspaces only). */
+  portForward: boolean;
+  /** WSL USB / USB/IP attach panel (WSL workspaces only). */
+  usb: boolean;
+  /** Known Hosts dialog (SSH workspaces only). */
+  knownHosts: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -124,6 +146,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
     pathStyle: false,
     includeSecrets: true,
     lastSyncAt: 0,
+  },
+  features: {
+    files: true,
+    git: true,
+    docker: true,
+    snippets: true,
+    portForward: true,
+    usb: true,
+    knownHosts: true,
   },
   ai: {
     provider: "openai",
@@ -263,6 +294,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         sync: {
           ...DEFAULT_SETTINGS.sync,
           ...((stored as Partial<AppSettings>).sync ?? {}),
+        },
+        // `features` is a nested object — merge field-by-field so a persisted
+        // older shape can never drop the other toggles.
+        features: {
+          ...DEFAULT_SETTINGS.features,
+          ...((stored as Partial<AppSettings>).features ?? {}),
         },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);

@@ -1,17 +1,18 @@
 import { useMemo, useState } from "react";
-import { Code2, FolderClosed, FolderOpen, GitBranch, RotateCw, Usb } from "lucide-react";
+import { Code2, Container, FolderClosed, FolderOpen, GitBranch, RotateCw, Usb } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
-import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createWslAdapter } from "@/components/files/FileBrowserPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
 import { GitPanel } from "@/components/git/GitPanel";
+import { DockerPanel } from "@/components/docker/DockerPanel";
 import { SnippetPanel } from "@/components/snippets/SnippetPanel";
 import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useSessionStore } from "@/store/useSessionStore";
+import { useAppStore } from "@/store/useAppStore";
 import type { Tab } from "@/lib/types";
 
 /**
@@ -26,16 +27,13 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
   const [usbOpen, setUsbOpen] = useState(false);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
+  const [dockerOpen, setDockerOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
-  const splitPane = useTabsStore((s) => s.splitPane);
-  const closePane = useTabsStore((s) => s.closePane);
+  const features = useAppStore((s) => s.settings.features);
 
   const connected = tab.status === "connected" && !!tab.sessionId;
   const cwd = useSessionStore((s) => (tab.sessionId ? s.cwdBySession[tab.sessionId] : undefined));
   const paneCount = tab.panes?.length ?? 1;
-  const canSplit = paneCount < 4;
-  const canClosePane = (tab.panes?.length ?? 0) > 1;
-  const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
   // Stable adapter (recreating it per render would bounce the panel home).
   const wslAdapter = useMemo(() => createWslAdapter(tab.wsl?.distro), [tab.wsl?.distro]);
 
@@ -52,49 +50,62 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 no-drag">
-          <Button
-            variant={filesOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setFilesOpen((v) => !v)}
-            title={t("ws.filesTitle")}
-          >
-            {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            {t("ws.files")}
-          </Button>
-          <Button
-            variant={snippetsOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setSnippetsOpen((v) => !v)}
-            title={t("ws.snippetsTitle")}
-          >
-            <Code2 size={14} />
-            {t("ws.snippets")}
-          </Button>
-          <Button
-            variant={usbOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setUsbOpen((v) => !v)}
-            title={t("ws.usbTitle")}
-          >
-            <Usb size={14} />
-            {t("ws.usb")}
-          </Button>
-          <Button
-            variant={gitOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setGitOpen((v) => !v)}
-            title={t("git.title")}
-          >
-            <GitBranch size={14} />
-            {t("git.title")}
-          </Button>
-          <SplitControls
-            paneCount={paneCount}
-            canSplit={canSplit}
-            canClosePane={canClosePane}
-            onSplit={(axis) => void splitPane(tab.id, axis)}
-            onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
-          />
+          {features.files && (
+            <Button
+              variant={filesOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setFilesOpen((v) => !v)}
+              title={t("ws.filesTitle")}
+            >
+              {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
+              {t("ws.files")}
+            </Button>
+          )}
+          {features.snippets && (
+            <Button
+              variant={snippetsOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setSnippetsOpen((v) => !v)}
+              title={t("ws.snippetsTitle")}
+            >
+              <Code2 size={14} />
+              {t("ws.snippets")}
+            </Button>
+          )}
+          {features.usb && (
+            <Button
+              variant={usbOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setUsbOpen((v) => !v)}
+              title={t("ws.usbTitle")}
+            >
+              <Usb size={14} />
+              {t("ws.usb")}
+            </Button>
+          )}
+          {features.git && (
+            <Button
+              variant={gitOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setGitOpen((v) => !v)}
+              title={t("git.title")}
+            >
+              <GitBranch size={14} />
+              {t("git.title")}
+            </Button>
+          )}
+          {features.docker && (
+            <Button
+              variant={dockerOpen ? "primary" : "ghost"}
+              size="sm"
+              disabled={!connected}
+              onClick={() => setDockerOpen((v) => !v)}
+              title={connected ? t("docker.title") : t("pf.needSession")}
+            >
+              <Container size={14} />
+              {t("docker.title")}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("ws.restartSession")}>
             <RotateCw size={14} />
           </Button>
@@ -107,7 +118,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
 
-        {filesOpen && connected && tab.sessionId && (
+        {features.files && filesOpen && connected && tab.sessionId && (
           <FileBrowserPanel
             adapter={wslAdapter}
             sessionId={tab.sessionId}
@@ -117,7 +128,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           />
         )}
 
-        {snippetsOpen && (
+        {features.snippets && snippetsOpen && (
           <SnippetPanel
             sessionId={tab.sessionId}
             terminalHint={getTerminalTypeDescription(tab.sessionId)}
@@ -125,7 +136,7 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           />
         )}
 
-        {usbOpen && (
+        {features.usb && usbOpen && (
           <WSLUSBPanel
             distro={tab.wsl?.distro ?? ""}
             connected={connected}
@@ -133,8 +144,12 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
           />
         )}
 
-        {gitOpen && connected && tab.sessionId && cwd && (
+        {features.git && gitOpen && connected && tab.sessionId && cwd && (
           <GitPanel cwd={cwd} distro={tab.wsl?.distro} onClose={() => setGitOpen(false)} />
+        )}
+
+        {features.docker && dockerOpen && connected && tab.sessionId && (
+          <DockerPanel distro={tab.wsl?.distro} onClose={() => setDockerOpen(false)} />
         )}
       </div>
     </div>

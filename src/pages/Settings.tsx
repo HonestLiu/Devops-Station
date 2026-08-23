@@ -14,6 +14,7 @@ import {
   Loader2,
   Monitor,
   Palette,
+  PanelTop,
   RefreshCw,
   RotateCcw,
   Search,
@@ -40,7 +41,7 @@ import {
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
-import { useAppStore, DEFAULT_SETTINGS, type AppSettings, type Language } from "@/store/useAppStore";
+import { useAppStore, DEFAULT_SETTINGS, type AppSettings, type FeatureSettings, type Language } from "@/store/useAppStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { CheckForUpdatesButton } from "@/components/UpdateDialog";
 import type {
@@ -401,6 +402,7 @@ export function Settings() {
         { id: "account", icon: <Cloud size={15} />, titleKey: "settings.account" },
         { id: "appearance", icon: <Palette size={15} />, titleKey: "settings.appearance" },
         { id: "terminal", icon: <Terminal size={15} />, titleKey: "settings.terminal" },
+        { id: "shell", icon: <Monitor size={15} />, titleKey: "settings.localShell" },
         { id: "monitoring", icon: <Activity size={15} />, titleKey: "settings.monitoring" },
       ],
     },
@@ -408,8 +410,8 @@ export function Settings() {
       id: "features",
       titleKey: "settings.groupFeatures",
       sections: [
+        { id: "toolbar", icon: <PanelTop size={15} />, titleKey: "settings.toolbarFeatures" },
         { id: "ai", icon: <Bot size={15} />, titleKey: "settings.aiAssistant" },
-        { id: "shell", icon: <Monitor size={15} />, titleKey: "settings.localShell" },
         { id: "jlink", icon: <Cpu size={15} />, titleKey: "settings.jlink" },
       ],
     },
@@ -451,6 +453,10 @@ export function Settings() {
 
   const setShortcut = (id: ShortcutId, v: ShortcutBinding) =>
     void updateSetting("shortcuts", { ...settings.shortcuts, [id]: v });
+
+  // --- Toolbar feature toggles ---------------------------------------------
+  const setFeature = <K extends keyof FeatureSettings>(k: K, v: FeatureSettings[K]) =>
+    void updateSetting("features", { ...settings.features, [k]: v });
 
   // --- Object-storage sync ------------------------------------------------
   const sync = settings.sync;
@@ -765,6 +771,38 @@ export function Settings() {
         <div className="min-w-0 flex-1 space-y-6 pb-6">
           {/* Account */}
           <Section id="account" hidden={!secVisible("settings.account")} icon={<Cloud size={15} />} title={t("settings.account")}>
+            <Row title={t("settings.accIdentity")} full>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={pickAvatar}
+                  title={t("settings.accChangeAvatar")}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-hover text-[10px] text-muted transition-colors hover:border-accent"
+                >
+                  {avatar ? (
+                    <img src={avatar} alt="avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    <Cloud size={20} />
+                  )}
+                </button>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      className="h-8 w-44 font-mono text-[12px]"
+                      placeholder={t("settings.accNicknamePh")}
+                    />
+                    <Button size="sm" variant="ghost" disabled={syncBusy} onClick={() => void doSaveIdentity()}>
+                      {t("settings.accSave")}
+                    </Button>
+                  </div>
+                  <span className="truncate text-[11px] text-subtle">
+                    {t("settings.accIdentityHint")}
+                  </span>
+                </div>
+              </div>
+            </Row>
+
             <Row title={t("settings.syncEndpoint")} desc={t("settings.syncEndpointHint")}>
               <Input
                 value={sync.endpoint}
@@ -837,38 +875,6 @@ export function Settings() {
                 >
                   {t("settings.syncDisconnect")}
                 </Button>
-              </div>
-            </Row>
-
-            <Row title={t("settings.accIdentity")} full>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={pickAvatar}
-                  title={t("settings.accChangeAvatar")}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-hover text-[10px] text-muted transition-colors hover:border-accent"
-                >
-                  {avatar ? (
-                    <img src={avatar} alt="avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    <Cloud size={20} />
-                  )}
-                </button>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={nickname}
-                      onChange={(e) => setNickname(e.target.value)}
-                      className="h-8 w-44 font-mono text-[12px]"
-                      placeholder={t("settings.accNicknamePh")}
-                    />
-                    <Button size="sm" variant="ghost" disabled={syncBusy} onClick={() => void doSaveIdentity()}>
-                      {t("settings.accSave")}
-                    </Button>
-                  </div>
-                  <span className="truncate text-[11px] text-subtle">
-                    {t("settings.accIdentityHint")}
-                  </span>
-                </div>
               </div>
             </Row>
 
@@ -1083,111 +1089,109 @@ export function Settings() {
             </Row>
 
             {/* Keyword highlighting */}
-            <Row title={t("settings.keywordHighlight")} desc={t("settings.keywordHighlightHint")} full>
-              <div className="mt-2 flex flex-col gap-2">
-                <Switch
-                  checked={settings.keywordHighlight.enabled}
-                  onChange={(v) =>
-                    updateSetting("keywordHighlight", { ...settings.keywordHighlight, enabled: v })
-                  }
-                  label={t("settings.enable")}
-                />
-                <div className="flex flex-col gap-2">
-                  {settings.keywordHighlight.rules.map((rule) => (
-                    <div
-                      key={rule.id}
-                      className="flex items-center gap-2 rounded-lg border border-border bg-bg p-2"
-                    >
-                      <input
-                        type="color"
-                        value={rule.color}
-                        onChange={(e) => {
-                          const rules = settings.keywordHighlight.rules.map((r) =>
-                            r.id === rule.id ? { ...r, color: e.target.value } : r,
-                          );
-                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                        }}
-                        className="h-7 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-                        title={t("settings.khColor")}
-                      />
-                      <input
-                        type="text"
-                        value={rule.pattern}
-                        placeholder={t("settings.khPattern")}
-                        onChange={(e) => {
-                          const rules = settings.keywordHighlight.rules.map((r) =>
-                            r.id === rule.id ? { ...r, pattern: e.target.value } : r,
-                          );
-                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                        }}
-                        className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-[12px] text-fg outline-none focus:border-accent"
-                      />
-                      <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted">
-                        <input
-                          type="checkbox"
-                          checked={!!rule.wholeLine}
-                          onChange={(e) => {
-                            const rules = settings.keywordHighlight.rules.map((r) =>
-                              r.id === rule.id ? { ...r, wholeLine: e.target.checked } : r,
-                            );
-                            updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                          }}
-                        />
-                        {t("settings.khWholeLine")}
-                      </label>
-                      <button
-                        onClick={() => {
-                          const rules = settings.keywordHighlight.rules.map((r) =>
-                            r.id === rule.id ? { ...r, enabled: !r.enabled } : r,
-                          );
-                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                        }}
-                        className={cn(
-                          "shrink-0 rounded-md px-2 py-1 text-[11px]",
-                          rule.enabled
-                            ? "bg-accent/15 text-accent"
-                            : "bg-bg text-subtle hover:text-fg",
-                        )}
-                        title={t("settings.khToggle")}
-                      >
-                        {rule.enabled ? t("settings.khOn") : t("settings.khOff")}
-                      </button>
-                      <button
-                        onClick={() => {
-                          const rules = settings.keywordHighlight.rules.filter(
-                            (r) => r.id !== rule.id,
-                          );
-                          updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                        }}
-                        className="shrink-0 rounded-md p-1 text-subtle hover:bg-danger/10 hover:text-danger"
-                        title={t("settings.khDelete")}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    const rules = [
-                      ...settings.keywordHighlight.rules,
-                      {
-                        id: `kh-${Date.now()}`,
-                        pattern: "",
-                        color: "#ff79c6",
-                        wholeLine: true,
-                        enabled: true,
-                      },
-                    ];
-                    updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
-                  }}
-                >
-                  + {t("settings.khAdd")}
-                </Button>
-              </div>
+            <Row title={t("settings.keywordHighlight")} desc={t("settings.keywordHighlightHint")}>
+              <Switch
+                checked={settings.keywordHighlight.enabled}
+                onChange={(v) =>
+                  updateSetting("keywordHighlight", { ...settings.keywordHighlight, enabled: v })
+                }
+                label={t("settings.enable")}
+              />
             </Row>
+            <div className="flex flex-col gap-2 px-1 pb-3.5">
+              {settings.keywordHighlight.rules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-bg p-2"
+                >
+                  <input
+                    type="color"
+                    value={rule.color}
+                    onChange={(e) => {
+                      const rules = settings.keywordHighlight.rules.map((r) =>
+                        r.id === rule.id ? { ...r, color: e.target.value } : r,
+                      );
+                      updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                    }}
+                    className="h-7 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+                    title={t("settings.khColor")}
+                  />
+                  <input
+                    type="text"
+                    value={rule.pattern}
+                    placeholder={t("settings.khPattern")}
+                    onChange={(e) => {
+                      const rules = settings.keywordHighlight.rules.map((r) =>
+                        r.id === rule.id ? { ...r, pattern: e.target.value } : r,
+                      );
+                      updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                    }}
+                    className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1 font-mono text-[12px] text-fg outline-none focus:border-accent"
+                  />
+                  <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted">
+                    <input
+                      type="checkbox"
+                      checked={!!rule.wholeLine}
+                      onChange={(e) => {
+                        const rules = settings.keywordHighlight.rules.map((r) =>
+                          r.id === rule.id ? { ...r, wholeLine: e.target.checked } : r,
+                        );
+                        updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                      }}
+                    />
+                    {t("settings.khWholeLine")}
+                  </label>
+                  <button
+                    onClick={() => {
+                      const rules = settings.keywordHighlight.rules.map((r) =>
+                        r.id === rule.id ? { ...r, enabled: !r.enabled } : r,
+                      );
+                      updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                    }}
+                    className={cn(
+                      "shrink-0 rounded-md px-2 py-1 text-[11px]",
+                      rule.enabled
+                        ? "bg-accent/15 text-accent"
+                        : "bg-bg text-subtle hover:text-fg",
+                    )}
+                    title={t("settings.khToggle")}
+                  >
+                    {rule.enabled ? t("settings.khOn") : t("settings.khOff")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const rules = settings.keywordHighlight.rules.filter(
+                        (r) => r.id !== rule.id,
+                      );
+                      updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                    }}
+                    className="shrink-0 rounded-md p-1 text-subtle hover:bg-danger/10 hover:text-danger"
+                    title={t("settings.khDelete")}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const rules = [
+                    ...settings.keywordHighlight.rules,
+                    {
+                      id: `kh-${Date.now()}`,
+                      pattern: "",
+                      color: "#ff79c6",
+                      wholeLine: true,
+                      enabled: true,
+                    },
+                  ];
+                  updateSetting("keywordHighlight", { ...settings.keywordHighlight, rules });
+                }}
+              >
+                + {t("settings.khAdd")}
+              </Button>
+            </div>
 
             <Row title={t("settings.confirmClose")}>
               <Switch
@@ -1195,6 +1199,34 @@ export function Settings() {
                 onChange={(v) => set("confirmOnClose", v)}
                 label={t("settings.confirmClose")}
               />
+            </Row>
+          </Section>
+
+          {/* Local Shell */}
+          <Section id="shell" hidden={!secVisible("settings.localShell")} icon={<Monitor size={15} />} title={t("settings.localShell")}>
+            <Row title={t("settings.defaultShell")} desc={t("settings.shellHint")}>
+              <Select
+                value={settings.localShell}
+                onChange={(e) => set("localShell", e.target.value)}
+              >
+                <option value="default">{t("settings.optDefaultShell")}</option>
+                {isWindows ? (
+                  <>
+                    <option value="powershell">PowerShell</option>
+                    <option value="pwsh">PowerShell (pwsh)</option>
+                    <option value="cmd">Command Prompt (cmd)</option>
+                    <option value="git-bash">Git Bash</option>
+                    <option value="bash">bash (Git Bash / WSL)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="bash">{t("settings.optBash")}</option>
+                    <option value="zsh">{t("settings.optZsh")}</option>
+                    <option value="fish">{t("settings.optFish")}</option>
+                    <option value="sh">{t("settings.optSh")}</option>
+                  </>
+                )}
+              </Select>
             </Row>
           </Section>
 
@@ -1209,6 +1241,32 @@ export function Settings() {
                 <option value={2000}>{t("settings.opt2s")}</option>
                 <option value={5000}>{t("settings.opt5s")}</option>
               </Select>
+            </Row>
+          </Section>
+
+          {/* Toolbar features */}
+          <Section id="toolbar" hidden={!secVisible("settings.toolbarFeatures")} icon={<PanelTop size={15} />} title={t("settings.toolbarFeatures")}>
+            <p className="mb-2 px-1 text-[11px] leading-snug text-subtle">{t("settings.toolbarFeaturesHint")}</p>
+            <Row title={t("settings.featFiles")} desc={t("settings.featFilesDesc")}>
+              <Switch checked={settings.features.files} onChange={(v) => setFeature("files", v)} label={t("settings.featFiles")} />
+            </Row>
+            <Row title={t("settings.featGit")} desc={t("settings.featGitDesc")}>
+              <Switch checked={settings.features.git} onChange={(v) => setFeature("git", v)} label={t("settings.featGit")} />
+            </Row>
+            <Row title={t("settings.featDocker")} desc={t("settings.featDockerDesc")}>
+              <Switch checked={settings.features.docker} onChange={(v) => setFeature("docker", v)} label={t("settings.featDocker")} />
+            </Row>
+            <Row title={t("settings.featSnippets")} desc={t("settings.featSnippetsDesc")}>
+              <Switch checked={settings.features.snippets} onChange={(v) => setFeature("snippets", v)} label={t("settings.featSnippets")} />
+            </Row>
+            <Row title={t("settings.featPortForward")} desc={t("settings.featPortForwardDesc")}>
+              <Switch checked={settings.features.portForward} onChange={(v) => setFeature("portForward", v)} label={t("settings.featPortForward")} />
+            </Row>
+            <Row title={t("settings.featUsb")} desc={t("settings.featUsbDesc")}>
+              <Switch checked={settings.features.usb} onChange={(v) => setFeature("usb", v)} label={t("settings.featUsb")} />
+            </Row>
+            <Row title={t("settings.featKnownHosts")} desc={t("settings.featKnownHostsDesc")}>
+              <Switch checked={settings.features.knownHosts} onChange={(v) => setFeature("knownHosts", v)} label={t("settings.featKnownHosts")} />
             </Row>
           </Section>
 
@@ -1300,34 +1358,6 @@ export function Settings() {
             </Row>
           </Section>
 
-          {/* Local Shell */}
-          <Section id="shell" hidden={!secVisible("settings.localShell")} icon={<Monitor size={15} />} title={t("settings.localShell")}>
-            <Row title={t("settings.defaultShell")} desc={t("settings.shellHint")}>
-              <Select
-                value={settings.localShell}
-                onChange={(e) => set("localShell", e.target.value)}
-              >
-                <option value="default">{t("settings.optDefaultShell")}</option>
-                {isWindows ? (
-                  <>
-                    <option value="powershell">PowerShell</option>
-                    <option value="pwsh">PowerShell (pwsh)</option>
-                    <option value="cmd">Command Prompt (cmd)</option>
-                    <option value="git-bash">Git Bash</option>
-                    <option value="bash">bash (Git Bash / WSL)</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="bash">{t("settings.optBash")}</option>
-                    <option value="zsh">{t("settings.optZsh")}</option>
-                    <option value="fish">{t("settings.optFish")}</option>
-                    <option value="sh">{t("settings.optSh")}</option>
-                  </>
-                )}
-              </Select>
-            </Row>
-          </Section>
-
           {/* J-Link */}
           <Section id="jlink" hidden={!secVisible("settings.jlink")} icon={<Cpu size={15} />} title={t("settings.jlink")}>
             <Row
@@ -1371,11 +1401,6 @@ export function Settings() {
               return (
                 <Row key={def.id} title={t(def.labelKey)} desc={t(def.descKey)} full>
                   <div className="flex w-full flex-wrap items-center gap-2">
-                    {def.global && (
-                      <span className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-[10px] text-subtle">
-                        {t("settings.shortcutGlobalBadge")}
-                      </span>
-                    )}
                     <Switch
                       checked={b.enabled}
                       onChange={(v) => setShortcut(def.id, { ...b, enabled: v })}
@@ -1398,6 +1423,11 @@ export function Settings() {
                           : undefined
                       }
                     />
+                    {def.global && (
+                      <span className="ml-auto shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-[10px] text-subtle">
+                        {t("settings.shortcutGlobalBadge")}
+                      </span>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

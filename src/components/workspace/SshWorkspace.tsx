@@ -1,20 +1,21 @@
 import { useMemo, useState } from "react";
-import { Code2, Fingerprint, FolderClosed, FolderOpen, GitBranch, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
+import { Code2, Container, Fingerprint, FolderClosed, FolderOpen, GitBranch, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
-import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createSftpAdapter } from "@/components/files/FileBrowserPanel";
 import { RemoteFilePreview } from "@/components/sftp/RemoteFilePreview";
 import { PortForwardPanel } from "@/components/workspace/PortForwardPanel";
 import { KnownHostsDialog } from "@/components/workspace/KnownHostsDialog";
 import { SnippetPanel } from "@/components/snippets/SnippetPanel";
 import { GitPanel } from "@/components/git/GitPanel";
+import { DockerPanel } from "@/components/docker/DockerPanel";
 import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { explainFile, diffFiles } from "@/ai/tasks";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useSessionStore } from "@/store/useSessionStore";
+import { useAppStore } from "@/store/useAppStore";
 import type { MenuItem } from "@/store/useContextMenu";
 import type { RemoteFile, Tab } from "@/lib/types";
 
@@ -25,19 +26,16 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
   const [khOpen, setKhOpen] = useState(false);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
+  const [dockerOpen, setDockerOpen] = useState(false);
   const [preview, setPreview] = useState<RemoteFile | null>(null);
   const reconnect = useTabsStore((s) => s.reconnect);
-  const splitPane = useTabsStore((s) => s.splitPane);
-  const closePane = useTabsStore((s) => s.closePane);
+  const features = useAppStore((s) => s.settings.features);
 
   const connected = tab.status === "connected" && !!tab.sessionId;
   const cwd = useSessionStore((s) =>
     tab.sessionId ? s.cwdBySession[tab.sessionId] : undefined,
   );
   const paneCount = tab.panes?.length ?? 1;
-  const canSplit = !!tab.sshConfig && paneCount < 4;
-  const canClosePane = (tab.panes?.length ?? 0) > 1;
-  const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
   // Stable adapter: recreating it per render would re-trigger the panel's
   // load effect and bounce the view back to the home directory.
   const sftpAdapter = useMemo(
@@ -96,61 +94,76 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 no-drag">
-          <Button
-            variant={filesOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setFilesOpen((v) => !v)}
-            title={t("ws.filesTitle")}
-          >
-            {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
-            {t("ws.files")}
-          </Button>
-          <Button
-            variant={snippetsOpen ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setSnippetsOpen((v) => !v)}
-            title={t("ws.snippetsTitle")}
-          >
-            <Code2 size={14} />
-            {t("ws.snippets")}
-          </Button>
-          <Button
-            variant={pfOpen ? "primary" : "ghost"}
-            size="sm"
-            disabled={!connected}
-            onClick={() => setPfOpen((v) => !v)}
-            title={connected ? t("ws.portForwardTitle") : t("pf.needSession")}
-          >
-            <Network size={14} />
-            {t("ws.portForward")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setKhOpen(true)}
-            title={t("ws.knownHostsTitle")}
-          >
-            <KeyRound size={14} />
-            {t("ws.knownHosts")}
-          </Button>
-          <Button
-            variant={gitOpen ? "primary" : "ghost"}
-            size="sm"
-            disabled={!connected}
-            onClick={() => setGitOpen((v) => !v)}
-            title={connected ? t("git.title") : t("pf.needSession")}
-          >
-            <GitBranch size={14} />
-            {t("git.title")}
-          </Button>
+          {features.files && (
+            <Button
+              variant={filesOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setFilesOpen((v) => !v)}
+              title={t("ws.filesTitle")}
+            >
+              {filesOpen ? <FolderOpen size={14} /> : <FolderClosed size={14} />}
+              {t("ws.files")}
+            </Button>
+          )}
+          {features.snippets && (
+            <Button
+              variant={snippetsOpen ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setSnippetsOpen((v) => !v)}
+              title={t("ws.snippetsTitle")}
+            >
+              <Code2 size={14} />
+              {t("ws.snippets")}
+            </Button>
+          )}
+          {features.portForward && (
+            <Button
+              variant={pfOpen ? "primary" : "ghost"}
+              size="sm"
+              disabled={!connected}
+              onClick={() => setPfOpen((v) => !v)}
+              title={connected ? t("ws.portForwardTitle") : t("pf.needSession")}
+            >
+              <Network size={14} />
+              {t("ws.portForward")}
+            </Button>
+          )}
+          {features.knownHosts && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setKhOpen(true)}
+              title={t("ws.knownHostsTitle")}
+            >
+              <KeyRound size={14} />
+              {t("ws.knownHosts")}
+            </Button>
+          )}
+          {features.git && (
+            <Button
+              variant={gitOpen ? "primary" : "ghost"}
+              size="sm"
+              disabled={!connected}
+              onClick={() => setGitOpen((v) => !v)}
+              title={connected ? t("git.title") : t("pf.needSession")}
+            >
+              <GitBranch size={14} />
+              {t("git.title")}
+            </Button>
+          )}
+          {features.docker && (
+            <Button
+              variant={dockerOpen ? "primary" : "ghost"}
+              size="sm"
+              disabled={!connected}
+              onClick={() => setDockerOpen((v) => !v)}
+              title={connected ? t("docker.title") : t("pf.needSession")}
+            >
+              <Container size={14} />
+              {t("docker.title")}
+            </Button>
+          )}
           <div className="mx-1 h-4 w-px bg-border" />
-          <SplitControls
-            paneCount={paneCount}
-            canSplit={canSplit}
-            canClosePane={canClosePane}
-            onSplit={(axis) => void splitPane(tab.id, axis)}
-            onClosePane={() => focusedPaneId && void closePane(tab.id, focusedPaneId)}
-          />
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("ws.reconnect")}>
             <RotateCw size={14} />
           </Button>
@@ -163,7 +176,7 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           <SplitView tab={tab} />
         </div>
 
-        {filesOpen && connected && tab.sessionId && sftpAdapter && (
+        {features.files && filesOpen && connected && tab.sessionId && sftpAdapter && (
           <FileBrowserPanel
             adapter={sftpAdapter}
             sessionId={tab.sessionId}
@@ -177,7 +190,7 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             aiActions={sftpAiActions}
           />
         )}
-        {snippetsOpen && (
+        {features.snippets && snippetsOpen && (
           <SnippetPanel
             sessionId={tab.sessionId}
             terminalHint={getTerminalTypeDescription(tab.sessionId)}
@@ -193,7 +206,7 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           />
         )}
 
-        {pfOpen && connected && tab.sessionId && (
+        {features.portForward && pfOpen && connected && tab.sessionId && (
           <div className="w-[360px] shrink-0 border-l border-border">
             <PortForwardPanel
               sessionId={tab.sessionId}
@@ -203,11 +216,18 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
           </div>
         )}
 
-        {gitOpen && connected && tab.sessionId && cwd && (
+        {features.git && gitOpen && connected && tab.sessionId && cwd && (
           <GitPanel
             cwd={cwd}
             sessionId={tab.sessionId}
             onClose={() => setGitOpen(false)}
+          />
+        )}
+
+        {features.docker && dockerOpen && connected && tab.sessionId && (
+          <DockerPanel
+            sessionId={tab.sessionId}
+            onClose={() => setDockerOpen(false)}
           />
         )}
       </div>

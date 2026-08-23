@@ -2,6 +2,7 @@
 mod ai;
 pub use ai::{ai_cancel, ai_chat, ai_clear_inflight};
 mod ble;
+mod docker;
 mod error;
 mod fonts;
 mod frp;
@@ -1294,6 +1295,18 @@ pub fn run() {
             git::git_commit_diff,
             git::git_reset,
             git::git_checkout_commit,
+            docker::docker_available,
+            docker::docker_ps,
+            docker::docker_images,
+            docker::docker_start,
+            docker::docker_stop,
+            docker::docker_restart,
+            docker::docker_remove,
+            docker::docker_rmi,
+            docker::docker_pull,
+            docker::docker_logs,
+            docker::docker_run,
+            docker::docker_compose,
             jlink::jlink_available,
             jlink::jlink_connect,
             jlink::jlink_reset,
