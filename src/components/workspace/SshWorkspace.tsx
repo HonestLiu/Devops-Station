@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Code2, Fingerprint, FolderClosed, FolderOpen, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
+import { Code2, Fingerprint, FolderClosed, FolderOpen, GitBranch, KeyRound, Network, RotateCw, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
@@ -9,10 +9,12 @@ import { RemoteFilePreview } from "@/components/sftp/RemoteFilePreview";
 import { PortForwardPanel } from "@/components/workspace/PortForwardPanel";
 import { KnownHostsDialog } from "@/components/workspace/KnownHostsDialog";
 import { SnippetPanel } from "@/components/snippets/SnippetPanel";
+import { GitPanel } from "@/components/git/GitPanel";
 import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { explainFile, diffFiles } from "@/ai/tasks";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import type { MenuItem } from "@/store/useContextMenu";
 import type { RemoteFile, Tab } from "@/lib/types";
 
@@ -22,12 +24,16 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
   const [pfOpen, setPfOpen] = useState(false);
   const [khOpen, setKhOpen] = useState(false);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
   const [preview, setPreview] = useState<RemoteFile | null>(null);
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
   const closePane = useTabsStore((s) => s.closePane);
 
   const connected = tab.status === "connected" && !!tab.sessionId;
+  const cwd = useSessionStore((s) =>
+    tab.sessionId ? s.cwdBySession[tab.sessionId] : undefined,
+  );
   const paneCount = tab.panes?.length ?? 1;
   const canSplit = !!tab.sshConfig && paneCount < 4;
   const canClosePane = (tab.panes?.length ?? 0) > 1;
@@ -127,6 +133,16 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
             <KeyRound size={14} />
             {t("ws.knownHosts")}
           </Button>
+          <Button
+            variant={gitOpen ? "primary" : "ghost"}
+            size="sm"
+            disabled={!connected}
+            onClick={() => setGitOpen((v) => !v)}
+            title={connected ? t("git.title") : t("pf.needSession")}
+          >
+            <GitBranch size={14} />
+            {t("git.title")}
+          </Button>
           <div className="mx-1 h-4 w-px bg-border" />
           <SplitControls
             paneCount={paneCount}
@@ -185,6 +201,14 @@ export function SshWorkspace({ tab }: { tab: Tab }) {
               onClose={() => setPfOpen(false)}
             />
           </div>
+        )}
+
+        {gitOpen && connected && tab.sessionId && cwd && (
+          <GitPanel
+            cwd={cwd}
+            sessionId={tab.sessionId}
+            onClose={() => setGitOpen(false)}
+          />
         )}
       </div>
 

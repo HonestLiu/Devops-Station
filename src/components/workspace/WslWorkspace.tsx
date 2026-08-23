@@ -1,15 +1,17 @@
 import { useMemo, useState } from "react";
-import { Code2, FolderClosed, FolderOpen, RotateCw, Usb } from "lucide-react";
+import { Code2, FolderClosed, FolderOpen, GitBranch, RotateCw, Usb } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createWslAdapter } from "@/components/files/FileBrowserPanel";
 import { WSLUSBPanel } from "@/components/wsl/WSLUSBPanel";
+import { GitPanel } from "@/components/git/GitPanel";
 import { SnippetPanel } from "@/components/snippets/SnippetPanel";
 import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import type { Tab } from "@/lib/types";
 
 /**
@@ -23,11 +25,13 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
   const [filesOpen, setFilesOpen] = useState(false);
   const [usbOpen, setUsbOpen] = useState(false);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
   const reconnect = useTabsStore((s) => s.reconnect);
   const splitPane = useTabsStore((s) => s.splitPane);
   const closePane = useTabsStore((s) => s.closePane);
 
   const connected = tab.status === "connected" && !!tab.sessionId;
+  const cwd = useSessionStore((s) => (tab.sessionId ? s.cwdBySession[tab.sessionId] : undefined));
   const paneCount = tab.panes?.length ?? 1;
   const canSplit = paneCount < 4;
   const canClosePane = (tab.panes?.length ?? 0) > 1;
@@ -75,6 +79,15 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             <Usb size={14} />
             {t("ws.usb")}
           </Button>
+          <Button
+            variant={gitOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setGitOpen((v) => !v)}
+            title={t("git.title")}
+          >
+            <GitBranch size={14} />
+            {t("git.title")}
+          </Button>
           <SplitControls
             paneCount={paneCount}
             canSplit={canSplit}
@@ -118,6 +131,10 @@ export function WslWorkspace({ tab }: { tab: Tab }) {
             connected={connected}
             onClose={() => setUsbOpen(false)}
           />
+        )}
+
+        {gitOpen && connected && tab.sessionId && cwd && (
+          <GitPanel cwd={cwd} distro={tab.wsl?.distro} onClose={() => setGitOpen(false)} />
         )}
       </div>
     </div>

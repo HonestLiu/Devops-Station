@@ -270,14 +270,21 @@ function buildCwdSetup(shell: string | undefined): string | null {
     s === "dash" ||
     s === "ash"
   ) {
-    // POSIX shell: self-detects bash (PROMPT_COMMAND) vs zsh (precmd). Covers
-    // bash, zsh, and the various Bourne derivatives (sh/dash/ash) — for the
-    // latter PROMPT_COMMAND may be absent, in which case OSC 7 simply won't
-    // fire (inert), but the shell stays usable.
+    // POSIX shell: self-detects the dialect so OSC 7 fires on *every* prompt,
+    // keeping the cwd bar / Git panel in sync as the user `cd`s around.
+    //
+    //   • bash  → PROMPT_COMMAND (the canonical per-prompt hook)
+    //   • zsh   → precmd hook (via add-zsh-hook)
+    //   • sh/dash/ash → `trap '__ds_cwd' DEBUG`, which runs before each command
+    //                  in every Bourne shell derivative and is the only hook
+    //                  those minimal shells expose. Without this branch OSC 7
+    //                  never re-fires after a `cd`, so the Git panel reports the
+    //                  stale spawn dir (typically a clean repo) forever.
     return (
       "__ds_cwd(){ printf '\\033]7;file://%s%s\\033\\\\' \"$HOSTNAME\" \"$PWD\"; }; " +
       "if [ -n \"$BASH_VERSION\" ]; then PROMPT_COMMAND=\"${PROMPT_COMMAND:+${PROMPT_COMMAND}; }__ds_cwd\"; " +
-      "elif [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __ds_cwd; fi\n"
+      "elif [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __ds_cwd; " +
+      "else trap '__ds_cwd' DEBUG; fi\n"
     );
   }
   // cmd / empty / unknown → stay inert (no injection) so we never crash the

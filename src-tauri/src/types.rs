@@ -165,6 +165,12 @@ pub struct SshConnectResult {
     pub session_id: String,
     pub server_key_fingerprint: String,
     pub home_dir: String,
+    /// The remote login shell (e.g. "/bin/bash", "fish", "/bin/zsh"), probed
+    /// at connect time. The frontend uses it to pick the right OSC 7 emitter so
+    /// the cwd bar / Git panel track `cd` correctly — guessing "bash" breaks
+    /// for fish/sh/dash remotes where the bash-specific hook never fires.
+    #[serde(default)]
+    pub shell: String,
     /// Host-key verification outcome: "verified" (known + matching),
     /// "replaced" (newly trusted or overwritten on `trustHostKey`), or
     /// "unknown" / "mismatch" (connection aborted; the UI shows a prompt).

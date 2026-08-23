@@ -74,12 +74,13 @@ export function SplitView({ tab }: { tab: Tab }) {
   // The OSC 7 emitter depends on the shell. For a local tab we use the *resolved*
   // shell stored on the tab (`tab.shell`) — openLocal() asked the backend for the
   // real OS login shell (and a user-picked shell is stored verbatim), so this
-  // always matches what was actually spawned. SSH/WSL are POSIX remotes, which
-  // the bash/zsh snippet covers via self-detection. "cmd" and unknown shells
-  // stay inert (buildCwdSetup returns null), which is fine.
+  // always matches what was actually spawned. For SSH/WSL we use the remote
+  // login shell probed at connect (`tab.remoteShell`); guessing "bash" there
+  // leaves fish/sh/dash remotes with no OSC 7 hook, so the Git panel (and cwd
+  // bar) stayed stuck on a stale — usually clean — home directory.
   const shell =
     tab.kind === "ssh" || tab.kind === "wsl"
-      ? "bash"
+      ? tab.remoteShell ?? "bash"
       : tab.kind === "local"
         ? tab.shell ?? (localShell !== "default" ? localShell : undefined)
         : undefined;

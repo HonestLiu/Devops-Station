@@ -228,6 +228,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         status: "connected",
         sessionId: result.sessionId,
         cwd: result.homeDir,
+        remoteShell: result.shell,
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
@@ -269,6 +270,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         status: "connected",
         sessionId: result.sessionId,
         cwd: result.homeDir,
+        remoteShell: result.shell,
         fingerprint: result.serverKeyFingerprint,
       });
     } catch (err) {
@@ -580,11 +582,13 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       let sessionId: string;
       let homeDir: string | undefined;
       let fingerprint: string | undefined;
+      let remoteShell: string | undefined;
       if (tab.kind === "ssh" && tab.sshConfig) {
         const r = await ssh.connect(tab.sshConfig);
         sessionId = r.sessionId;
         homeDir = r.homeDir;
         fingerprint = r.serverKeyFingerprint;
+        remoteShell = r.shell;
       } else if (tab.kind === "wsl" && tab.wsl) {
         sessionId = await wsl.spawn(tab.wsl, 120, 32);
       } else if (tab.kind === "frp" && tab.frp) {
@@ -594,7 +598,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       }
       get().patchPane(tabId, pId, { status: "connected", sessionId });
       // Focus the new pane so typing goes there immediately.
-      get().patch(tabId, { sessionId, cwd: homeDir, fingerprint });
+      get().patch(tabId, { sessionId, cwd: homeDir, fingerprint, remoteShell });
     } catch (err) {
       get().patchPane(tabId, pId, { status: "error", error: (err as Error).message });
     }
@@ -806,6 +810,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           status: "connected",
           sessionId: result.sessionId,
           cwd: result.homeDir,
+          remoteShell: result.shell,
           fingerprint: result.serverKeyFingerprint,
         });
       } else {

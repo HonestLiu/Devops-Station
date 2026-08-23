@@ -5,6 +5,7 @@ mod ble;
 mod error;
 mod fonts;
 mod frp;
+mod git;
 mod jlink;
 mod kb;
 mod local_fs;
@@ -1277,6 +1278,22 @@ pub fn run() {
             local_fs::reveal_path,
             local_fs::open_path,
             local_fs::open_url,
+            git::git_snapshot,
+            git::git_status,
+            git::git_branches,
+            git::git_stage,
+            git::git_unstage,
+            git::git_commit,
+            git::git_checkout,
+            git::git_new_branch,
+            git::git_fetch,
+            git::git_pull,
+            git::git_push,
+            git::git_diff,
+            git::git_log,
+            git::git_commit_diff,
+            git::git_reset,
+            git::git_checkout_commit,
             jlink::jlink_available,
             jlink::jlink_connect,
             jlink::jlink_reset,

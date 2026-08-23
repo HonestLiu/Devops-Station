@@ -194,7 +194,7 @@ const CHUNK: usize = 64 * 1024;
 /// Build the Windows UNC paths for a WSL file. We try both the modern
 /// `\\wsl.localhost\<distro>` prefix and the legacy `\\wsl$\<distro>` so the
 /// file I/O works across Windows 10/11 regardless of which one is mounted.
-fn unc_candidates(distro: &Option<String>, wsl_path: &str) -> Vec<PathBuf> {
+pub fn unc_candidates(distro: &Option<String>, wsl_path: &str) -> Vec<PathBuf> {
     let distro = distro.clone().unwrap_or_default();
     let rel = wsl_path.trim_start_matches('/').replace('/', "\\");
     vec![

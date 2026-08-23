@@ -38,6 +38,11 @@ import type {
   MqttMessage,
   MqttStatus,
   DashPanel,
+  GitStatus,
+  GitBranches,
+  GitDiff,
+  GitCommit,
+  GitSnapshot,
 } from "./types";
 
 /**
@@ -554,4 +559,46 @@ export const permHook = {
    */
   setGlobalShortcut: (accelerator: string | null) =>
     call<void>("set_global_approve_shortcut", { accelerator: accelerator ?? "" }),
+};
+
+// --- Git -------------------------------------------------------------------
+// `distro` is only set for WSL sessions; it lets the backend translate the
+// unix cwd to the `\\wsl$\<distro>` UNC share. Local sessions pass undefined.
+
+export const git = {
+  /** Batched status + branch snapshot — one IPC call instead of two (and on
+   *  WSL, one `wsl.exe` spawn instead of ~3). Use this for the panel refresh.
+   *  `sessionId` routes the call over an SSH session (remote hosts). */
+  snapshot: (cwd: string, distro?: string, sessionId?: string) =>
+    call<GitSnapshot>("git_snapshot", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  status: (cwd: string, distro?: string, sessionId?: string) =>
+    call<GitStatus>("git_status", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  branches: (cwd: string, distro?: string, sessionId?: string) =>
+    call<GitBranches>("git_branches", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  stage: (cwd: string, paths: string[], distro?: string, sessionId?: string) =>
+    call<string>("git_stage", { cwd, paths, distro: distro ?? null, sshSession: sessionId ?? null }),
+  unstage: (cwd: string, paths: string[], distro?: string, sessionId?: string) =>
+    call<string>("git_unstage", { cwd, paths, distro: distro ?? null, sshSession: sessionId ?? null }),
+  commit: (cwd: string, message: string, amend: boolean, distro?: string, sessionId?: string) =>
+    call<string>("git_commit", { cwd, message, amend, distro: distro ?? null, sshSession: sessionId ?? null }),
+  checkout: (cwd: string, branch: string, distro?: string, sessionId?: string) =>
+    call<string>("git_checkout", { cwd, branch, distro: distro ?? null, sshSession: sessionId ?? null }),
+  newBranch: (cwd: string, name: string, distro?: string, sessionId?: string) =>
+    call<string>("git_new_branch", { cwd, name, distro: distro ?? null, sshSession: sessionId ?? null }),
+  fetch: (cwd: string, distro?: string, sessionId?: string) =>
+    call<string>("git_fetch", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  pull: (cwd: string, distro?: string, sessionId?: string) =>
+    call<string>("git_pull", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  push: (cwd: string, distro?: string, sessionId?: string) =>
+    call<string>("git_push", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  diff: (cwd: string, path: string, staged: boolean, distro?: string, sessionId?: string) =>
+    call<GitDiff>("git_diff", { cwd, path, staged, distro: distro ?? null, sshSession: sessionId ?? null }),
+  log: (cwd: string, distro?: string, sessionId?: string) =>
+    call<GitCommit[]>("git_log", { cwd, distro: distro ?? null, sshSession: sessionId ?? null }),
+  commitDiff: (cwd: string, hash: string, distro?: string, sessionId?: string) =>
+    call<GitDiff>("git_commit_diff", { cwd, hash, distro: distro ?? null, sshSession: sessionId ?? null }),
+  reset: (cwd: string, mode: string, target: string, distro?: string, sessionId?: string) =>
+    call<string>("git_reset", { cwd, mode, target, distro: distro ?? null, sshSession: sessionId ?? null }),
+  checkoutCommit: (cwd: string, hash: string, distro?: string, sessionId?: string) =>
+    call<string>("git_checkout_commit", { cwd, hash, distro: distro ?? null, sshSession: sessionId ?? null }),
 };

@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::error::{AppError, AppResult};
+use crate::git::GitOutput;
 use crate::stream::{Attached, OutputBuffer};
 use crate::types::{SessionClosed, SshConnectConfig, SshConnectResult, StreamChunk};
 
@@ -155,6 +156,49 @@ impl SshSession {
             }
         }
         Ok(String::from_utf8_lossy(&out).to_string())
+    }
+
+    /// Run a one-shot command on a fresh channel and capture stdout, stderr
+    /// (ext=1) and the exit status. Used by the git-over-SSH path, which needs
+    /// all three: the exit code distinguishes "not a git repository" from
+    /// success, and git's own error messages live on stderr.
+    pub async fn exec_capture(&self, command: &str) -> AppResult<GitOutput> {
+        let mut channel = self.handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code: i32 = -1;
+
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { ref data } => stdout.extend_from_slice(data),
+                // RFC 4254 §5.2: ext == 1 is the standard stderr stream.
+                ChannelMsg::ExtendedData { ref data, ext } if ext == 1 => {
+                    stderr.extend_from_slice(data);
+                }
+                ChannelMsg::ExtendedData { .. } => {}
+                ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status as i32,
+                // Process died from a signal (e.g. OOM/segv): surface it instead
+                // of a misleading -1 so the git layer treats it as a hard error.
+                ChannelMsg::ExitSignal {
+                    ref error_message, ..
+                } => {
+                    if !error_message.is_empty() {
+                        stderr.extend_from_slice(error_message.as_bytes());
+                    }
+                    exit_code = 128 + 1;
+                }
+                ChannelMsg::Eof | ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+
+        Ok(GitOutput {
+            stdout: String::from_utf8_lossy(&stdout).to_string(),
+            stderr: String::from_utf8_lossy(&stderr).to_string(),
+            exit_code,
+        })
     }
 
     /// Get (opening if needed) the SFTP subsystem for this session.
@@ -365,11 +409,23 @@ impl SshManager {
             Err(_) => "/".to_string(),
         };
 
+        // Best-effort: probe the remote login shell so the frontend can pick the
+        // correct OSC 7 emitter. `ps -p $$` reads the shell of the *interactive*
+        // session's parent; the `echo $0` fallback covers shells that don't set
+        // `$$` to themselves. Blank on failure → frontend defaults to bash.
+        let shell = session
+            .exec("ps -p $$ -o comm= 2>/dev/null || basename \"$0\" 2>/dev/null || echo bash")
+            .await
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "bash".to_string());
+        let shell = if shell.is_empty() { "bash".to_string() } else { shell };
+
         let fp = fingerprint.lock().clone();
         Ok(SshConnectResult {
             session_id,
             server_key_fingerprint: fp,
             home_dir,
+            shell,
             host_key_status,
         })
     }

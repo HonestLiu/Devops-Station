@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
-import { Code2, FolderClosed, FolderOpen, RotateCw } from "lucide-react";
+import { Code2, FolderClosed, FolderOpen, GitBranch, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui";
 import { SplitView } from "@/components/terminal/SplitView";
 import { SplitControls } from "@/components/terminal/SplitControls";
 import { FileBrowserPanel, createLocalAdapter } from "@/components/files/FileBrowserPanel";
+import { GitPanel } from "@/components/git/GitPanel";
 import { SnippetPanel } from "@/components/snippets/SnippetPanel";
 import { getTerminalTypeDescription } from "@/ai/terminalAi";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
+import { useSessionStore } from "@/store/useSessionStore";
 import type { Tab } from "@/lib/types";
 
 export function LocalWorkspace({ tab }: { tab: Tab }) {
@@ -23,7 +25,9 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
   const focusedPaneId = tab.focusedPaneId ?? tab.panes?.[0]?.id;
   const [filesOpen, setFilesOpen] = useState(false);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
   const connected = tab.status === "connected" && !!tab.sessionId;
+  const cwd = useSessionStore((s) => (tab.sessionId ? s.cwdBySession[tab.sessionId] : undefined));
   // Stable adapter: recreating it per render would re-trigger the panel's
   // load effect and bounce the view back to the home directory.
   const localAdapter = useMemo(() => createLocalAdapter(tab), [tab]);
@@ -58,6 +62,15 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             <Code2 size={14} />
             {t("ws.snippets")}
           </Button>
+          <Button
+            variant={gitOpen ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setGitOpen((v) => !v)}
+            title={t("git.title")}
+          >
+            <GitBranch size={14} />
+            {t("git.title")}
+          </Button>
           <SplitControls
             paneCount={paneCount}
             canSplit={canSplit}
@@ -83,6 +96,9 @@ export function LocalWorkspace({ tab }: { tab: Tab }) {
             title="Files"
             chipIcon={<FolderOpen size={13} />}
           />
+        )}
+        {gitOpen && connected && tab.sessionId && cwd && (
+          <GitPanel cwd={cwd} onClose={() => setGitOpen(false)} />
         )}
         {snippetsOpen && (
           <SnippetPanel

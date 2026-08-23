@@ -97,6 +97,8 @@ export interface SshConnectResult {
   sessionId: string;
   serverKeyFingerprint: string;
   homeDir: string;
+  /** Remote login shell (e.g. "/bin/bash", "fish"), probed at connect. */
+  shell?: string;
   /** "verified" | "replaced" (newly trusted / overwritten). */
   hostKeyStatus?: string;
 }
@@ -385,6 +387,11 @@ export interface Tab {
   jlinkModule?: JLinkModule;
   /** SSH only — cached credentials/config so Reconnect and Split can reconnect. */
   sshConfig?: SshConnectConfig;
+  /** SSH only — the remote login shell probed at connect (e.g. "/bin/bash",
+   *  "fish"). Lets the OSC 7 emitter match the real shell instead of assuming
+   *  bash; assuming bash is what left the Git panel stuck on a stale (clean)
+   *  home dir for fish/sh/dash remotes. */
+  remoteShell?: string;
   /** MQTT only — the saved connection profile backing this live session. */
   mqtt?: MqttConnection;
   /**
@@ -887,3 +894,64 @@ export interface DashWidgetRuntime {
   values: Record<string, unknown>;
   parseError?: string;
 }
+
+// --- Git sidebar -----------------------------------------------------------
+
+/** One file in the working tree (from `git status --porcelain`). */
+export interface GitFileEntry {
+  /** Path as reported by git (may be `old -> new` for renames). */
+  path: string;
+  /** First porcelain column — index / staged status. */
+  x: string;
+  /** Second porcelain column — worktree / unstaged status. */
+  y: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+}
+
+/** Parsed `git status` output. */
+export interface GitStatus {
+  branch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  entries: GitFileEntry[];
+}
+
+/** Parsed `git branch` / `git branch -r` output. */
+export interface GitBranches {
+  current: string;
+  branches: string[];
+  remotes: string[];
+}
+
+/** Raw unified-diff text for a single file. */
+export interface GitDiff {
+  /** Unified diff body (empty when no textual diff, e.g. binary). */
+  text: string;
+  /** True when git reports the file as binary (no line diff available). */
+  binary: boolean;
+}
+
+/** One commit from `git log`. */
+export interface GitCommit {
+  /** Full 40-char SHA. */
+  hash: string;
+  /** Abbreviated SHA (7 chars). */
+  shortHash: string;
+  author: string;
+  /** Author date as YYYY-MM-DD. */
+  date: string;
+  /** First line of the message. */
+  subject: string;
+  /** Remaining message body (may be empty). */
+  body: string;
+}
+
+/** Combined status + branch snapshot returned by `git.snapshot`. */
+export interface GitSnapshot {
+  status: GitStatus;
+  branches: GitBranches;
+}
+
