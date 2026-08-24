@@ -3,6 +3,7 @@ import { Check, Copy, Download, FileArchive, FileCode2, Loader2 } from "lucide-r
 
 import { useT } from "@/i18n";
 import { Button, Dialog } from "@/components/ui";
+import { CodeHighlight, type CodeLang } from "@/components/CodeHighlight";
 import type { ProtocolConfig } from "@/lib/types";
 import { generateCProtocol } from "./generateC";
 import { buildZip } from "@/lib/zip";
@@ -40,6 +41,9 @@ export function ExportCDialog({
         : tab === "main"
           ? files?.main
           : files?.cmake;
+
+  const codeLang: CodeLang =
+    tab === "h" || tab === "c" || tab === "main" ? "c" : "cmake";
   const tabLabel =
     tab === "h"
       ? `${base}.h`
@@ -213,9 +217,11 @@ export function ExportCDialog({
         <FileCode2 size={14} className="shrink-0 text-accent" />
         <span className="truncate font-mono">{tabLabel}</span>
       </div>
-      <pre className="mt-3 max-h-[48vh] overflow-auto rounded-lg border border-border bg-bg p-3 text-[12px] leading-relaxed text-fg">
-        <code className="font-mono whitespace-pre">{code}</code>
-      </pre>
+      <CodeHighlight
+        code={code ?? ""}
+        lang={codeLang}
+        className="mt-3 max-h-[48vh]"
+      />
     </Dialog>
   );
 }

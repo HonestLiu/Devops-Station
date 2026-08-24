@@ -4,6 +4,7 @@ import { AlertTriangle, Download, File as FileIcon, Loader2, Pencil } from "luci
 import { sftp } from "@/lib/api";
 import { Button, Dialog } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
+import { CodeHighlight, langFromExt } from "@/components/CodeHighlight";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -220,9 +221,11 @@ export function RemoteFilePreview({
             <Markdown source={text ?? ""} />
           </div>
         ) : kind === "text" ? (
-          <pre className="h-full overflow-auto select-text whitespace-pre-wrap break-words rounded-lg border border-border bg-bg p-3 font-mono text-[12px] leading-relaxed text-fg">
-            {text}
-          </pre>
+          <CodeHighlight
+            code={text ?? ""}
+            lang={langFromExt(extOf(name))}
+            className="h-full"
+          />
         ) : kind === "image" ? (
           <div className="flex h-full items-center justify-center overflow-auto bg-black/5 p-2 dark:bg-black/30">
             <img
