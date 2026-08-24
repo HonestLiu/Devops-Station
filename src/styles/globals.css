@@ -250,6 +250,17 @@ textarea,
   user-select: text;
 }
 
+/* Hide native number-input spinners so the styled Input stays consistent. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* --- Scrollbars --- */
 ::-webkit-scrollbar {
   width: 10px;

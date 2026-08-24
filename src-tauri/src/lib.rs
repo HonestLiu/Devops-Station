@@ -14,6 +14,12 @@ mod mqtt;
 mod notify;
 mod perm;
 mod perm_hook;
+mod protocol;
+pub use protocol::{
+    protocol_delete, protocol_duplicate, protocol_encode, protocol_list, protocol_load,
+    protocol_loopback_close, protocol_loopback_open, protocol_loopback_reload,
+    protocol_loopback_send, protocol_parse, protocol_save, protocol_validate, ProtocolManager,
+};
 mod pty;
 mod serial;
 mod ssh;
@@ -47,6 +53,7 @@ use rquickjs::{Context as QjsContext, Value as QjsValue};
 pub struct AppState {
     ssh: SshManager,
     serial: SerialManager,
+    protocol: ProtocolManager,
     ble: BleManager,
     mqtt: MqttManager,
     pty: PtyManager,
@@ -1151,6 +1158,7 @@ pub fn run() {
             app.manage(AppState {
                 ssh: SshManager::new(store.clone()),
                 serial: SerialManager::default(),
+                protocol: ProtocolManager::new(store.clone()),
                 ble: BleManager::default(),
                 mqtt: MqttManager::default(),
                 pty: PtyManager::default(),
@@ -1225,6 +1233,18 @@ pub fn run() {
             serial_signals,
             serial_close,
             serial_attach,
+            protocol_list,
+            protocol_save,
+            protocol_load,
+            protocol_delete,
+            protocol_duplicate,
+            protocol_parse,
+            protocol_validate,
+            protocol_encode,
+            protocol_loopback_open,
+            protocol_loopback_send,
+            protocol_loopback_reload,
+            protocol_loopback_close,
             ble_available,
             ble_scan,
             ble_open,

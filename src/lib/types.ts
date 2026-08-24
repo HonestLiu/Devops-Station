@@ -400,6 +400,13 @@ export interface Tab {
    * no `mqtt` is the standalone HMI dashboard module (`DashPage`).
    */
   mqttModule?: "dash";
+  /**
+   * Serial module tabs only: which module this tab hosts. A tab with
+   * `serialModule` set renders the matching module (`basic` launcher or
+   * `designer` placeholder) instead of a live serial/ BLE session
+   * (`SerialWorkspace`). Mirrors `jlinkModule` / `mqttModule`.
+   */
+  serialModule?: "basic" | "designer";
   /** Split panes (2/4 terminals in one tab). Undefined = single terminal. */
   panes?: TermPane[];
   /** Which pane is focused (used for split keyboard nav + shared sessionId). */
@@ -993,4 +1000,171 @@ export interface DockerRunOptions {
 
 /** Valid `docker compose` actions exposed in the UI. */
 export type DockerComposeAction = "up" | "down" | "ps" | "restart";
+
+// --- Protocol Designer ------------------------------------------------------
+
+/** Byte-endianness for multi-byte integer / float fields. */
+export type Endian = "little" | "big";
+
+/** Checksum / frame-integrity algorithm applied to a byte range of the frame. */
+export type ChecksumAlgo = "none" | "sum" | "xor" | "crc8" | "crc16modbus" | "crc32";
+
+/** Typed interpretation of a field's bytes when decoding. */
+export type FieldDataType =
+  | "uint8"
+  | "int16"
+  | "uint16"
+  | "int32"
+  | "uint32"
+  | "float32"
+  | "float64"
+  | "hexstring"
+  | "asciistring"
+  | "bitfield";
+
+/** Optional length-field descriptor used for frame delimiting. */
+export interface LengthField {
+  /** Byte offset of the length field, relative to frame start (0 = first byte). */
+  offset: number;
+  /** Width of the length field in bytes (1 / 2 / 4). */
+  length: number;
+  /** Whether the length value includes the length field's own bytes. */
+  includeSelf: boolean;
+}
+
+/** A single field definition inside a protocol. */
+export interface FieldDef {
+  /** Machine name (unique within the protocol), e.g. `temperature`. */
+  name: string;
+  /** Human-friendly display name, e.g. `温度值`. */
+  displayName: string;
+  /** Byte offset relative to frame start (0-based). */
+  offset: number;
+  /** Field width in bytes. */
+  length: number;
+  dataType: FieldDataType;
+  /** Multiplier converting the raw integer/float to a physical value. */
+  scale?: number | null;
+  /** Physical unit, e.g. `°C`. */
+  unit?: string | null;
+  /** Raw-value → readable-string map, e.g. `{ "1": "启动" }`. */
+  enumMap?: Record<string, string> | null;
+  /** Simple show/parse condition, e.g. `command == 1`. */
+  condition?: string | null;
+}
+
+/** Checksum configuration: algorithm + byte range (relative to frame start). */
+export interface ChecksumConfig {
+  algo: ChecksumAlgo;
+  /** First byte index of the checksummed range (inclusive). Defaults to 0. */
+  start?: number | null;
+  /** Last byte index of the checksummed range (exclusive). Defaults to frame end. */
+  end?: number | null;
+}
+
+/** A complete protocol definition (the unit of CRUD + storage). */
+export interface ProtocolConfig {
+  /** Stable id; empty on first save → backend assigns a UUID. */
+  id: string;
+  name: string;
+  description?: string | null;
+  /**
+   * Fixed frame head. On the editing side this is a loose hex string
+   * (e.g. "AA BB"); when sent to the backend it is converted to a byte array
+   * (`number[]`), which serde reads as `Vec<u8>`. Optional.
+   */
+  head?: string | number[] | null;
+  /** Fixed frame tail — same representation as `head`. Optional. */
+  tail?: string | number[] | null;
+  lengthField?: LengthField | null;
+  fields: FieldDef[];
+  checksum?: ChecksumConfig | null;
+  endian?: Endian | null;
+  /** Inter-frame idle timeout (ms) — used by the UI for frame splitting. */
+  timeoutMs: number;
+  /**
+   * Auto-answer rules (P2): when an incoming frame's `whenField == whenValue`,
+   * the loopback channel encodes `reply` (field overrides) and emits it as a
+   * simulated device reply. Optional.
+   */
+  autoAnswer?: AutoAnswerRule[] | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One auto-answer rule (P2). */
+export interface AutoAnswerRule {
+  /** Whether the rule is active. Defaults to true. */
+  enabled?: boolean | null;
+  /** Human-readable note shown in the UI. */
+  note?: string | null;
+  /** Field name to test against the parsed frame. */
+  whenField: string;
+  /** Value the field must equal to trigger the reply. */
+  whenValue: number;
+  /** Field overrides used to build the reply frame (field name → value). */
+  reply: FieldValue[];
+}
+
+/** Lightweight row for the protocol list (avoids shipping full configs). */
+export interface ProtocolSummary {
+  id: string;
+  name: string;
+  description?: string | null;
+  updatedAt: number;
+}
+
+/** One field's decoded result inside a parsed frame. */
+export interface ParsedField {
+  name: string;
+  displayName: string;
+  /** Raw bytes as a hex string (e.g. `A1 02`). */
+  rawValue: string;
+  /** Decoded value (number / string / object). */
+  value: unknown;
+  /** Display string after scale + enum mapping, e.g. `25.6 °C`. */
+  displayValue: string;
+  unit?: string | null;
+  /** Byte offset within the frame (for Hex-view highlighting). */
+  byteOffset: number;
+  /** Byte length within the frame. */
+  byteLength: number;
+}
+
+/** Direction of a parsed frame, so the UI can tell what the user sent apart
+ *  from what the device (or the simulated loopback auto-answer) sent back. */
+export type FrameDir = "tx" | "rx" | "reply";
+
+/** A single parsed frame (may be partial / invalid if parsing failed). */
+export interface ParsedFrame {
+  /** Full frame bytes as a base64 string (compact over the wire; the UI
+   *  decodes to render the Hex view + highlight). */
+  raw: string;
+  valid: boolean;
+  checksumValid: boolean;
+  fields: ParsedField[];
+  errorMsg?: string | null;
+  /** True when this frame was produced by an auto-answer rule. */
+  isReply?: boolean | null;
+  /** Who produced this frame: `tx` (user), `rx` (device), `reply` (auto-answer). */
+  dir?: FrameDir | null;
+}
+
+/** A field value supplied to the encoder for structured sending. */
+export interface FieldValue {
+  name: string;
+  value: unknown;
+}
+
+/** Payload emitted on `protocol-frame-{id}` (loopback) events. */
+export interface ProtocolFrameEvent {
+  channelId: string;
+  frame: ParsedFrame;
+  /** Echo of the raw bytes that were fed in (base64), for the Hex view. */
+  raw: string;
+  /** True when this frame was produced by an auto-answer rule. */
+  isReply?: boolean | null;
+  /** Direction of the frame (mirrors `ParsedFrame.dir`). */
+  dir?: FrameDir | null;
+}
 

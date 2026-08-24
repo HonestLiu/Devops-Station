@@ -102,6 +102,9 @@ interface TabsState {
   openMqttDash: () => string;
   /** Open (or focus) the singleton J-Link module tab (Flash / RTT / GDB). */
   openJlinkModule: (module: JLinkModule, title?: string) => string;
+  /** Open (or focus) the singleton Serial module tab (basic launcher /
+   *  protocol designer). Mirrors `openJlinkModule` for the serial family. */
+  openSerialModule: (module: "basic" | "designer", title?: string) => string;
   openFromHost: (host: Host) => Promise<string>;
 
   /** SSH: open an extra terminal for the same host (max 4 panes per tab). */
@@ -301,6 +304,34 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       subtitle: lang("tabs.jlink"),
       status: "connected",
       jlinkModule: module,
+    });
+    return id;
+  },
+
+  /**
+   * Open (or focus) the singleton Serial module tab — `basic` for the serial /
+   * BLE launcher, `designer` for the protocol designer placeholder. Mirrors
+   * `openJlinkModule`: an already-open module is focused rather than duplicated.
+   */
+  openSerialModule: (module, title) => {
+    const existing = get().tabs.find(
+      (t) => t.kind === "serial" && t.serialModule === module,
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextId();
+    const label =
+      title ||
+      lang(module === "designer" ? "serial.moduleDesigner" : "serial.moduleBasic");
+    get().addTab({
+      id,
+      kind: "serial",
+      title: label,
+      subtitle: lang("tabs.serial"),
+      status: "connected",
+      serialModule: module,
     });
     return id;
   },

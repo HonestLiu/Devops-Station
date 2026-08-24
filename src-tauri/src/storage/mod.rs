@@ -11,6 +11,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::protocol::types::{ProtocolConfig, ProtocolSummary};
 use crate::types::{
     DashPanel, ForwardType, Host, HostKind, KnownHostEntry, MqttConnection, MqttPublishPref,
     MqttStoredSub, PortForwardRule, QuickCommand,
@@ -126,6 +127,13 @@ const MIGRATIONS: &[&str] = &[
         last_seen   INTEGER NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS idx_port_forwards_host ON port_forwards(host_id)",
+    "CREATE TABLE IF NOT EXISTS protocol_configs (
+        id           TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        description  TEXT,
+        json         TEXT NOT NULL,
+        updated_at   INTEGER
+    )",
     "CREATE TABLE IF NOT EXISTS dash_panels (
         id               TEXT PRIMARY KEY,
         name             TEXT NOT NULL,
@@ -1325,6 +1333,56 @@ impl Store {
         self.conn
             .lock()
             .execute("DELETE FROM dash_panels WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // --- Protocol Designer configs ----------------------------------------
+
+    pub fn list_protocol_configs(&self) -> AppResult<Vec<ProtocolSummary>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, updated_at
+             FROM protocol_configs ORDER BY updated_at DESC, name ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ProtocolSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                updated_at: row.get::<_, i64>(3)? as u64,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn save_protocol_config(&self, cfg: &ProtocolConfig) -> AppResult<()> {
+        let json = serde_json::to_string(cfg)?;
+        self.conn.lock().execute(
+            "INSERT INTO protocol_configs (id, name, description, json, updated_at)
+             VALUES (?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, description=excluded.description,
+                json=excluded.json, updated_at=excluded.updated_at",
+            params![cfg.id, cfg.name, cfg.description, json, cfg.updated_at as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_protocol_config(&self, id: &str) -> AppResult<ProtocolConfig> {
+        let conn = self.conn.lock();
+        let json: String = conn
+            .query_row("SELECT json FROM protocol_configs WHERE id = ?1", params![id], |r| {
+                r.get(0)
+            })
+            .map_err(|_| AppError::Other(format!("protocol config `{id}` not found")))?;
+        let cfg: ProtocolConfig = serde_json::from_str(&json)?;
+        Ok(cfg)
+    }
+
+    pub fn delete_protocol_config(&self, id: &str) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM protocol_configs WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

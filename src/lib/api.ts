@@ -46,6 +46,11 @@ import type {
   DockerContainer,
   DockerImage,
   DockerRunOptions,
+  ProtocolConfig,
+  ProtocolSummary,
+  FieldValue,
+  ParsedFrame,
+  ProtocolFrameEvent,
 } from "./types";
 
 /**
@@ -650,4 +655,48 @@ export const docker = {
   /** Run a docker compose action against the compose file at `path`. */
   compose: (path: string, action: string, distro?: string, sessionId?: string) =>
     call<string>("docker_compose", { path, action, distro: distro ?? null, sshSession: sessionId ?? null }),
+};
+
+// --- Protocol Designer ------------------------------------------------------
+//
+// Backend parses/encodes bytes in a worker thread and never touches the serial
+// transport — the UI feeds it raw bytes (base64) and gets parsed frames back.
+// `head` / `tail` are hex *strings* on the frontend (loose input) but stored as
+// byte vectors on the backend, so the API keeps them as strings and the backend
+// parses them via its own hex helper.
+
+export const protocol = {
+  /** List all saved protocol summaries. */
+  list: () => call<ProtocolSummary[]>("protocol_list"),
+  /** Create or update a protocol (empty `id` → backend assigns a UUID).
+   *  Returns the persisted config including the assigned `id`. */
+  save: (config: ProtocolConfig) => call<ProtocolConfig>("protocol_save", { config }),
+  /** Load a full protocol config by id. */
+  load: (id: string) => call<ProtocolConfig>("protocol_load", { id }),
+  /** Delete a protocol by id. */
+  delete: (id: string) => call<void>("protocol_delete", { id }),
+  /** Duplicate a protocol under a new name; returns the new config. */
+  duplicate: (id: string, newName: string) =>
+    call<ProtocolConfig>("protocol_duplicate", { id, newName }),
+  /** Parse a base64 byte buffer into all contained frames. */
+  parse: (id: string, raw: string, config?: ProtocolConfig | null) =>
+    call<ParsedFrame[]>("protocol_parse", { id, raw, config: config ?? null }),
+  /** Encode structured field values into a wire frame; returns base64. */
+  encode: (id: string, fields: FieldValue[], config?: ProtocolConfig | null) =>
+    call<string>("protocol_encode", { id, fields, config: config ?? null }),
+  /** Open a loopback channel (virtual channel) for offline testing. */
+  loopbackOpen: (id: string, config: ProtocolConfig) =>
+    call<void>("protocol_loopback_open", { id, config }),
+  /** Feed base64 bytes into an open loopback channel. */
+  loopbackSend: (id: string, data: string) =>
+    call<void>("protocol_loopback_send", { id, data }),
+  /** Push a fresh config into an already-open loopback channel. */
+  loopbackReload: (id: string, config: ProtocolConfig) =>
+    call<void>("protocol_loopback_reload", { id, config }),
+  /** Close a loopback channel. */
+  loopbackClose: (id: string) => call<void>("protocol_loopback_close", { id }),
+
+  /** Subscribe to parsed frames from a loopback channel. */
+  onFrame: (id: string, cb: (evt: ProtocolFrameEvent) => void): Promise<UnlistenFn> =>
+    listen<ProtocolFrameEvent>(`protocol-frame-${id}`, (e) => cb(e.payload)),
 };

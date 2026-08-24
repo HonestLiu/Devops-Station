@@ -230,7 +230,7 @@ export function Checkbox({
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label: string;
+  label?: string;
 }) {
   return (
     <label className="flex cursor-pointer select-none items-center gap-2 text-[13px] text-fg">
@@ -241,6 +241,49 @@ export function Checkbox({
         className="h-3.5 w-3.5 accent-[rgb(var(--c-accent))]"
       />
       {label}
+    </label>
+  );
+}
+
+// --- Switch (styled toggle) ------------------------------------------------
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  className,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "inline-flex cursor-pointer select-none items-center gap-2",
+        className,
+      )}
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative inline-flex h-[18px] w-[32px] shrink-0 items-center rounded-full",
+          "transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent/40",
+          checked ? "bg-accent" : "bg-border",
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-150",
+            checked ? "translate-x-[15px]" : "translate-x-[3px]",
+          )}
+        />
+      </button>
+      {label && <span className="text-[13px] text-fg">{label}</span>}
     </label>
   );
 }

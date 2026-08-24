@@ -32,6 +32,8 @@ import { DashPage } from "./pages/DashPage";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
+import { SerialLauncher } from "./components/serial/SerialLauncher";
+import { SerialDesignerModule } from "./components/serial/designer/SerialDesignerModule";
 import { LocalWorkspace } from "./components/workspace/LocalWorkspace";
 import { WslWorkspace } from "./components/workspace/WslWorkspace";
 import { FrpWorkspace } from "./components/workspace/FrpWorkspace";
@@ -138,6 +140,10 @@ function dispatchSplit(
 
 function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "ssh") return <SshWorkspace tab={tab} />;
+  // Serial module tabs (picker-launched) host the launcher / designer instead
+  // of a live serial session — same kind, distinguished by `serialModule`.
+  if (tab.serialModule === "basic") return <SerialLauncher />;
+  if (tab.serialModule === "designer") return <SerialDesignerModule />;
   if (tab.kind === "serial" || tab.kind === "ble") return <SerialWorkspace tab={tab} />;
   if (tab.kind === "wsl") return <WslWorkspace tab={tab} />;
   if (tab.kind === "frp") return <FrpWorkspace tab={tab} />;
