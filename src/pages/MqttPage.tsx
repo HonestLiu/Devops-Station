@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Button } from "@/components/ui";
+import { Button, ModuleHeader } from "@/components/ui";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections, dash } from "@/lib/api";
@@ -135,17 +135,19 @@ function MqttModuleCards({
     },
   ];
   return (
-    <div className="h-full overflow-y-auto bg-surface">
-      <div className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="text-[18px] font-semibold text-fg">{t("mqtt.chooseModule")}</h1>
-        <p className="mt-1 text-[13px] text-muted">{t("mqtt.chooseModuleDesc")}</p>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {modules.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => onPick(m.key)}
-              className="group relative flex flex-col rounded-xl border border-border/60 bg-bg p-5 text-left transition-all hover:border-accent/50 hover:shadow-md hover:shadow-accent/5"
-            >
+    <div className="flex h-full flex-col bg-bg">
+      <ModuleHeader icon={<MessageSquare size={15} />} title={t("mqtt.title")} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
+        <div className="mx-auto max-w-3xl">
+          <h1 className="text-[16px] font-semibold text-fg">{t("mqtt.chooseModule")}</h1>
+          <p className="mt-1 text-[12px] text-muted">{t("mqtt.chooseModuleDesc")}</p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {modules.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => onPick(m.key)}
+                className="group relative flex flex-col rounded-xl border border-border bg-surface p-5 text-left transition-all hover:border-accent/50 hover:shadow-md hover:shadow-accent/5"
+              >
               {m.beta && (
                 <span className="absolute right-3 top-3 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500 ring-1 ring-inset ring-amber-500/30">
                   Beta
@@ -154,15 +156,16 @@ function MqttModuleCards({
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/15 text-accent transition-colors group-hover:bg-accent/25">
                 {m.icon}
               </div>
-              <div className="mt-3 text-[15px] font-semibold text-fg">{m.title}</div>
-              <div className="mt-1 text-[12px] leading-relaxed text-muted">{m.desc}</div>
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <div className="text-[15px] font-semibold text-fg">{m.title}</div>
                 <span className="rounded-full bg-hover px-2.5 py-0.5 text-[11px] text-subtle">
                   {m.count ?? "·"} {m.countLabel}
                 </span>
               </div>
+              <div className="mt-1 text-[12px] leading-relaxed text-muted">{m.desc}</div>
             </button>
           ))}
+        </div>
         </div>
       </div>
     </div>

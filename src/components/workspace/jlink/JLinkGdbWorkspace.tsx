@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Play, Server, Square } from "lucide-react";
 
-import { Badge, Button, Field, Input } from "@/components/ui";
+import { Badge, Button, Field, Input, ModuleHeader } from "@/components/ui";
 import { jlink } from "@/lib/api";
 import { useT } from "@/i18n";
 import { useJlinkBase } from "./useJlinkBase";
 import { JLinkConnectionFields } from "./JLinkConnectionFields";
-import { JLinkInstallWarning } from "./JLinkInstallWarning";
+import { JLinkInstallBanner, JLinkCard, JLinkConsole } from "./JLinkShared";
 
 /**
  * GDB Server module — start/stop a J-Link GDB Server and watch its log. Split
@@ -21,8 +21,6 @@ export function JLinkGdbWorkspace() {
   const [gdbRunning, setGdbRunning] = useState(false);
   const [gdbLog, setGdbLog] = useState("");
   const [starting, setStarting] = useState(false);
-
-  const gdbRef = useRef<HTMLPreElement>(null);
 
   // Liveness + re-attach to the streaming log on mount (survives tab switches).
   useEffect(() => {
@@ -42,94 +40,87 @@ export function JLinkGdbWorkspace() {
     };
   }, []);
 
-  useEffect(() => {
-    gdbRef.current?.scrollTo({ top: gdbRef.current.scrollHeight });
-  }, [gdbLog]);
+  const runningBadge = gdbRunning ? (
+    <Badge tone="success">{t("jlink.running")}</Badge>
+  ) : (
+    <Badge tone="neutral">{t("jlink.notRunning")}</Badge>
+  );
 
   return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* ---- Connection config ---- */}
-          <section className="rounded-xl border border-border bg-surface p-4">
-            <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-subtle">
-              {t("jlink.connection")}
-            </h2>
-            <div className="flex flex-col gap-3">
+    <div className="flex h-full flex-col bg-bg">
+      <ModuleHeader
+        icon={<Server size={15} />}
+        title={t("jlink.gdb")}
+        badges={runningBadge}
+      />
+      <JLinkInstallBanner />
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* ---- Connection config ---- */}
+            <JLinkCard title={t("jlink.connection")} icon={<Server size={13} />}>
               <JLinkConnectionFields
                 config={config}
                 setConfig={setConfig}
                 devices={devices}
               />
-            </div>
-          </section>
+            </JLinkCard>
 
-          {/* ---- GDB Server ---- */}
-          <section className="rounded-xl border border-border bg-surface p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-subtle">
-                {t("jlink.gdbServer")}
-              </h2>
-              {gdbRunning ? (
-                <Badge tone="success">{t("jlink.running")}</Badge>
-              ) : (
-                <Badge tone="neutral">{t("jlink.notRunning")}</Badge>
-              )}
-            </div>
-
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <Field label={t("jlink.port")}>
-                  <Input
-                    type="number"
-                    value={gdbPort}
-                    onChange={(e) => setGdbPort(Number(e.target.value) || 2331)}
-                  />
-                </Field>
-              </div>
-              {gdbRunning ? (
-                <Button
-                  variant="danger"
-                  onClick={async () => {
-                    const res = await jlink.gdbStop();
-                    setGdbLog((p) => `${p}${res.output}\n`);
-                    setGdbRunning(false);
-                  }}
-                >
-                  <Square size={14} /> {t("jlink.stop")}
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  disabled={busy || starting}
-                  onClick={async () => {
-                    setStarting(true);
-                    try {
-                      const res = await jlink.gdbStart(config, gdbPort, jlinkPath);
+            {/* ---- GDB Server ---- */}
+            <JLinkCard title={t("jlink.gdbServer")} icon={<Server size={13} />} right={runningBadge}>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Field label={t("jlink.port")}>
+                    <Input
+                      type="number"
+                      value={gdbPort}
+                      onChange={(e) => setGdbPort(Number(e.target.value) || 2331)}
+                    />
+                  </Field>
+                </div>
+                {gdbRunning ? (
+                  <Button
+                    variant="danger"
+                    onClick={async () => {
+                      const res = await jlink.gdbStop();
                       setGdbLog((p) => `${p}${res.output}\n`);
-                      setGdbRunning(res.success);
-                    } catch (err) {
-                      setGdbLog((p) => `${p}${String(err)}\n`);
-                    } finally {
-                      setStarting(false);
-                    }
-                  }}
-                >
-                  <Play size={14} /> {t("jlink.start")}
-                </Button>
-              )}
-            </div>
+                      setGdbRunning(false);
+                    }}
+                  >
+                    <Square size={14} /> {t("jlink.stop")}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    disabled={busy || starting}
+                    onClick={async () => {
+                      setStarting(true);
+                      try {
+                        const res = await jlink.gdbStart(config, gdbPort, jlinkPath);
+                        setGdbLog((p) => `${p}${res.output}\n`);
+                        setGdbRunning(res.success);
+                      } catch (err) {
+                        setGdbLog((p) => `${p}${String(err)}\n`);
+                      } finally {
+                        setStarting(false);
+                      }
+                    }}
+                  >
+                    <Play size={14} /> {t("jlink.start")}
+                  </Button>
+                )}
+              </div>
+            </JLinkCard>
+          </div>
 
-            <pre
-              ref={gdbRef}
-              className="mt-3 h-64 overflow-auto rounded-lg border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted"
-            >
-              {gdbLog || t("jlink.gdbLogPh")}
-            </pre>
-          </section>
+          {/* ---- GDB log console (full width) ---- */}
+          <JLinkConsole
+            title={t("jlink.gdbServer")}
+            value={gdbLog}
+            placeholder={t("jlink.gdbLogPh")}
+          />
         </div>
-
-        <JLinkInstallWarning />
       </div>
     </div>
   );

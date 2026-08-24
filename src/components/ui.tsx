@@ -245,6 +245,39 @@ export function Checkbox({
   );
 }
 
+// --- Module header (page / workspace chrome strip) -------------------------
+
+/**
+ * The chrome strip pinned to the top of a module page or workspace tab —
+ * same anatomy as the MQTT/Serial headers: inline icon + title, status badges
+ * right after the title, controls pinned right. `no-drag` keeps the right
+ * cluster clickable inside the Tauri titlebar drag region.
+ */
+export function ModuleHeader({
+  icon,
+  title,
+  badges,
+  actions,
+}: {
+  icon: ReactNode;
+  title: string;
+  /** Status badges, rendered inline right after the title. */
+  badges?: ReactNode;
+  /** Controls pinned to the right (e.g. an encoding select). */
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 text-accent">{icon}</span>
+        <h1 className="truncate text-[13px] font-semibold text-fg">{title}</h1>
+        {badges && <div className="flex shrink-0 items-center gap-1.5">{badges}</div>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2 no-drag">{actions}</div>}
+    </div>
+  );
+}
+
 // --- Badge -----------------------------------------------------------------
 
 export function Badge({

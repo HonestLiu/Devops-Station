@@ -1321,6 +1321,7 @@ pub fn run() {
             jlink::jlink_rtt_stop,
             jlink::jlink_rtt_running,
             jlink::jlink_rtt_send,
+            jlink::jlink_launch_tool,
             jlink::jlink_devices,
             db_list_hosts,
             db_save_host,

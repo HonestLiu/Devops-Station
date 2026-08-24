@@ -660,6 +660,50 @@ pub async fn jlink_program(
 }
 
 // ===========================================================================
+// External tools (launcher)
+// ===========================================================================
+
+/// SEGGER GUI tools that ship next to the J-Link Commander executable, keyed
+/// for the launcher UI (`JLinkToolsWorkspace`).
+const JLINK_TOOLS: &[(&str, &str)] = &[
+    ("config", "JLinkConfig"),
+    ("jflash", "JFlash"),
+    ("swo", "JLinkSWOViewer"),
+    ("rttviewer", "JLinkRTTViewer"),
+];
+
+/// Launch one of SEGGER's J-Link GUI tools (J-Link Config, J-Flash, SWO / RTT
+/// Viewer) in its own window. Fire-and-forget: the tool owns its lifecycle.
+#[tauri::command]
+pub async fn jlink_launch_tool(
+    tool: String,
+    exe_path: Option<String>,
+) -> AppResult<JLinkResponse> {
+    let base = JLINK_TOOLS
+        .iter()
+        .find(|(k, _)| *k == tool)
+        .map(|(_, b)| *b)
+        .ok_or_else(|| AppError::Other(format!("未知的工具: {tool}")))?;
+    let exe = find_jlink(exe_path).ok_or_else(|| AppError::Other("未找到 J-Link 软件".into()))?;
+    let tool_path = exe.with_file_name(exe_name(base));
+    if !tool_path.is_file() {
+        return Err(AppError::Other(format!(
+            "未找到 {base}（{}），可能未随当前 J-Link 版本安装。",
+            tool_path.display()
+        )));
+    }
+    let mut cmd = std::process::Command::new(&tool_path);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.spawn()
+        .map_err(|e| AppError::Other(format!("启动 {base} 失败: {e}")))?;
+    Ok(JLinkResponse {
+        success: true,
+        output: format!("{base} 已启动"),
+    })
+}
+
+// ===========================================================================
 // GDB Server (long-lived child process)
 // ===========================================================================
 

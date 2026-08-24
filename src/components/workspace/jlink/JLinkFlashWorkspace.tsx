@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Download, Eraser, MemoryStick, Power, Zap } from "lucide-react";
 
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, ModuleHeader } from "@/components/ui";
 import { jlink } from "@/lib/api";
 import { useT } from "@/i18n";
 import { useJlinkBase } from "./useJlinkBase";
 import { JLinkConnectionFields } from "./JLinkConnectionFields";
-import { JLinkInstallWarning } from "./JLinkInstallWarning";
+import { JLinkInstallBanner, JLinkCard, JLinkConsole } from "./JLinkShared";
 
 /**
  * Flash 下载 module — the probe connection controls plus memory read/write and
@@ -26,13 +26,7 @@ export function JLinkFlashWorkspace() {
   const [writeData, setWriteData] = useState("");
   const [programAddr, setProgramAddr] = useState("");
 
-  const outRef = useRef<HTMLPreElement>(null);
-
   const append = (block: string) => setOutput((prev) => `${prev}${block}\n`);
-
-  useEffect(() => {
-    outRef.current?.scrollTo({ top: outRef.current.scrollHeight });
-  }, [output]);
 
   const pickFile = async () => {
     const picked = await open({
@@ -44,19 +38,16 @@ export function JLinkFlashWorkspace() {
     return Array.isArray(picked) ? picked[0] : picked;
   };
 
-  const card = "rounded-xl border border-border bg-surface p-4";
-
   return (
-    <div className="h-full overflow-y-auto p-5">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* ---- Connection config ---- */}
-          <section className={card}>
-            <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-subtle">
-              {t("jlink.connection")}
-            </h2>
+    <div className="flex h-full flex-col bg-bg">
+      <ModuleHeader icon={<Download size={15} />} title={t("jlink.flash")} />
+      <JLinkInstallBanner />
 
-            <div className="flex flex-col gap-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* ---- Connection config ---- */}
+            <JLinkCard title={t("jlink.connection")} icon={<Power size={13} />}>
               <JLinkConnectionFields
                 config={config}
                 setConfig={setConfig}
@@ -107,16 +98,10 @@ export function JLinkFlashWorkspace() {
                   <Eraser size={14} /> {t("jlink.erase")}
                 </Button>
               </div>
-            </div>
-          </section>
+            </JLinkCard>
 
-          {/* ---- Memory & Flash ---- */}
-          <section className={card}>
-            <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-subtle">
-              {t("jlink.memoryFlash")}
-            </h2>
-
-            <div className="flex flex-col gap-3">
+            {/* ---- Memory & Flash ---- */}
+            <JLinkCard title={t("jlink.memoryFlash")} icon={<MemoryStick size={13} />}>
               <div className="grid grid-cols-[1fr_120px] gap-2">
                 <Field label={t("jlink.readAddr")}>
                   <Input
@@ -204,24 +189,16 @@ export function JLinkFlashWorkspace() {
               >
                 <Download size={14} /> {t("jlink.programFirmware")}
               </Button>
-            </div>
-          </section>
+            </JLinkCard>
+          </div>
 
-          {/* ---- Output console ---- */}
-          <section className={card}>
-            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-subtle">
-              {t("jlink.outputConsole")}
-            </h2>
-            <pre
-              ref={outRef}
-              className="h-64 overflow-auto rounded-lg border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-muted"
-            >
-              {output || t("jlink.noOutput")}
-            </pre>
-          </section>
+          {/* ---- Output console (full width) ---- */}
+          <JLinkConsole
+            title={t("jlink.outputConsole")}
+            value={output}
+            placeholder={t("jlink.noOutput")}
+          />
         </div>
-
-        <JLinkInstallWarning />
       </div>
     </div>
   );

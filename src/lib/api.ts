@@ -497,6 +497,9 @@ export const jlink = {
   /** Subscribe to RTT host/client diagnostic lines. */
   onRttLog: (cb: (line: string) => void): Promise<UnlistenFn> =>
     listen<string>("jlink-rtt-log", (e) => cb(e.payload)),
+  /** Launch a SEGGER J-Link GUI tool (Config / J-Flash / SWO / RTT viewer). */
+  launchTool: (tool: "config" | "jflash" | "swo" | "rttviewer", exePath?: string) =>
+    call<JLinkResponse>("jlink_launch_tool", { tool, exePath: jlinkExe(exePath) }),
 };
 
 // --- Unified data profile (export / import / future sync) -------------------

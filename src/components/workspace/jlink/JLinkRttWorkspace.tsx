@@ -13,7 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Badge, Button, Select } from "@/components/ui";
+import { Badge, Button, ModuleHeader, Select } from "@/components/ui";
 import { SerialRecordView } from "@/components/serial/SerialRecordView";
 import { SendBar, type SendBarHandle } from "@/components/serial/SendBar";
 import { QuickSendPanel } from "@/components/serial/QuickSendPanel";
@@ -30,7 +30,7 @@ import { encodeSendData, type SendMeta } from "@/lib/serialCodec";
 import { jlink } from "@/lib/api";
 import { useJlinkBase } from "./useJlinkBase";
 import { JLinkConnectionFields } from "./JLinkConnectionFields";
-import { JLinkInstallWarning } from "./JLinkInstallWarning";
+import { JLinkInstallBanner } from "./JLinkShared";
 import type { LineEnding, SerialEncoding, SerialLogEntry } from "@/lib/types";
 
 const ENCODINGS: SerialEncoding[] = ["utf-8", "gbk", "ascii", "hex"];
@@ -270,16 +270,16 @@ export function JLinkRttWorkspace() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Top toolbar */}
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
-        <div className="flex items-center gap-2">
-          <Radio size={15} className="text-accent" />
-          <span className="text-[13px] font-semibold text-fg">{t("jlink.rtt")}</span>
-        </div>
-        <div className="flex items-center gap-2 no-drag">
+      {/* Top toolbar — shared J-Link module chrome */}
+      <ModuleHeader
+        icon={<Radio size={15} />}
+        title={t("jlink.rtt")}
+        badges={
           <Badge tone={running ? "success" : "neutral"}>
             {running ? t("jlink.running") : t("jlink.notRunning")}
           </Badge>
+        }
+        actions={
           <Select
             value={encoding}
             onChange={(e) => setEncoding(e.target.value as SerialEncoding)}
@@ -292,8 +292,9 @@ export function JLinkRttWorkspace() {
               </option>
             ))}
           </Select>
-        </div>
-      </div>
+        }
+      />
+      <JLinkInstallBanner />
 
       {/* Main body: left settings + center display + right quick send */}
       <div className="relative flex min-h-0 flex-1">
@@ -321,8 +322,6 @@ export function JLinkRttWorkspace() {
                   ? t("jlink.starting")
                   : t("jlink.start")}
             </Button>
-
-            <JLinkInstallWarning />
 
             <Button
               variant="ghost"
