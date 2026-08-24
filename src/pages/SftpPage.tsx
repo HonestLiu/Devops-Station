@@ -10,7 +10,8 @@ import {
   Server,
 } from "lucide-react";
 
-import { Button } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
+import { DistroIcon } from "@/components/DistroIcon";
 import { useT } from "@/i18n";
 import { cn, hashColor } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
@@ -53,24 +54,21 @@ function SftpMockPanel() {
     path: string,
     rows: typeof remote,
   ) => (
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-bg/40">
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/50 bg-bg/40 px-2">
-        {side === "remote" ? (
-          <Server size={13} className="text-accent" />
-        ) : (
-          <HardDrive size={13} className="text-muted" />
-        )}
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-surface">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+        <span className="icon-chip h-6 w-6 shrink-0">
+          {side === "remote" ? (
+            <Server size={13} className="text-accent" />
+          ) : (
+            <HardDrive size={13} className="text-muted" />
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted">
           {path}
         </span>
-        <span
-          className={cn(
-            "rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider",
-            side === "remote" ? "bg-accent/15 text-accent" : "bg-hover text-muted",
-          )}
-        >
+        <Badge tone={side === "remote" ? "accent" : "neutral"}>
           {side === "remote" ? t("sftp.remote") : t("sftp.local")}
-        </span>
+        </Badge>
       </div>
       <div className="flex-1 space-y-0.5 overflow-hidden p-1.5">
         {rows.map(renderRow)}
@@ -79,9 +77,9 @@ function SftpMockPanel() {
   );
 
   return (
-    <div className="flex h-full flex-col gap-2 bg-surface p-2">
-      <div className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-border/50 bg-bg/40 text-[11px] text-subtle/70">
-        <FolderOpen size={13} className="text-accent/60" />
+    <div className="flex h-full flex-col gap-2 bg-bg p-2">
+      <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-surface px-2.5 text-[11px] text-subtle">
+        <FolderOpen size={13} className="text-accent" />
         {t("sftp.connectHint")}
       </div>
       <div className="flex min-h-0 flex-1 gap-2">
@@ -165,14 +163,14 @@ export function SftpPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="max-h-[46vh] space-y-0.5 overflow-y-auto">
+                <div className="max-h-[46vh] space-y-1.5 overflow-y-auto">
                   {sshHosts.map((h) => {
                     const color = h.color || hashColor(h.name);
                     return (
                       <button
                         key={h.id}
                         onClick={() => void connectTo(h)}
-                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-hover"
+                        className="group flex w-full items-center gap-3 rounded-xl border border-border/70 bg-surface px-3 py-2 text-left transition-colors hover:border-accent/40"
                       >
                         <span
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold text-accent-fg"
@@ -181,13 +179,20 @@ export function SftpPage() {
                           {h.name.slice(0, 1).toUpperCase()}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium text-fg">
-                            {h.name}
+                          <span className="flex items-center gap-2">
+                            <span className="block truncate text-[13px] font-medium text-fg">
+                              {h.name}
+                            </span>
+                            <Badge tone="accent">{t("hosts.kindSsh")}</Badge>
+                            <DistroIcon distro={h.distro} size={16} />
                           </span>
-                          <span className="block truncate text-[11px] text-subtle">
-                            {h.username ? `${h.username}@` : ""}
-                            {h.hostname}
-                            {h.port ? `:${h.port}` : ""}
+                          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+                            <Server size={12} className="shrink-0 text-subtle" />
+                            <span className="truncate">
+                              {h.username ? `${h.username}@` : ""}
+                              {h.hostname}
+                              {h.port ? `:${h.port}` : ""}
+                            </span>
                           </span>
                         </span>
                         <ChevronRight size={15} className="shrink-0 text-subtle" />

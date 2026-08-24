@@ -38,10 +38,12 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
-  // Connected serial / ble sessions the designer can bind to.
+  // Connected serial / ble sessions the designer can bind to. The designer and
+  // basic-serial module tabs are also `kind: "serial"`, so exclude anything that
+  // carries a `serialModule` (those aren't real device connections).
   const sessions = tabs.filter(
     (tb) =>
-      (tb.kind === "serial" || tb.kind === "ble") &&
+      ((tb.kind === "serial" && !tb.serialModule) || tb.kind === "ble") &&
       tb.status === "connected" &&
       tb.sessionId,
   );

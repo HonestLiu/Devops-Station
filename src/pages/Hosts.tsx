@@ -66,12 +66,14 @@ function HostRow({
   onConnect,
   onEdit,
   onDelete,
+  onOpenTerminal,
   onContextMenu,
 }: {
   h: Host;
   onConnect: (h: Host) => void;
   onEdit: (h: Host) => void;
   onDelete: (h: Host) => void;
+  onOpenTerminal: (h: Host) => void;
   onContextMenu: (e: ReactMouseEvent, h: Host) => void;
 }) {
   const t = useT();
@@ -114,6 +116,14 @@ function HostRow({
         </Button>
         <Button variant="ghost" size="sm" onClick={() => onEdit(h)} title={t("common.edit")}>
           <Pencil size={13} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onOpenTerminal(h)}
+          title={t("hosts.openTerminal")}
+        >
+          <TerminalSquare size={13} />
         </Button>
         <Button
           variant="ghost"
@@ -180,6 +190,8 @@ export function Hosts() {
     else void openFromHost(h);
   };
 
+  const openTerminal = () => void openLocal();
+
   const deleteWithConfirm = (h: Host) => {
     if (window.confirm(t("hosts.deleteConfirm", { name: h.name }))) void deleteHost(h.id);
   };
@@ -207,6 +219,15 @@ export function Hosts() {
         onClick: () => {
           closeCtx();
           setEditing(h);
+        },
+      },
+      {
+        id: "openTerminal",
+        label: t("hosts.openTerminal"),
+        icon: <TerminalSquare size={14} />,
+        onClick: () => {
+          closeCtx();
+          openTerminal();
         },
       },
       { id: "sep", separator: true, label: "" },
@@ -379,6 +400,14 @@ export function Hosts() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => openTerminal()}
+                    title={t("hosts.openTerminal")}
+                  >
+                    <TerminalSquare size={13} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => deleteWithConfirm(h)}
                     title={t("common.delete")}
                   >
@@ -398,6 +427,7 @@ export function Hosts() {
               onConnect={connect}
               onEdit={setEditing}
               onDelete={deleteWithConfirm}
+              onOpenTerminal={openTerminal}
               onContextMenu={onHostContextMenu}
             />
           ))}
@@ -428,6 +458,7 @@ export function Hosts() {
                         onConnect={connect}
                         onEdit={setEditing}
                         onDelete={deleteWithConfirm}
+                        onOpenTerminal={openTerminal}
                         onContextMenu={onHostContextMenu}
                       />
                     ))}

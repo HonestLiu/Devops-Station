@@ -32,7 +32,7 @@ import {
 
 import { sftp } from "@/lib/api";
 import { localFs } from "@/lib/api";
-import { Bar, Button } from "@/components/ui";
+import { Bar, Badge, Button, Dialog, Input, SideIconButton } from "@/components/ui";
 import { RemoteFileEditor } from "./RemoteFileEditor";
 import { RemoteFilePreview } from "./RemoteFilePreview";
 import { PermsDialog } from "./PermsDialog";
@@ -99,6 +99,15 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
   // --- Inline remote-file editor + permission dialog ---
   const [editing, setEditing] = useState<{ path: string; name: string } | null>(null);
   const [permTarget, setPermTarget] = useState<RemoteFile | null>(null);
+
+  // --- Styled dialogs replacing native window.prompt / window.confirm ---
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<RemoteFile | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<RemoteFile | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffPath, setDiffPath] = useState("");
 
   // --- Remote-file preview (images, PDF, video, audio, Markdown, text) ---
   const [preview, setPreview] = useState<{ path: string; name: string } | null>(null);
@@ -402,9 +411,11 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const newRemoteFolder = async () => {
-    const name = window.prompt("New folder name");
+  const submitNewFolder = async () => {
+    const name = newFolderName.trim();
     if (!name) return;
+    setNewFolderOpen(false);
+    setNewFolderName("");
     try {
       await sftp.mkdir(sessionId, `${rPath === "/" ? "" : rPath}/${name}`);
       void loadRemote(rPath);
@@ -413,26 +424,39 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const doRenameRemote = async (f: RemoteFile) => {
-    const next = window.prompt("Rename to", f.name);
-    if (!next || next === f.name) return;
+  const submitRename = async () => {
+    const next = renameName.trim();
+    if (!renameTarget || !next || next === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
     const to = `${rPath === "/" ? "" : rPath}/${next}`;
+    setRenameTarget(null);
     try {
-      await sftp.rename(sessionId, f.path, to);
+      await sftp.rename(sessionId, renameTarget.path, to);
       void loadRemote(rPath);
     } catch (e) {
       setRError((e as Error).message);
     }
   };
 
-  const doDeleteRemote = async (f: RemoteFile) => {
-    if (!window.confirm(`Delete ${f.isDir ? "folder" : "file"} "${f.name}"?`)) return;
+  const submitDelete = async () => {
+    const f = deleteTarget;
+    setDeleteTarget(null);
+    if (!f) return;
     try {
       await sftp.remove(sessionId, f.path, f.isDir);
       void loadRemote(rPath);
     } catch (e) {
       setRError((e as Error).message);
     }
+  };
+
+  const submitDiff = () => {
+    const other = diffPath.trim();
+    setDiffOpen(false);
+    if (!rSelected || !other) return;
+    void diffFiles(sessionId, rSelected, other);
   };
 
   const rVisible = rShowHidden ? rFiles : rFiles.filter((f) => !f.name.startsWith("."));
@@ -469,15 +493,38 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
     ),
   });
 
-  const rowActionBtn =
-    "rounded-md p-1 text-muted transition-colors hover:bg-bg hover:text-fg";
-  const navBtn =
-    "flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg";
+  const RowAction = ({
+    icon,
+    label,
+    tone,
+    onClick,
+  }: {
+    icon: React.ReactNode;
+    label: string;
+    tone?: "default" | "danger";
+    onClick: () => void;
+  }) => (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:bg-hover hover:text-fg",
+        tone === "danger" && "hover:!bg-danger/10 hover:!text-danger",
+      )}
+    >
+      {icon}
+    </button>
+  );
 
   return (
-    <div className="relative flex h-full flex-col gap-2 bg-surface p-2">
+    <div className="relative flex h-full flex-col gap-2 bg-bg p-2">
       {osDrag && (
-        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg bg-accent/10 text-[12px] font-medium text-accent backdrop-blur-[1px]">
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-lg border border-dashed border-accent/50 bg-accent/10 text-[12px] font-medium text-accent backdrop-blur-[1px]">
           Drop files to upload to {rPath}
         </div>
       )}
@@ -485,7 +532,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
       {/* Floating drag preview */}
       {drag?.active && (
         <div
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border border-accent/40 bg-elevated/95 px-3 py-2 text-[12px] text-fg shadow-2xl backdrop-blur"
+          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-2 text-[12px] text-fg shadow-2xl"
           style={{ left: drag.x + 14, top: drag.y + 12 }}
         >
           <FileIcon size={14} className="text-accent" />
@@ -501,12 +548,12 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Header hint */}
-      <div className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-lg border border-border/60 bg-bg/50 text-[11px] text-subtle">
+      {/* Hint strip */}
+      <div className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-surface px-2.5 text-[11px] text-subtle">
         <ArrowLeftRight size={13} className="text-accent" />
         <span>
-          <span className="font-medium text-accent">Remote</span> ⇄ <span className="font-medium text-muted">Local</span> —
-          drag files across to transfer
+          <span className="font-medium text-accent">Remote</span> ⇄{" "}
+          <span className="font-medium text-muted">Local</span> — drag files across to transfer
         </span>
       </div>
 
@@ -515,7 +562,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
         {/* ============ Remote pane (left) ============ */}
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-bg/30 transition-shadow",
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-surface transition-shadow",
             drag?.over === "remote" && drag.active && "border-accent/50 ring-2 ring-accent/30",
           )}
           onMouseEnter={() => patchDrag({ over: "remote" })}
@@ -528,30 +575,31 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
             });
           }}
         >
-          {/* Pane header */}
-          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-bg/50 px-2">
-            <Server size={13} className="shrink-0 text-accent" />
-            <button className={navBtn} onClick={() => void loadRemote("/")} title="Root">
-              <Home size={14} />
-            </button>
-            <button className={navBtn} onClick={() => void loadRemote(parentPath(rPath))} title="Up">
-              <ArrowUp size={14} />
-            </button>
-            <button className={navBtn} onClick={() => void loadRemote(rPath)} title="Refresh">
-              <RefreshCw size={14} />
-            </button>
-            <span className="min-w-0 flex-1 select-text truncate rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted">
-              {rPath}
+          {/* Pane header: icon chip + nav + path + badge */}
+          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+            <span className="icon-chip h-6 w-6 shrink-0">
+              <Server size={13} className="text-accent" />
             </span>
-            <span className="shrink-0 rounded-md bg-accent/15 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent">
-              REMOTE
-            </span>
+            <SideIconButton label="Root" onClick={() => void loadRemote("/")} icon={<Home size={14} />} />
+            <SideIconButton
+              label="Up"
+              onClick={() => void loadRemote(parentPath(rPath))}
+              icon={<ArrowUp size={14} />}
+            />
+            <SideIconButton label="Refresh" onClick={() => void loadRemote(rPath)} icon={<RefreshCw size={14} />} />
+            <Input
+              value={rPath}
+              readOnly
+              spellCheck={false}
+              className="h-7 flex-1 px-2 font-mono text-[11px]"
+            />
+            <Badge tone="accent">REMOTE</Badge>
           </div>
 
           {/* Toolbar */}
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Button
-              variant={autoFollow ? "primary" : "ghost"}
+              variant={autoFollow ? "primary" : "secondary"}
               size="sm"
               onClick={() =>
                 setAutoFollow((on) => {
@@ -566,7 +614,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               {autoFollow ? "Following" : "Follow"}
             </Button>
             <Button
-              variant={rShowHidden ? "primary" : "ghost"}
+              variant={rShowHidden ? "primary" : "secondary"}
               size="sm"
               onClick={() => setRShowHidden((v) => !v)}
               title={rShowHidden ? "Hide hidden files" : "Show hidden files"}
@@ -574,15 +622,15 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               {rShowHidden ? <EyeOff size={13} /> : <Eye size={13} />}
               Hidden
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void newRemoteFolder()} title="New folder">
+            <Button variant="secondary" size="sm" onClick={() => setNewFolderOpen(true)} title="New folder">
               <FolderPlus size={13} /> New
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void uploadHere()} title="Upload local files (or drop them anywhere)">
+            <Button variant="secondary" size="sm" onClick={() => void uploadHere()} title="Upload local files (or drop them anywhere)">
               <Upload size={13} /> Upload
             </Button>
             <div className="mx-0.5 h-4 w-px bg-border/70" />
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               disabled={!rSelected}
               title={rSelected ? `Explain ${rSelected}` : "Select a remote file first"}
@@ -591,14 +639,14 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
               <Sparkles size={13} /> Explain
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               disabled={!rSelected}
               title={rSelected ? "Diff this file against another" : "Select a remote file first"}
               onClick={() => {
                 if (!rSelected) return;
-                const other = window.prompt("Diff against which file? Enter the full remote path:", rSelected);
-                if (other && other.trim()) void diffFiles(sessionId, rSelected, other.trim());
+                setDiffPath(rSelected);
+                setDiffOpen(true);
               }}
             >
               <Sparkles size={13} /> Diff
@@ -648,69 +696,43 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                       </span>
                       <span className="invisible flex shrink-0 items-center gap-0.5 group-hover:visible">
                         {!f.isDir && (
-                          <button
-                            className={cn(rowActionBtn, "hover:text-accent")}
-                            title={t("sftp.preview")}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPreview({ path: f.path, name: f.name });
-                            }}
-                          >
-                            <Eye size={13} />
-                          </button>
+                          <RowAction
+                            icon={<Eye size={13} />}
+                            label={t("sftp.preview")}
+                            onClick={() => setPreview({ path: f.path, name: f.name })}
+                          />
                         )}
                         {!f.isDir && (
-                          <button
-                            className={cn(rowActionBtn, "hover:text-accent")}
-                            title="Download to local folder"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startDownload(f.path, f.name, lPathRef.current);
-                            }}
-                          >
-                            <Download size={13} />
-                          </button>
+                          <RowAction
+                            icon={<Download size={13} />}
+                            label="Download to local folder"
+                            onClick={() => startDownload(f.path, f.name, lPathRef.current)}
+                          />
                         )}
-                        <button
-                          className={cn(rowActionBtn, "hover:text-accent")}
-                          title="Edit file"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditing({ path: f.path, name: f.name });
+                        <RowAction
+                          icon={<Pencil size={13} />}
+                          label="Edit file"
+                          onClick={() => setEditing({ path: f.path, name: f.name })}
+                        />
+                        <RowAction
+                          icon={<KeyRound size={13} />}
+                          label="Permissions (chmod / chown)"
+                          onClick={() => setPermTarget(f)}
+                        />
+                        <RowAction
+                          icon={<Pencil size={13} />}
+                          label="Rename"
+                          onClick={() => {
+                            setRenameName(f.name);
+                            setRenameTarget(f);
                           }}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className={rowActionBtn}
-                          title="Permissions (chmod / chown)"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPermTarget(f);
-                          }}
-                        >
-                          <KeyRound size={13} />
-                        </button>
-                        <button
-                          className={rowActionBtn}
-                          title="Rename"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void doRenameRemote(f);
-                          }}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className={cn(rowActionBtn, "hover:text-danger")}
-                          title="Delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void doDeleteRemote(f);
-                          }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        />
+                        <RowAction
+                          icon={<Trash2 size={13} />}
+                          label="Delete"
+                          tone="danger"
+                          onClick={() => setDeleteTarget(f)}
+                        />
                       </span>
                     </div>
                   );
@@ -729,7 +751,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
         {/* ============ Local pane (right) ============ */}
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-bg/30 transition-shadow",
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-surface transition-shadow",
             drag?.over === "local" && drag.active && "border-accent/50 ring-2 ring-accent/30",
           )}
           onMouseEnter={() => patchDrag({ over: "local" })}
@@ -742,30 +764,31 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
             });
           }}
         >
-          {/* Pane header */}
-          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-bg/50 px-2">
-            <HardDrive size={13} className="shrink-0 text-muted" />
-            <button className={navBtn} onClick={() => void loadLocal(lPath)} title="Home">
-              <Home size={14} />
-            </button>
-            <button className={navBtn} onClick={() => void loadLocal(localParent(lPath))} title="Up">
-              <ArrowUp size={14} />
-            </button>
-            <button className={navBtn} onClick={() => void loadLocal(lPath)} title="Refresh">
-              <RefreshCw size={14} />
-            </button>
-            <span className="min-w-0 flex-1 select-text truncate rounded-md bg-bg px-2 py-1 font-mono text-[11px] text-muted">
-              {lPath || "loading…"}
+          {/* Pane header: icon chip + nav + path + badge */}
+          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+            <span className="icon-chip h-6 w-6 shrink-0">
+              <HardDrive size={13} className="text-muted" />
             </span>
-            <span className="shrink-0 rounded-md bg-hover px-2 py-0.5 text-[10px] font-semibold tracking-wider text-muted">
-              LOCAL
-            </span>
+            <SideIconButton label="Home" onClick={() => void loadLocal(lPath)} icon={<Home size={14} />} />
+            <SideIconButton
+              label="Up"
+              onClick={() => void loadLocal(localParent(lPath))}
+              icon={<ArrowUp size={14} />}
+            />
+            <SideIconButton label="Refresh" onClick={() => void loadLocal(lPath)} icon={<RefreshCw size={14} />} />
+            <Input
+              value={lPath || "loading…"}
+              readOnly
+              spellCheck={false}
+              className="h-7 flex-1 px-2 font-mono text-[11px]"
+            />
+            <Badge tone="neutral">LOCAL</Badge>
           </div>
 
           {/* Toolbar */}
           <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1.5">
             <Button
-              variant={lShowHidden ? "primary" : "ghost"}
+              variant={lShowHidden ? "primary" : "secondary"}
               size="sm"
               onClick={() => setLShowHidden((v) => !v)}
               title={lShowHidden ? "Hide hidden files" : "Show hidden files"}
@@ -827,7 +850,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
 
       {/* Transfers */}
       {activeTransfers.length > 0 && (
-        <div className="max-h-36 shrink-0 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-bg/40 px-3 py-2">
+        <div className="max-h-36 shrink-0 space-y-1.5 overflow-y-auto rounded-lg border border-border/60 bg-surface px-3 py-2">
           {activeTransfers.map((t) => {
             const pct = t.total > 0 ? (t.transferred / t.total) * 100 : t.done ? 100 : 0;
             return (
@@ -905,6 +928,117 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
           onApplied={() => void loadRemote(rPathRef.current)}
         />
       )}
+
+      {/* New folder */}
+      <Dialog
+        open={newFolderOpen}
+        onClose={() => {
+          setNewFolderOpen(false);
+          setNewFolderName("");
+        }}
+        title="New folder"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => {
+              setNewFolderOpen(false);
+              setNewFolderName("");
+            }}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => void submitNewFolder()}>
+              {t("common.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          autoFocus
+          value={newFolderName}
+          placeholder="folder name"
+          onChange={(e) => setNewFolderName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submitNewFolder();
+          }}
+        />
+      </Dialog>
+
+      {/* Rename */}
+      <Dialog
+        open={!!renameTarget}
+        onClose={() => setRenameTarget(null)}
+        title="Rename"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setRenameTarget(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => void submitRename()}>
+              {t("common.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          autoFocus
+          value={renameName}
+          onChange={(e) => setRenameName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submitRename();
+          }}
+        />
+      </Dialog>
+
+      {/* Delete confirm */}
+      <Dialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete"
+        description={
+          deleteTarget
+            ? `Delete ${deleteTarget.isDir ? "folder" : "file"} "${deleteTarget.name}"? This cannot be undone.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => void submitDelete()}>
+              {t("common.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <span />
+      </Dialog>
+
+      {/* Diff against another file */}
+      <Dialog
+        open={diffOpen}
+        onClose={() => setDiffOpen(false)}
+        title="Diff against file"
+        description="Enter the full remote path of the other file."
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setDiffOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => submitDiff()}>
+              {t("common.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          autoFocus
+          value={diffPath}
+          placeholder="/remote/path/to/file"
+          onChange={(e) => setDiffPath(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitDiff();
+          }}
+        />
+      </Dialog>
     </div>
   );
 }
