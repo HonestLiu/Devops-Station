@@ -3,7 +3,8 @@ import { useState, type ReactNode } from "react";
 
 import { useProtocolDesignerStore } from "@/store/useProtocolDesignerStore";
 import { useT } from "@/i18n";
-import { Button, Checkbox, Field, Input, Select, Switch } from "@/components/ui";
+import { Button, Checkbox, Field, Input, Select, Switch, Textarea } from "@/components/ui";
+import { AiProtocolBar } from "./AiProtocolBar";
 import type {
   ChecksumAlgo,
   Endian,
@@ -55,6 +56,9 @@ export function ProtocolEditor() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {/* AI generate-from-description bar */}
+        <AiProtocolBar />
+
         {/* Global settings */}
         <CollapsibleSection title={t("protocol.global")} defaultOpen>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -115,6 +119,16 @@ export function ProtocolEditor() {
               </Select>
             </Field>
           </div>
+
+          {/* Protocol description — editable by hand (not only via AI). */}
+          <Field label={t("protocol.description")} className="mt-2">
+            <Textarea
+              rows={2}
+              value={draft.description ?? ""}
+              placeholder={t("protocol.descriptionPh")}
+              onChange={(e) => updateDraft({ description: e.target.value.trim() || null })}
+            />
+          </Field>
 
           {/* Length field (optional) */}
           <LengthFieldEditor draft={draft} updateDraft={updateDraft} />
@@ -507,7 +521,13 @@ function ensureLf(
 
 function AutoAnswerBody() {
   const t = useT();
-  const rules = useProtocolDesignerStore((s) => s.draft.autoAnswer ?? []);
+  // NOTE: do NOT write `s.draft.autoAnswer ?? []` here — that returns a brand
+  // new array on every store notification, which makes `useSyncExternalStore`
+  // think the snapshot keeps changing and triggers an infinite render loop
+  // ("Maximum update depth exceeded"). Return the raw value (null or a stable
+  // array) and compute the fallback in render instead.
+  const rawRules = useProtocolDesignerStore((s) => s.draft.autoAnswer);
+  const rules = rawRules ?? [];
   const fields = useProtocolDesignerStore((s) => s.draft.fields);
   const updateRule = useProtocolDesignerStore((s) => s.updateRule);
   const removeRule = useProtocolDesignerStore((s) => s.removeRule);

@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./styles/globals.css";
 
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAppStore } from "./store/useAppStore";
 import { useHostsStore } from "./store/useHostsStore";
 
@@ -18,7 +19,11 @@ async function bootstrap() {
   const root = document.getElementById("root");
   if (!root) throw new Error("Root element #root not found");
 
-  ReactDOM.createRoot(root).render(<App />);
+  ReactDOM.createRoot(root).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>,
+  );
 }
 
 void bootstrap();

@@ -478,7 +478,14 @@ export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
     if (!get().saving) set({ saving: true });
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      void get().save();
+      // Autosave must never surface as an unhandled rejection (it would crash
+      // the WebView to a white screen). On failure we keep `dirty` set and log,
+      // so the next edit retries and the user can also save explicitly.
+      void get()
+        .save()
+        .catch((e) => {
+          console.error("[protocol] autosave failed:", e);
+        });
     }, 700);
   },
 
@@ -499,6 +506,7 @@ export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
         lastSavedAt: Date.now(),
       });
     } catch (e) {
+      // Keep `dirty` so a later edit re-triggers autosave / explicit retry.
       set({ saving: false });
       throw e;
     }
