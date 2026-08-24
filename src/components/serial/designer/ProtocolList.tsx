@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
-import { Check, Copy, FilePlus2, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, FilePlus2, Loader2, Pencil, Trash2, Upload, Download, X } from "lucide-react";
 
 import { useProtocolDesignerStore } from "@/store/useProtocolDesignerStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useT } from "@/i18n";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { formatMtime } from "@/lib/utils";
-import { serial, ble, protocol } from "@/lib/api";
-import type { StreamChunk } from "@/lib/types";
+import { serial, ble, protocol, localFs } from "@/lib/api";
+import { save } from "@tauri-apps/plugin-dialog";
+import type { StreamChunk, ProtocolConfig } from "@/lib/types";
 
 /**
  * Left rail of the Protocol Designer: the saved-protocol list plus the
@@ -24,6 +25,7 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
     newDraft,
     remove,
     duplicateProtocol,
+    importProtocol,
     mode,
     setMode,
     targetSession,
@@ -100,6 +102,86 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
     }
   };
 
+  // --- export / import a whole protocol project as JSON --------------------
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  // Per-item export animation state: which protocol id is currently exporting.
+  const [busyExportId, setBusyExportId] = useState<string | null>(null);
+  const [doneExportId, setDoneExportId] = useState<string | null>(null);
+  const flash = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2500);
+  };
+
+  const downloadJson = (filename: string, data: unknown) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = async (id: string, name: string) => {
+    if (busyExportId) return;
+    setBusyExportId(id);
+    setDoneExportId(null);
+    try {
+      const cfg = await protocol.load(id);
+      const json = JSON.stringify(cfg, null, 2);
+      const base = `${name || "protocol"}.json`;
+      let wrote = false;
+      try {
+        // Native save dialog: lets the user pick a target directory + filename.
+        const target = await save({
+          title: t("protocol.exportJson"),
+          defaultPath: base,
+          filters: [{ name: "JSON", extensions: ["json"] }],
+        });
+        if (target) {
+          await localFs.writeText(target, json);
+          wrote = true;
+        }
+      } catch {
+        // Outside the desktop shell (web preview) fall back to a download.
+        wrote = false;
+      }
+      if (!wrote) {
+        downloadJson(base, cfg);
+      }
+      flash(t("protocol.exportJsonDone"));
+      setDoneExportId(id);
+      window.setTimeout(() => setDoneExportId(null), 1500);
+    } catch (e) {
+      flash(t("protocol.importError", { err: (e as Error).message }));
+    } finally {
+      setBusyExportId(null);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setBusy(true);
+    try {
+      const text = await file.text();
+      const saved = await importProtocol(text);
+      flash(t("protocol.importDone", { name: saved.name }));
+    } catch (e) {
+      const msg = (e as Error).message;
+      flash(
+        msg === "bad-protocol-json"
+          ? t("protocol.badFile")
+          : t("protocol.importError", { err: msg }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Mode switch */}
@@ -149,6 +231,27 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
         >
           <FilePlus2 size={14} /> {t("protocol.new")}
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="flex-1"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          title={t("protocol.importHint")}
+        >
+          <Download size={14} /> {t("protocol.import")}
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleImportFile(f);
+            e.target.value = "";
+          }}
+        />
       </div>
 
       {/* List */}
@@ -178,6 +281,23 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      title={t("protocol.exportJson")}
+                      className="rounded p-1 text-muted hover:bg-fg/5 hover:text-fg disabled:opacity-50"
+                      disabled={busyExportId === p.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleExport(p.id, p.name);
+                      }}
+                    >
+                      {busyExportId === p.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : doneExportId === p.id ? (
+                        <Check size={13} className="text-success" />
+                      ) : (
+                        <Upload size={13} />
+                      )}
+                    </button>
                     <button
                       title={t("protocol.duplicate")}
                       className="rounded p-1 text-muted hover:bg-fg/5 hover:text-fg"
@@ -263,6 +383,12 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
       </div>
       {/* `dir` is reserved for future tx/rx split; keep referenced. */}
       <span className="hidden">{dir}</span>
+
+      {toast && (
+        <div className="border-t border-border/60 px-3 py-1.5 text-[11px] text-success">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

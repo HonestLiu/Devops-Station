@@ -8,7 +8,7 @@ import type { ProtocolConfig } from "@/lib/types";
 import { generateCProtocol } from "./generateC";
 import { buildZip } from "@/lib/zip";
 
-type TabId = "h" | "c" | "main" | "project";
+type TabId = "h" | "c" | "main" | "readme" | "project";
 
 /**
  * Modal that renders the C header + source generated from the current protocol
@@ -40,10 +40,13 @@ export function ExportCDialog({
         ? files?.source
         : tab === "main"
           ? files?.main
-          : files?.cmake;
+          : tab === "readme"
+            ? files?.readme
+            : files?.cmake;
 
   const codeLang: CodeLang =
-    tab === "h" || tab === "c" || tab === "main" ? "c" : "cmake";
+    tab === "h" || tab === "c" || tab === "main" ? "c"
+      : tab === "readme" ? "markdown" : "cmake";
   const tabLabel =
     tab === "h"
       ? `${base}.h`
@@ -51,7 +54,9 @@ export function ExportCDialog({
         ? `${base}.c`
         : tab === "main"
           ? "main.c"
-          : "CMakeLists.txt";
+          : tab === "readme"
+            ? "README.md"
+            : "CMakeLists.txt";
 
   const resetTransient = () => {
     setCopied(false);
@@ -109,6 +114,7 @@ export function ExportCDialog({
         { name: `${base}.c`, content: files.source },
         { name: "main.c", content: files.main },
         { name: "CMakeLists.txt", content: files.cmake },
+        { name: "README.md", content: files.readme },
       ]);
       downloadBlob(target.split(/[\\/]/).pop() ?? `${base}_project.zip`, zip);
       setExported(true);
@@ -121,6 +127,7 @@ export function ExportCDialog({
           { name: `${base}.c`, content: files.source },
           { name: "main.c", content: files.main },
           { name: "CMakeLists.txt", content: files.cmake },
+          { name: "README.md", content: files.readme },
         ]);
         downloadBlob(`${base}_project.zip`, zip);
       }
@@ -201,6 +208,7 @@ export function ExportCDialog({
         {tabBtn("h", `${base}.h`)}
         {tabBtn("c", `${base}.c`)}
         {tabBtn("main", "main.c")}
+        {tabBtn("readme", t("protocol.readme"))}
         {tabBtn("project", t("protocol.projectFiles"))}
       </div>
       {tab === "project" && (

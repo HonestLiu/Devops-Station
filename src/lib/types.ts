@@ -1069,6 +1069,11 @@ export interface ProtocolConfig {
   name: string;
   description?: string | null;
   /**
+   * Markdown documentation for the protocol (user manual / notes). Rendered in
+   * the designer's bottom "doc" section, with a toggle between edit & preview.
+   */
+  doc?: string | null;
+  /**
    * Fixed frame head. On the editing side this is a loose hex string
    * (e.g. "AA BB"); when sent to the backend it is converted to a byte array
    * (`number[]`), which serde reads as `Vec<u8>`. Optional.

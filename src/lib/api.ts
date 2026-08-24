@@ -453,6 +453,10 @@ export const localFs = {
   rename: (from: string, to: string) => call<void>("local_rename", { from, to }),
   reveal: (path: string) => call<void>("reveal_path", { path }),
   open: (path: string) => call<void>("open_path", { path }),
+  /** Write text to an arbitrary local path (used by exporters that let the
+   *  user pick a target directory + filename via the native save dialog). */
+  writeText: (path: string, content: string) =>
+    call<void>("local_write_text", { path, content }),
   /** Open a URL in the OS default browser (http/https only). */
   openUrl: (url: string) => call<void>("open_url", { url }),
 };

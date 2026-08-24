@@ -9,8 +9,8 @@ import { type ReactNode } from "react";
  * restricted to http(s)/mailto.
  *
  * Supported: headings (#–######), unordered/ordered lists, block quotes,
- * fenced code blocks, horizontal rules, and inline `code` / **bold** / *italic*
- * / [links](url).
+ * fenced code blocks, horizontal rules, GFM tables, and inline `code` /
+ * **bold** / *italic* / [links](url).
  */
 
 const SAFE_URL = /^(https?:\/\/|mailto:)/i;
@@ -265,6 +265,59 @@ function parseBlocks(src: string): ReactNode[] {
       continue;
     }
 
+    // table: a row of `|`-separated cells followed by a separator row
+    // (`| :--- | ---: |`). Detected when the next line is a separator.
+    if (trimmed.includes("|") && i + 1 < lines.length) {
+      const nextTrimmed = lines[i + 1].trim();
+      if (/^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?$/.test(nextTrimmed)) {
+        flushPara();
+        flushList();
+        const header = splitRow(trimmed);
+        const aligns = splitRow(nextTrimmed).map(parseAlign);
+        i += 2;
+        const bodyRows: string[][] = [];
+        while (i < lines.length && lines[i].trim().includes("|") && lines[i].trim() !== "") {
+          bodyRows.push(splitRow(lines[i].trim()));
+          i++;
+        }
+        out.push(
+          <div key={`tbl${key++}`} className="my-2 overflow-x-auto">
+            <table className="w-full border-collapse text-[12px]">
+              <thead>
+                <tr>
+                  {header.map((c, ci) => (
+                    <th
+                      key={ci}
+                      className="border border-border bg-black/20 px-2 py-1 text-left font-semibold"
+                      style={{ textAlign: aligns[ci] ?? "left" }}
+                    >
+                      {parseInline(c, `th${key}-${ci}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bodyRows.map((row, ri) => (
+                  <tr key={ri}>
+                    {row.map((c, ci) => (
+                      <td
+                        key={ci}
+                        className="border border-border px-2 py-1 align-top"
+                        style={{ textAlign: aligns[ci] ?? "left" }}
+                      >
+                        {parseInline(c, `td${key}-${ri}-${ci}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+    }
+
     // paragraph text
     para.push(trimmed);
     i++;
@@ -273,6 +326,25 @@ function parseBlocks(src: string): ReactNode[] {
   flushPara();
   flushList();
   return out;
+}
+
+/** Split a GFM table row into cell strings (handles optional leading/trailing `|`). */
+function splitRow(row: string): string[] {
+  let r = row.trim();
+  if (r.startsWith("|")) r = r.slice(1);
+  if (r.endsWith("|")) r = r.slice(0, -1);
+  return r.split("|").map((c) => c.trim());
+}
+
+/** Parse a separator cell (`---`, `:---`, `:---:`, `---:`) into a text-align. */
+function parseAlign(cell: string): "left" | "center" | "right" | undefined {
+  const c = cell.trim();
+  const left = c.startsWith(":");
+  const right = c.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  if (left) return "left";
+  return undefined;
 }
 
 export function Markdown({ source, className }: { source: string; className?: string }) {

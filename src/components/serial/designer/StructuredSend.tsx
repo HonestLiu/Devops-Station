@@ -30,28 +30,47 @@ export function StructuredSend({
     openLoopback,
     loopbackSend,
     encode,
+    sendValues,
+    sendBases,
+    setSendValue,
+    setSendBase,
+    seedSendExamples,
   } = useProtocolDesignerStore();
 
-  const [values, setValues] = useState<Record<string, string>>({});
   const [encoded, setEncoded] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
-  // Reset value inputs when the field set changes.
-  useEffect(() => {
-    setValues({});
-    setEncoded("");
-  }, [draft.id, draft.fields]);
+  // Per-protocol persisted values/bases (keyed by draft id; falls back to a
+  // transient key for an unsaved draft).
+  const pid = draft.id || "__new__";
+  const values = sendValues[pid] ?? {};
+  const bases = sendBases[pid] ?? {};
 
-  const setVal = (name: string, v: string) =>
-    setValues((prev) => ({ ...prev, [name]: v }));
+  // Seed example values when the field set changes, so an AI-generated protocol
+  // can be tested immediately. Only fills fields that have no value yet, so
+  // manual edits are preserved across definition changes / leaving the module.
+  useEffect(() => {
+    if (draft.fields.length > 0) seedSendExamples(draft.fields);
+    setEncoded("");
+  }, [draft.id, draft.fields, seedSendExamples]);
+
+  const setVal = (name: string, v: string) => setSendValue(name, v);
+
+  // Numeric fields default to HEX (most protocols are hex); string fields have
+  // no base (always text/hex literal), so the toggle is hidden for them.
+  const baseOf = (f: FieldDef): "hex" | "dec" | null => {
+    if (f.dataType === "asciistring" || f.dataType === "hexstring") return null;
+    return bases[f.name] ?? "hex";
+  };
+  const setBase = (name: string, b: "hex" | "dec") => setSendBase(name, b);
 
   const doEncode = async () => {
     setError(null);
     try {
       const fv: FieldValue[] = draft.fields.map((f) => ({
         name: f.name,
-        value: coerce(f, values[f.name] ?? ""),
+        value: coerce(f, values[f.name] ?? "", baseOf(f) ?? "hex"),
       }));
       const b64 = await encode(fv);
       setEncoded(b64);
@@ -107,16 +126,52 @@ export function StructuredSend({
           {draft.fields.length === 0 ? (
             <div className="text-[12px] text-subtle">{t("protocol.noFieldsHint")}</div>
           ) : (
-            draft.fields.map((f) => (
-              <Field key={f.name} label={`${f.displayName || f.name}${f.unit ? ` (${f.unit})` : ""}`}>
-                <Input
-                  className="font-mono"
-                  value={values[f.name] ?? ""}
-                  placeholder={defaultPlaceholder(f)}
-                  onChange={(e) => setVal(f.name, e.target.value)}
-                />
-              </Field>
-            ))
+            draft.fields.map((f) => {
+              const base = baseOf(f);
+              return (
+                <Field
+                  key={f.name}
+                  label={`${f.displayName || f.name}${f.unit ? ` (${f.unit})` : ""}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {base && (
+                      <div className="flex shrink-0 overflow-hidden rounded-md border border-border text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setBase(f.name, "hex")}
+                          className={
+                            "px-1.5 py-1 font-medium transition-colors " +
+                            (base === "hex"
+                              ? "bg-accent text-accent-fg"
+                              : "bg-bg text-muted hover:text-fg")
+                          }
+                        >
+                          {t("protocol.baseHex")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBase(f.name, "dec")}
+                          className={
+                            "px-1.5 py-1 font-medium transition-colors " +
+                            (base === "dec"
+                              ? "bg-accent text-accent-fg"
+                              : "bg-bg text-muted hover:text-fg")
+                          }
+                        >
+                          {t("protocol.baseDec")}
+                        </button>
+                      </div>
+                    )}
+                    <Input
+                      className="font-mono"
+                      value={values[f.name] ?? ""}
+                      placeholder={defaultPlaceholder(f, base ?? "hex")}
+                      onChange={(e) => setVal(f.name, e.target.value)}
+                    />
+                  </div>
+                </Field>
+              );
+            })
           )}
 
           <div className="flex gap-1">
@@ -147,7 +202,7 @@ export function StructuredSend({
   );
 }
 
-function defaultPlaceholder(f: FieldDef): string {
+function defaultPlaceholder(f: FieldDef, base: "hex" | "dec"): string {
   switch (f.dataType) {
     case "asciistring":
       return "abc";
@@ -157,18 +212,19 @@ function defaultPlaceholder(f: FieldDef): string {
     case "float64":
       return "0.0";
     default:
-      return "0";
+      return base === "hex" ? "0" : "0";
   }
 }
 
-function coerce(f: FieldDef, raw: string): unknown {
+function coerce(f: FieldDef, raw: string, base: "hex" | "dec"): unknown {
   if (f.dataType === "asciistring") return raw;
   if (f.dataType === "hexstring") return raw;
   if (f.dataType === "float32" || f.dataType === "float64") {
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   }
-  const n = parseInt(raw, 10);
+  const trimmed = raw.trim().replace(/^0x/i, "");
+  const n = base === "hex" ? parseInt(trimmed, 16) : parseInt(trimmed, 10);
   return Number.isFinite(n) ? n : 0;
 }
 

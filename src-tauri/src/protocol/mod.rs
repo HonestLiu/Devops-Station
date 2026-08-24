@@ -178,6 +178,7 @@ mod tests {
             auto_answer: vec![],
             created_at: 0,
             updated_at: 0,
+            doc: None,
         }
     }
 
@@ -213,6 +214,216 @@ mod tests {
         let addr = frame.fields.iter().find(|f| f.name == "addr").unwrap();
         assert_eq!(addr.byte_offset, 0);
         assert_eq!(addr.raw_value, "01");
+    }
+
+    fn air_purifier_config() -> ProtocolConfig {
+        // User's "智能空气净化器控制协议": head AA BB, 7 uint8 fields,
+        // CRC16-MODBUS, tail 0D 0A → 13 bytes total.
+        let mut enum_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        enum_map.insert("1".into(), "开机".into());
+        enum_map.insert("2".into(), "关机".into());
+        ProtocolConfig {
+            id: "ap".into(),
+            name: "智能空气净化器控制协议".into(),
+            description: None,
+            head: Some(vec![0xAA, 0xBB]),
+            tail: Some(vec![0x0D, 0x0A]),
+            length_field: None,
+            endian: Some(Endian::Big),
+            timeout_ms: 50,
+            checksum: Some(ChecksumConfig {
+                algo: ChecksumAlgo::Crc16Modbus,
+                start: None,
+                end: None,
+            }),
+            fields: vec![
+                FieldDef { name: "addr".into(), display_name: "设备地址".into(), offset: 0, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+                FieldDef { name: "cmd".into(), display_name: "命令字".into(), offset: 1, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: Some(enum_map), condition: None },
+                FieldDef { name: "fan".into(), display_name: "风速".into(), offset: 2, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: Some("%".into()), enum_map: None, condition: None },
+                FieldDef { name: "mode".into(), display_name: "模式".into(), offset: 3, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+                FieldDef { name: "filter".into(), display_name: "滤网寿命".into(), offset: 4, length: 1, data_type: FieldDataType::Uint8, scale: Some(0.0), unit: Some("%".into()), enum_map: None, condition: None },
+                FieldDef { name: "pm25".into(), display_name: "PM2.5".into(), offset: 5, length: 1, data_type: FieldDataType::Uint8, scale: Some(0.0), unit: Some("μg/m³".into()), enum_map: None, condition: None },
+                FieldDef { name: "status".into(), display_name: "状态".into(), offset: 6, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+            ],
+            auto_answer: vec![],
+            created_at: 0,
+            updated_at: 0,
+            doc: None,
+        }
+    }
+
+    /// Mirror the frontend `openLoopback` first-sample flow: encode a sample
+    /// frame, then feed it through `parse_stream` (exactly what the loopback
+    /// channel does). The frame must be valid and pass CRC16-MODBUS.
+    #[test]
+    fn openloopback_first_sample_is_valid() {
+        let cfg = air_purifier_config();
+        let p = shared_parser(cfg);
+        let sample = vec![
+            FieldValue { name: "addr".into(), value: serde_json::json!(1) },
+            FieldValue { name: "cmd".into(), value: serde_json::json!(1) },
+            FieldValue { name: "fan".into(), value: serde_json::json!(3) },
+            FieldValue { name: "mode".into(), value: serde_json::json!(2) },
+            FieldValue { name: "filter".into(), value: serde_json::json!(80) },
+            FieldValue { name: "pm25".into(), value: serde_json::json!(42) },
+            FieldValue { name: "status".into(), value: serde_json::json!(1) },
+        ];
+        let bytes = {
+            let p = p.lock();
+            p.encode(&sample).expect("encode sample")
+        };
+        assert_eq!(bytes.len(), 13, "13-byte frame expected");
+        let frame = {
+            let p = p.lock();
+            p.parse_stream(&bytes).into_iter().next().expect("one frame")
+        };
+        assert!(frame.valid, "frame should be valid");
+        assert!(frame.checksum_valid, "crc16 modbus should validate");
+    }
+
+    /// Reproduce the loopback auto-answer path: encode a sample TX frame,
+    /// parse it, then build the reply exactly as `LoopbackChannel::send` does
+    /// and re-parse it. Both frames must be valid (no "校验失败").
+    /// Reproduce a frame-delimit bug: if the body or checksum bytes happen to
+    /// contain the tail sequence (here `0D 0A`), a naive tail search matches a
+    /// *false* tail and mis-delimits the frame, shifting the checksum range so
+    /// the parse reports "校验失败" even though encode/parse use one config.
+    /// Regression for the "校验失败 on every frame" report: an AI-generated
+    /// protocol serialises its checksum range as `start: 0, end: 0` (because
+    /// `Number(null) === 0`). The parser must treat `Some(0)` as "unbounded"
+    /// on both the encode and parse sides, otherwise the checksum range
+    /// collapses to zero length and every frame fails.
+    #[test]
+    fn checksum_end_zero_is_treated_as_unbounded() {
+        let cfg = ProtocolConfig {
+            id: "z".into(),
+            name: "z".into(),
+            description: None,
+            head: Some(vec![0xAA, 0xBB]),
+            tail: Some(vec![0x0D, 0x0A]),
+            length_field: None,
+            endian: Some(Endian::Big),
+            timeout_ms: 50,
+            checksum: Some(ChecksumConfig {
+                algo: ChecksumAlgo::Crc16Modbus,
+                start: Some(0),
+                end: Some(0),
+            }),
+            fields: vec![
+                FieldDef { name: "addr".into(), display_name: "addr".into(), offset: 0, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+                FieldDef { name: "cmd".into(), display_name: "cmd".into(), offset: 1, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+            ],
+            auto_answer: vec![],
+            created_at: 0,
+            updated_at: 0,
+            doc: None,
+        };
+        let p = shared_parser(cfg);
+        let fields = vec![
+            FieldValue { name: "addr".into(), value: serde_json::json!(1) },
+            FieldValue { name: "cmd".into(), value: serde_json::json!(2) },
+        ];
+        let bytes = {
+            let p = p.lock();
+            p.encode(&fields).expect("encode")
+        };
+        let frame = {
+            let p = p.lock();
+            p.parse_stream(&bytes).into_iter().next().expect("one frame")
+        };
+        assert!(frame.valid, "frame valid with checksum end=0");
+        assert!(frame.checksum_valid, "crc valid with checksum end=0");
+    }
+
+    #[test]
+    fn frame_with_tail_in_body_is_not_misdelimited() {
+        // One uint8 field whose value is 0x0D, immediately followed by a field
+        // whose value is 0x0A — together they form the tail `0D 0A` mid-frame.
+        let cfg = ProtocolConfig {
+            id: "x".into(),
+            name: "x".into(),
+            description: None,
+            head: Some(vec![0xAA, 0xBB]),
+            tail: Some(vec![0x0D, 0x0A]),
+            length_field: None,
+            endian: Some(Endian::Big),
+            timeout_ms: 50,
+            checksum: Some(ChecksumConfig {
+                algo: ChecksumAlgo::Crc16Modbus,
+                start: None,
+                end: None,
+            }),
+            fields: vec![
+                FieldDef { name: "a".into(), display_name: "a".into(), offset: 0, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+                FieldDef { name: "b".into(), display_name: "b".into(), offset: 1, length: 1, data_type: FieldDataType::Uint8, scale: None, unit: None, enum_map: None, condition: None },
+            ],
+            auto_answer: vec![],
+            created_at: 0,
+            updated_at: 0,
+            doc: None,
+        };
+        let p = shared_parser(cfg);
+        let fields = vec![
+            FieldValue { name: "a".into(), value: serde_json::json!(0x0D) },
+            FieldValue { name: "b".into(), value: serde_json::json!(0x0A) },
+        ];
+        let bytes = {
+            let p = p.lock();
+            p.encode(&fields).expect("encode")
+        };
+        // The encoded frame is: AA BB 0D 0A .. 0D 0A <crc>. The body contains
+        // the tail sequence; a naive parser would split at the first 0D 0A.
+        let frames = {
+            let p = p.lock();
+            p.parse_stream(&bytes)
+        };
+        assert_eq!(frames.len(), 1, "must be exactly one frame (no false split)");
+        let frame = &frames[0];
+        assert!(frame.valid, "frame valid despite tail-in-body");
+        assert!(frame.checksum_valid, "crc valid despite tail-in-body");
+    }
+
+    #[test]
+    fn openloopback_autoanswer_reply_is_valid() {
+        let cfg = air_purifier_config();
+        let p = shared_parser(cfg.clone());
+
+        let sample = vec![
+            FieldValue { name: "addr".into(), value: serde_json::json!(1) },
+            FieldValue { name: "cmd".into(), value: serde_json::json!(2) },
+            FieldValue { name: "fan".into(), value: serde_json::json!(3) },
+            FieldValue { name: "mode".into(), value: serde_json::json!(2) },
+            FieldValue { name: "filter".into(), value: serde_json::json!(80) },
+            FieldValue { name: "pm25".into(), value: serde_json::json!(42) },
+            FieldValue { name: "status".into(), value: serde_json::json!(1) },
+        ];
+        let bytes = {
+            let p = p.lock();
+            p.encode(&sample).expect("encode sample")
+        };
+        let frame = {
+            let p = p.lock();
+            p.parse_stream(&bytes).into_iter().next().expect("one frame")
+        };
+        assert!(frame.valid && frame.checksum_valid, "tx frame valid");
+
+        // Build the reply the same way the loopback does.
+        let mut reply: Vec<FieldValue> = frame
+            .fields
+            .iter()
+            .map(|f| FieldValue { name: f.name.clone(), value: f.value.clone() })
+            .collect();
+        // Simulate an auto-answer override (e.g. echo cmd=1 as ack).
+        if let Some(slot) = reply.iter_mut().find(|x| x.name == "cmd") {
+            slot.value = serde_json::json!(1);
+        }
+        let reply_frame = {
+            let p = p.lock();
+            let b = p.encode(&reply).expect("reply encode");
+            p.parse(&b).expect("reply parse")
+        };
+        assert!(reply_frame.valid, "reply frame must be valid");
+        assert!(reply_frame.checksum_valid, "reply crc must validate");
     }
 
     #[test]

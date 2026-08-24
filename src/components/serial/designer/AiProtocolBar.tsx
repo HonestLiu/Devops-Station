@@ -81,6 +81,7 @@ export function AiProtocolBar() {
         id: store.draft.id,
         name: preview.name,
         description: preview.description,
+        doc: preview.doc,
         head: preview.head,
         tail: preview.tail,
         endian: preview.endian,
@@ -116,15 +117,16 @@ export function AiProtocolBar() {
           value={requirement}
           onChange={(e) => setRequirement(e.target.value)}
           placeholder={t("protocol.aiRequirementPh")}
-          className="select-text"
+          className="select-text flex-1"
           disabled={busy}
           onKeyDown={(e) => {
             if (e.key === "Enter") void generate();
           }}
         />
         <Button
-          variant="secondary"
+          variant="primary"
           size="sm"
+          className="shrink-0"
           disabled={busy || !hasAiConfig() || !requirement.trim()}
           onClick={() => void generate()}
           title={t("protocol.aiGenerate")}

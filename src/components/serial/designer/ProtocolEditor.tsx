@@ -5,6 +5,7 @@ import { useProtocolDesignerStore } from "@/store/useProtocolDesignerStore";
 import { useT } from "@/i18n";
 import { Button, Checkbox, Field, Input, Select, Switch, Textarea } from "@/components/ui";
 import { AiProtocolBar } from "./AiProtocolBar";
+import { Markdown } from "@/components/Markdown";
 import type {
   ChecksumAlgo,
   Endian,
@@ -171,6 +172,9 @@ export function ProtocolEditor() {
         >
           <AutoAnswerBody />
         </CollapsibleSection>
+
+        {/* Documentation (Markdown) — collapsed by default, at the very bottom. */}
+        <DocSection />
       </div>
     </div>
   );
@@ -637,6 +641,65 @@ function AutoAnswerBody() {
         );
       })}
     </div>
+  );
+}
+
+// --- Documentation (Markdown) ----------------------------------------------
+
+/**
+ * Bottom-of-editor Markdown documentation. Collapsed by default. A single
+ * toggle button switches between **edit** (source `Textarea`) and **render**
+ * (rendered `Markdown`) — deliberately NOT a side-by-side split view, per the
+ * design requirement.
+ */
+function DocSection() {
+  const t = useT();
+  const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const doc = useProtocolDesignerStore((s) => s.draft.doc);
+  const updateDraft = useProtocolDesignerStore((s) => s.updateDraft);
+  const value = doc ?? "";
+
+  return (
+    <CollapsibleSection
+      title={t("protocol.doc")}
+      defaultOpen={false}
+      right={
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="sm"
+            variant={mode === "edit" ? "primary" : "secondary"}
+            onClick={() => setMode("edit")}
+          >
+            {t("protocol.docEdit")}
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === "preview" ? "primary" : "secondary"}
+            onClick={() => setMode("preview")}
+          >
+            {t("protocol.docPreview")}
+          </Button>
+        </div>
+      }
+    >
+      {mode === "edit" ? (
+        <Textarea
+          rows={10}
+          className="font-mono text-[12px]"
+          value={value}
+          placeholder={t("protocol.docGenerate")}
+          onChange={(e) => updateDraft({ doc: e.target.value || null })}
+        />
+      ) : value.trim() ? (
+        <div className="prose-doc rounded-lg border border-border bg-bg p-3 text-[13px]">
+          <Markdown source={value} />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border px-4 py-4 text-center text-[12px] text-subtle">
+          {t("protocol.docEmpty")}
+        </div>
+      )}
+    </CollapsibleSection>
   );
 }
 

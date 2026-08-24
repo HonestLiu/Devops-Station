@@ -33,6 +33,7 @@ export function emptyProtocol(name = "Untitled"): ProtocolConfig {
     id: "",
     name,
     description: null,
+    doc: null,
     head: null,
     tail: null,
     lengthField: null,
@@ -59,6 +60,22 @@ export function demoProtocol(): ProtocolConfig {
     id: "",
     name: "传感器帧示例",
     description: "自动生成的示例协议：演示帧头/帧尾、校验、多类型字段与自动应答。",
+    doc:
+      "# 传感器帧示例\n\n" +
+      "本示例演示如何用一个**固定帧头/帧尾 + 校验和**的协议上报温湿度与环境数据。\n\n" +
+      "## 帧结构\n\n" +
+      "| 字段 | 说明 | 类型 |\n" +
+      "| --- | --- | --- |\n" +
+      "| addr | 设备地址 | uint8 |\n" +
+      "| cmd | 命令字（1=查询，2=写入） | uint8 |\n" +
+      "| temperature | 温度（×0.1 °C） | int16 |\n" +
+      "| humidity | 湿度 | float32 |\n" +
+      "| serial | 设备序列号 | hex |\n\n" +
+      "## 自动应答\n\n" +
+      "当收到 `cmd == 2`（写入）时，设备会回送一帧确认（`cmd == 1`），字段清零。\n\n" +
+      "## 注意事项\n\n" +
+      "- 校验算法为 `CRC-16/MODBUS`，覆盖从帧起始到校验字段前的全部字节。\n" +
+      "- 帧以 `AA BB` 开头，以 `0D 0A`（回车换行）结尾。\n",
     head: "AA BB",
     tail: "0D 0A",
     lengthField: null,
@@ -221,6 +238,13 @@ interface DesignerState {
   /** When false, only the latest frame is kept (no accumulation). */
   accumulate: boolean;
 
+  // --- structured send (persisted per protocol so values survive leaving the
+  //     module / switching protocols and come back on return) ---
+  /** Per-protocol field values for the structured-send form. */
+  sendValues: Record<string, Record<string, string>>;
+  /** Per-protocol numeric base (hex/dec) overrides for the structured-send form. */
+  sendBases: Record<string, Record<string, "hex" | "dec">>;
+
   // --- auto-save ---
   /** Auto-save is on by default; every edit is persisted debounced. */
   autoSave: boolean;
@@ -262,6 +286,11 @@ interface DesignerState {
   remove: (id: string) => Promise<void>;
   duplicateProtocol: (id: string, newName: string) => Promise<void>;
 
+  /** Import a protocol design project from a JSON string (exported via
+   *  `exportProtocolJson`). The `id` is stripped so the backend assigns a
+   *  fresh UUID, avoiding collisions with the source project. */
+  importProtocol: (json: string) => Promise<ProtocolConfig>;
+
   /** Preview-parse a sample hex string against the current draft. */
   previewSample: (hex: string) => Promise<void>;
   /** Encode field values into a wire frame (base64). */
@@ -282,6 +311,14 @@ interface DesignerState {
   toggleAccumulate: () => void;
   /** Clear all parsed frames (loopback + live). */
   clearFrames: () => void;
+
+  /** Set a structured-send field value for the current protocol. */
+  setSendValue: (name: string, value: string) => void;
+  /** Set the numeric base (hex/dec) for a structured-send field. */
+  setSendBase: (name: string, base: "hex" | "dec") => void;
+  /** Seed example values for any field of the current protocol that has none
+   *  yet (used right after AI generation so the form is test-ready). */
+  seedSendExamples: (fields: FieldDef[]) => void;
 }
 
 const MAX_FRAMES = 200;
@@ -314,6 +351,30 @@ function sampleValue(f: FieldDef): unknown {
   }
 }
 
+/** Example string for a structured-send field, matching the form's default
+ *  hex base. Prefers the first enum value so auto-answer rules are easy to
+ *  exercise; otherwise a small length-padded positive number or a literal. */
+function exampleSendValue(f: FieldDef): string {
+  switch (f.dataType) {
+    case "asciistring":
+      return "demo";
+    case "hexstring":
+      return "DEADBEEF".slice(0, Math.max(2, f.length * 2)).toUpperCase();
+    case "float32":
+    case "float64":
+      return "1.0";
+    default: {
+      if (f.enumMap && Object.keys(f.enumMap).length) {
+        const first = Object.keys(f.enumMap)[0];
+        const n = Number(first);
+        if (Number.isFinite(n)) return n.toString(16).toUpperCase().padStart(2, "0");
+      }
+      const width = Math.max(2, f.length * 2);
+      return (1).toString(16).toUpperCase().padStart(width, "0");
+    }
+  }
+}
+
 export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
   list: [],
   selectedId: null,
@@ -329,6 +390,9 @@ export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
 
   selectedField: null,
   accumulate: true,
+
+  sendValues: {},
+  sendBases: {},
 
   autoSave: true,
   dirty: false,
@@ -526,6 +590,25 @@ export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
     set({ selectedId: cfg.id, draft: fromWireConfig(cfg), dirty: false });
   },
 
+  importProtocol: async (json) => {
+    const parsed = JSON.parse(json) as Partial<ProtocolConfig>;
+    if (!parsed || typeof parsed.name !== "string" || !Array.isArray(parsed.fields)) {
+      throw new Error("bad-protocol-json");
+    }
+    // Strip the id (and timestamps) so the backend assigns a fresh UUID and the
+    // import becomes a new project rather than overwriting the source.
+    const cfg: ProtocolConfig = {
+      ...(parsed as ProtocolConfig),
+      id: "",
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const saved = await protocol.save(toWireConfig(cfg));
+    await get().refreshList();
+    set({ selectedId: saved.id, draft: fromWireConfig(saved), dirty: false });
+    return saved;
+  },
+
   previewSample: async (hex) => {
     const { draft } = get();
     const bytes = hexToBytes(hex);
@@ -624,6 +707,33 @@ export const useProtocolDesignerStore = create<DesignerState>((set, get) => ({
   toggleAccumulate: () => set((s) => ({ accumulate: !s.accumulate })),
 
   clearFrames: () => set({ loopbackFrames: [], liveFrames: [] }),
+
+  setSendValue: (name, value) =>
+    set((s) => {
+      const id = s.draft.id || "__new__";
+      const cur = s.sendValues[id] ?? {};
+      return { sendValues: { ...s.sendValues, [id]: { ...cur, [name]: value } } };
+    }),
+
+  setSendBase: (name, base) =>
+    set((s) => {
+      const id = s.draft.id || "__new__";
+      const cur = s.sendBases[id] ?? {};
+      return { sendBases: { ...s.sendBases, [id]: { ...cur, [name]: base } } };
+    }),
+
+  seedSendExamples: (fields) =>
+    set((s) => {
+      const id = s.draft.id || "__new__";
+      const cur = s.sendValues[id] ?? {};
+      const seeded: Record<string, string> = { ...cur };
+      for (const f of fields) {
+        if (seeded[f.name] == null || seeded[f.name] === "") {
+          seeded[f.name] = exampleSendValue(f);
+        }
+      }
+      return { sendValues: { ...s.sendValues, [id]: seeded } };
+    }),
 }));
 
 /** Prepend a parsed frame, honouring the `accumulate` flag. When accumulation

@@ -112,6 +112,9 @@ pub struct ProtocolConfig {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+    /// Markdown documentation for the protocol (user manual / notes). Optional.
+    #[serde(default)]
+    pub doc: Option<String>,
     /// Fixed frame head (hex). Optional.
     #[serde(default)]
     pub head: Option<Vec<u8>>,

@@ -226,3 +226,11 @@ pub fn local_rename(from: String, to: String) -> Result<(), String> {
     fs::rename(Path::new(&from), Path::new(&to))
         .map_err(|e| format!("cannot rename {from} -> {to}: {e}"))
 }
+
+/// Write text content to an arbitrary local path. Used by exporters (protocol
+/// project JSON, C project, …) so the user can pick a target directory + file
+/// name via the native save dialog instead of a browser download.
+#[tauri::command]
+pub fn local_write_text(path: String, content: String) -> Result<(), String> {
+    fs::write(Path::new(&path), content).map_err(|e| format!("cannot write {path}: {e}"))
+}

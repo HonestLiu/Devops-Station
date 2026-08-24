@@ -22,6 +22,7 @@ export type CodeLang =
   | "yaml"
   | "xml"
   | "toml"
+  | "markdown"
   | "text";
 
 const C_KEYWORDS = new Set([
@@ -215,6 +216,72 @@ function highlightGenericLine(line: string, lineNo: number): ReactNode[] {
   return [<span key={k++}>{line}</span>];
 }
 
+/** Lightweight Markdown line highlighter for README previews. */
+function highlightMarkdownLine(line: string, lineNo: number): ReactNode[] {
+  const out: ReactNode[] = [];
+  let k = lineNo * 100000;
+
+  // Fenced code block delimiter.
+  if (/^\s*```/.test(line)) return [color("subtle", line, k++)];
+
+  // Headings (# … ###### …).
+  const h = /^(#{1,6})\s+/.exec(line);
+  if (h) {
+    const text = line.slice(h[0].length);
+    return [
+      <span key={k++} className="text-accent font-semibold">
+        {h[0]}
+      </span>,
+      <span key={k++} className="font-semibold">
+        {text}
+      </span>,
+    ];
+  }
+
+  // Blockquote / horizontal rule / list bullets.
+  if (/^\s*>\s?/.test(line)) return [color("subtle", line, k++)];
+  if (/^\s*([-*+]|\d+\.)\s+/.test(line)) return [color("muted", line, k++)];
+
+  // Inline: `code`, **bold**, [link](url). Keep it simple — color the markers.
+  let i = 0;
+  let buf = "";
+  const flush = () => {
+    if (buf) {
+      out.push(<span key={k++}>{buf}</span>);
+      buf = "";
+    }
+  };
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === "`") {
+      const end = line.indexOf("`", i + 1);
+      if (end !== -1) {
+        flush();
+        out.push(color("success", line.slice(i, end + 1), k++));
+        i = end + 1;
+        continue;
+      }
+    }
+    if (ch === "*" && line[i + 1] === "*") {
+      const end = line.indexOf("**", i + 2);
+      if (end !== -1) {
+        flush();
+        out.push(
+          <span key={k++} className="font-semibold">
+            {line.slice(i, end + 2)}
+          </span>
+        );
+        i = end + 2;
+        continue;
+      }
+    }
+    buf += ch;
+    i++;
+  }
+  flush();
+  return out;
+}
+
 function highlightLine(
   line: string,
   lang: CodeLang,
@@ -228,6 +295,8 @@ function highlightLine(
       return highlightCMakeLine(line, lineNo);
     case "sh":
       return highlightShLine(line, lineNo);
+    case "markdown":
+      return highlightMarkdownLine(line, lineNo);
     case "text":
     default:
       return highlightGenericLine(line, lineNo);

@@ -75,8 +75,16 @@ impl ProtocolParser for DefaultParser {
         // --- checksum verification ---------------------------------------
         if let Some(cs) = &cfg.checksum {
             if cs.algo != ChecksumAlgo::None {
-                let start = cs.start.unwrap_or(0).min(raw.len());
-                let end = cs.end.unwrap_or(raw.len()).min(raw.len());
+                // `Some(0)` for an offset is meaningless (a zero-length range),
+                // so treat it identically to `None` ("unbounded"). This defends
+                // against frontends that serialize an absent limit as `0` and
+                // would otherwise mark every frame as a checksum failure.
+                let start = cs.start.filter(|s| *s > 0).unwrap_or(0).min(raw.len());
+                let end = match cs.end {
+                    Some(0) | None => raw.len(),
+                    Some(e) => e,
+                }
+                .min(raw.len());
                 let cs_len = checksum_len(cs.algo);
                 if end > start && (end - start) >= cs_len {
                     let body = &raw[start..end - cs_len];
@@ -108,6 +116,7 @@ impl ProtocolParser for DefaultParser {
             }
         }
 
+        let mut oob_names: Vec<String> = Vec::new();
         for f in &cfg.fields {
             // Simple condition: `name == int`. Skip the field if unmet.
             if let Some(cond) = &f.condition {
@@ -129,6 +138,7 @@ impl ProtocolParser for DefaultParser {
                     byte_offset: f.offset,
                     byte_length: f.length,
                 });
+                oob_names.push(f.display_name.clone());
                 valid = false;
                 continue;
             }
@@ -151,12 +161,27 @@ impl ProtocolParser for DefaultParser {
             });
         }
 
+        // Compose a specific error so the UI can tell checksum failures apart
+        // from layout problems (was previously one opaque "字段越界或校验失败").
+        let error_msg = if valid {
+            None
+        } else if !oob_names.is_empty() && !checksum_valid {
+            Some(format!(
+                "字段越界（{}）且校验失败",
+                oob_names.join("、")
+            ))
+        } else if !oob_names.is_empty() {
+            Some(format!("字段越界：{}", oob_names.join("、")))
+        } else {
+            Some("校验失败".to_string())
+        };
+
         Ok(ParsedFrame {
             raw: B64.encode(raw),
             valid,
             checksum_valid,
             fields: fields_out,
-            error_msg: if valid { None } else { Some("字段越界或校验失败".into()) },
+            error_msg,
             dir: FrameDirection::Rx,
         })
     }
@@ -189,18 +214,38 @@ impl ProtocolParser for DefaultParser {
                     _ => break, // incomplete frame; wait for more data
                 }
             } else if let Some(t) = tail {
-                match find_sub(buf, t, start + head.len()) {
-                    Some(i) => {
-                        // Include the trailing checksum (if any) after the tail.
-                        let cs_len = cfg
-                            .checksum
-                            .as_ref()
-                            .filter(|c| c.algo != ChecksumAlgo::None)
-                            .map(|c| checksum_len(c.algo))
-                            .unwrap_or(0);
-                        i + t.len() + cs_len
+                // Prefer delimiting by the config's known *total* frame length.
+                // This is robust against the body or checksum bytes accidentally
+                // containing the tail sequence (e.g. a field value of `0D` right
+                // before `0A`), which a naive "first tail occurrence" search would
+                // mis-split into a short frame and report a spurious "校验失败".
+                let cs_len = cfg
+                    .checksum
+                    .as_ref()
+                    .filter(|c| c.algo != ChecksumAlgo::None)
+                    .map(|c| checksum_len(c.algo))
+                    .unwrap_or(0);
+                let body_len = cfg
+                    .fields
+                    .iter()
+                    .map(|f| f.offset + f.length)
+                    .max()
+                    .unwrap_or(0);
+                let total = head.len() + body_len + t.len() + cs_len;
+                let fixed_end = start + total;
+                let tail_at = head.len() + body_len; // tail offset within the frame
+                if fixed_end <= buf.len() && buf[start + tail_at..start + tail_at + t.len()] == *t {
+                    // Total-length delimiter lands exactly on the real tail — use it.
+                    fixed_end
+                } else {
+                    // Config has no well-formed fixed length (e.g. gapped fields
+                    // or an unsynchronised buffer): fall back to the first tail
+                    // occurrence, which is correct when the tail truly only
+                    // appears at frame boundaries.
+                    match find_sub(buf, t, start + head.len()) {
+                        Some(i) => i + t.len() + cs_len,
+                        None => break, // incomplete
                     }
-                    None => break, // incomplete
                 }
             } else {
                 // No length, no tail: consume to end of buffer.
@@ -281,8 +326,15 @@ impl ProtocolParser for DefaultParser {
         // Checksum (appended at end of the checksummed range).
         if let Some(cs) = &cfg.checksum {
             if cs.algo != ChecksumAlgo::None {
-                let start = cs.start.unwrap_or(0).min(buf.len());
-                let end = cs.end.unwrap_or(buf.len()).min(buf.len());
+                // Mirror `parse`: `Some(0)` / `None` mean "unbounded" so a
+                // frontend serialising an absent limit as `0` still checksum
+                // the whole frame instead of an empty range.
+                let start = cs.start.filter(|s| *s > 0).unwrap_or(0).min(buf.len());
+                let end = match cs.end {
+                    Some(0) | None => buf.len(),
+                    Some(e) => e,
+                }
+                .min(buf.len());
                 let cs_len = checksum_len(cs.algo);
                 let computed = checksum::compute(cs.algo, &buf[start..end]).unwrap_or(0);
                 for i in 0..cs_len {
@@ -409,7 +461,9 @@ fn signed_of(dt: FieldDataType) -> bool {
 }
 
 /// Build the human display string: enum mapping takes priority, then
-/// scale + unit, else the raw value.
+/// scale + unit, else the raw value. The unit is intentionally NOT baked
+/// into the string — the frontend renders it as a separate tag so the
+/// row stays aligned ("0  μg/m³" not "0 μg/m³ μg/m³").
 fn build_display(decoded: &Decoded, f: &FieldDef) -> String {
     if let Some(num) = decoded.raw_num {
         if let Some(map) = &f.enum_map {
@@ -419,15 +473,15 @@ fn build_display(decoded: &Decoded, f: &FieldDef) -> String {
                 return s.clone();
             }
         }
-        if let Some(scale) = f.scale {
+        // A non-finite/zero `scale` would zero out the physical value
+        // (e.g. PM2.5 rendered as "0" because scale was 0). Treat
+        // "absent or zero" as "no scale" and fall through to the raw
+        // integer instead.
+        if let Some(scale) = f.scale.filter(|s| *s != 0.0) {
             let phys = num * scale;
-            let mut s = format!("{}", trim_float(phys));
-            if let Some(u) = &f.unit {
-                s.push(' ');
-                s.push_str(u);
-            }
-            return s;
+            return format!("{}", trim_float(phys));
         }
+        return format!("{}", num);
     }
     match &decoded.value {
         Json::String(s) => s.clone(),

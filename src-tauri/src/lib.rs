@@ -1299,6 +1299,7 @@ pub fn run() {
             local_fs::reveal_path,
             local_fs::open_path,
             local_fs::open_url,
+            local_fs::local_write_text,
             git::git_snapshot,
             git::git_status,
             git::git_branches,
