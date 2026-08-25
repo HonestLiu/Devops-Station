@@ -1,0 +1,396 @@
+/* Desktop pet sprite animation.
+ * The sprite is a fixed-size element (one frame) whose background image is the
+ * full sheet. We animate `background-position-x` across `frames` cells using a
+ * steps() timing function, while `background-position-y` pins the active row.
+ * `--pet-fw` = frame width (px), `--pet-frames` = frame count (unitless). */
+
+@keyframes pet-step {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--pet-frames) * var(--pet-fw) * -1);
+  }
+}
+
+.pet-stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pet-sprite {
+  background-repeat: no-repeat;
+  image-rendering: auto;
+  cursor: grab;
+  will-change: background-position;
+  touch-action: none;
+}
+
+.pet-sprite:active {
+  cursor: grabbing;
+}
+
+/* Wrapper that keeps the pet pinned to the left; the menu / chat panel sits to
+ * its right (the window is widened rightward when either is open). */
+.pet-anchor {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pet-bubble {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: 6px;
+  /* Keep the bubble within the window: the containing block is the sprite
+   * wrapper whose width equals the frame, so 92% stays inside the window. */
+  max-width: 92%;
+  max-height: 108px;
+  overflow: auto;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--panel, #1e2030);
+  color: var(--fg, #e6e6f0);
+  border: 1px solid var(--border-subtle, #2a2d40);
+  font-size: 12px;
+  line-height: 1.3;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  white-space: normal;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+  animation: pet-bubble-in 140ms ease-out;
+}
+
+.pet-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: var(--panel, #1e2030);
+  border-right: 1px solid var(--border-subtle, #2a2d40);
+  border-bottom: 1px solid var(--border-subtle, #2a2d40);
+}
+
+/* Approval-reminder dialog (AI waiting for the user's decision). Rendered as a
+   flex child to the RIGHT of the pet, so the window widens to contain it and it
+   is never clipped. Uses a warning accent so the AI status can't be missed. */
+.pet-approval {
+  position: relative;
+  flex: 0 0 auto;
+  width: 260px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid #ffb86c;
+  background: var(--panel, #1e2030);
+  color: var(--fg, #e6e6f0);
+  box-shadow: 0 12px 36px rgba(255, 184, 108, 0.22);
+  overflow: hidden;
+  animation: pet-bubble-in 120ms ease-out;
+}
+
+.pet-approval-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #ffb86c;
+  border-bottom: 1px solid rgba(255, 184, 108, 0.35);
+  background: var(--bg, #161827);
+}
+
+.pet-approval-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pet-approval-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.pet-approval-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.pet-btn {
+  flex: 1 1 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease, background 120ms ease;
+}
+
+.pet-btn:hover {
+  filter: brightness(1.1);
+}
+
+.pet-btn-approve {
+  background: #50fa7b;
+  color: #08210f;
+}
+
+.pet-btn-reject {
+  background: rgba(255, 85, 85, 0.16);
+  border-color: rgba(255, 85, 85, 0.5);
+  color: #ff7b7b;
+}
+
+.pet-approval-close {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--subtle, #8b8fa7);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.pet-approval-close:hover {
+  color: var(--fg, #e6e6f0);
+}
+
+@keyframes pet-bubble-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Right-click context menu (extensible; currently hosts "AI 对话").
+   Rendered as a flex child to the RIGHT of the pet. */
+.pet-menu {
+  flex: 0 0 auto;
+  width: 168px;
+  align-self: flex-end;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2a2d40);
+  background: var(--panel, #1e2030);
+  color: var(--fg, #e6e6f0);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: pet-bubble-in 120ms ease-out;
+}
+
+.pet-menu-title {
+  padding: 4px 8px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--subtle, #8a8fa6);
+}
+
+.pet-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.pet-menu-item:hover {
+  background: var(--hover, rgba(255, 255, 255, 0.06));
+}
+
+/* Right-click chat dialog (talks to the embedded AI). Rendered as a flex child
+   to the RIGHT of the pet; the pet itself stays on the left of the window. */
+.pet-chat {
+  position: relative;
+  flex: 0 0 auto;
+  width: 320px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a2d40);
+  background: var(--panel, #1e2030);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.pet-chat-bar {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--subtle, #8a8fa6);
+  border-bottom: 1px solid var(--border-subtle, #2a2d40);
+  background: var(--bg, #161827);
+}
+
+.pet-chat-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pet-chat-empty {
+  margin: auto;
+  text-align: center;
+  font-size: 12px;
+  color: var(--subtle, #8a8fa6);
+  padding: 8px 12px;
+}
+
+.pet-msg {
+  display: flex;
+  max-width: 100%;
+}
+
+.pet-msg.user {
+  justify-content: flex-end;
+}
+
+.pet-msg.assistant {
+  justify-content: flex-start;
+}
+
+.pet-msg-bubble {
+  max-width: 85%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.pet-msg.user .pet-msg-bubble {
+  background: var(--accent, #7aa2f7);
+  color: #0b0e17;
+  border-bottom-right-radius: 3px;
+}
+
+.pet-msg.assistant .pet-msg-bubble {
+  background: var(--bg, #161827);
+  color: var(--fg, #e6e6f0);
+  border: 1px solid var(--border-subtle, #2a2d40);
+  border-bottom-left-radius: 3px;
+}
+
+.pet-chat-input {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--border-subtle, #2a2d40);
+  background: var(--bg, #161827);
+}
+
+.pet-chat-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2a2d40);
+  background: var(--panel, #1e2030);
+  color: var(--fg, #e6e6f0);
+  font-size: 12px;
+  outline: none;
+}
+
+.pet-chat-input input:focus {
+  border-color: var(--accent, #7aa2f7);
+}
+
+.pet-chat-input input:disabled {
+  opacity: 0.6;
+}
+
+.pet-chat-send {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent, #7aa2f7);
+  color: #0b0e17;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.pet-chat-send:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.pet-chat-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pet-chat-close {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--fg, #e6e6f0);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.pet-chat-close:hover {
+  background: rgba(0, 0, 0, 0.55);
+}

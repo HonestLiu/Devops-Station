@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Activity,
   Cable,
+  Cat,
   FolderOpen,
   Info,
   LayoutDashboard,
@@ -90,6 +91,8 @@ export function Sidebar() {
   const togglePalette = useAppStore((s) => s.togglePalette);
   const collapsed = useAppStore((s) => s.settings.sidebarCollapsed);
   const updateSetting = useAppStore((s) => s.updateSetting);
+  const petPanelOpen = useAppStore((s) => s.petPanelOpen);
+  const setPetPanelOpen = useAppStore((s) => s.setPetPanelOpen);
 
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
@@ -221,6 +224,25 @@ export function Sidebar() {
               {paletteShortcut}
             </span>
           )}
+        </button>
+
+        {/* Desktop pet companion (ChatGPT-Desktop-style) — sits under the
+            command palette in the bottom cluster. */}
+        <button
+          onClick={() => setPetPanelOpen(!petPanelOpen)}
+          title={collapsed ? t("nav.pets") : undefined}
+          className={cn(
+            "no-drag flex items-center rounded-lg text-[13px] transition-colors",
+            collapsed ? "justify-center px-0 py-2" : "justify-between px-2.5 py-2",
+            petPanelOpen
+              ? "bg-accent/15 font-medium text-accent ring-1 ring-inset ring-accent/25"
+              : "text-muted hover:bg-hover hover:text-fg",
+          )}
+        >
+          <span className={cn("flex items-center gap-2.5")}>
+            <Cat size={16} strokeWidth={2} className="shrink-0" />
+            {!collapsed && t("nav.pets")}
+          </span>
         </button>
 
         {/* Grouped icon toolbar: collapse · about · approval bell */}

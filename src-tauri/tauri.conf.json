@@ -23,6 +23,21 @@
         "decorations": true,
         "dragDropEnabled": true,
         "additionalBrowserArgs": "--allow-running-insecure-content --disable-features=BlockInsecurePrivateNetworkRequests"
+      },
+      {
+        "label": "pet",
+        "title": "Pet",
+        "width": 192,
+        "height": 328,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "center": false,
+        "additionalBrowserArgs": "--allow-running-insecure-content --disable-features=BlockInsecurePrivateNetworkRequests"
       }
     ],
     "security": {

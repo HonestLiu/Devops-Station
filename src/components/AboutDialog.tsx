@@ -19,12 +19,17 @@ const REFERENCES: { name: string; url: string; note: string }[] = [
   {
     name: "BaudDance/SerialAssistant",
     url: "https://github.com/BaudDance/SerialAssistant",
-    note: "串口（Serial）功能的参考与派生来源。",
+    note: "串口（Serial）功能的参考与派生来源",
   },
   {
     name: "emqx/MQTTX",
     url: "https://github.com/emqx/MQTTX",
-    note: "MQTT 客户端工具的参考与派生来源。",
+    note: "MQTT 客户端工具的参考与派生来源",
+  },  
+  {
+    name: "alvinunreal/openpets",
+    url: "https://github.com/alvinunreal/openpets",
+    note: "宠物精灵的来源，目前是直接使用其开源素材并改编",
   },  
 ];
 

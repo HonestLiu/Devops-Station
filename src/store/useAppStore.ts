@@ -70,6 +70,22 @@ export interface AppSettings {
    *  button is hidden and any open panel is force-closed (unmounting it and
    *  stopping its work). */
   features: FeatureSettings;
+  /** Desktop pet (ChatGPT-Desktop-style companion) settings. */
+  pet: PetSettings;
+}
+
+/** Persisted desktop-pet configuration. */
+export interface PetSettings {
+  /** Whether the pet overlay window is enabled. */
+  enabled: boolean;
+  /** Selected pet id (must exist in public/pets/manifest.json). */
+  petId: string;
+  /** Sprite scale multiplier (0.5 – 2.5). */
+  scale: number;
+  /** React to the AI agent status (perm-state-changed). */
+  reactToAi: boolean;
+  /** When true the pet stays at a fixed position instead of wandering. */
+  stayPut: boolean;
 }
 
 /** Which toolbar panels/features are enabled. */
@@ -156,6 +172,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     usb: true,
     knownHosts: true,
   },
+  pet: {
+    enabled: false,
+    petId: "professor-hoot",
+    scale: 1,
+    reactToAi: true,
+    stayPut: false,
+  },
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",
@@ -175,11 +198,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
 interface AppState {
   page: Page;
   paletteOpen: boolean;
+  /** Whether the desktop-pet settings panel is open. */
+  petPanelOpen: boolean;
   settings: AppSettings;
   settingsLoaded: boolean;
 
   setPage: (page: Page) => void;
   togglePalette: (open?: boolean) => void;
+  setPetPanelOpen: (open: boolean) => void;
   loadSettings: () => Promise<void>;
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>;
   resetSettings: () => Promise<void>;
@@ -227,12 +253,14 @@ function repairFontFamily(family: string): string {
 export const useAppStore = create<AppState>((set, get) => ({
   page: "dashboard",
   paletteOpen: false,
+  petPanelOpen: false,
   settings: DEFAULT_SETTINGS,
   settingsLoaded: false,
 
   setPage: (page) => set({ page }),
   togglePalette: (open) =>
     set((s) => ({ paletteOpen: open === undefined ? !s.paletteOpen : open })),
+  setPetPanelOpen: (open) => set({ petPanelOpen: open }),
 
   loadSettings: async () => {
     try {
@@ -300,6 +328,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         features: {
           ...DEFAULT_SETTINGS.features,
           ...((stored as Partial<AppSettings>).features ?? {}),
+        },
+        // `pet` is a nested object — merge field-by-field.
+        pet: {
+          ...DEFAULT_SETTINGS.pet,
+          ...((stored as Partial<AppSettings>).pet ?? {}),
         },
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "layout": {
+    "frameWidth": 192,
+    "frameHeight": 208,
+    "columns": 8,
+    "rows": 9
+  },
+  "pets": [
+    {
+      "id": "professor-hoot",
+      "name": "Professor Hoot",
+      "sprite": "/pets/default/spritesheet.webp",
+      "thumbnail": "/pets/default/thumbnail.png",
+      "tint": null
+    },
+    {
+      "id": "mint",
+      "name": "Mint",
+      "sprite": "/pets/default/spritesheet.webp",
+      "thumbnail": "/pets/default/thumbnail.png",
+      "tint": "hue-rotate(60deg) saturate(1.2)"
+    },
+    {
+      "id": "bubblegum",
+      "name": "Bubblegum",
+      "sprite": "/pets/default/spritesheet.webp",
+      "thumbnail": "/pets/default/thumbnail.png",
+      "tint": "hue-rotate(300deg) saturate(1.3)"
+    },
+    {
+      "id": "sunset",
+      "name": "Sunset",
+      "sprite": "/pets/default/spritesheet.webp",
+      "thumbnail": "/pets/default/thumbnail.png",
+      "tint": "hue-rotate(200deg) saturate(1.1) brightness(1.05)"
+    },
+    {
+      "id": "mono",
+      "name": "Mono",
+      "sprite": "/pets/default/spritesheet.webp",
+      "thumbnail": "/pets/default/thumbnail.png",
+      "tint": "grayscale(1) contrast(1.1)"
+    }
+  ]
+}

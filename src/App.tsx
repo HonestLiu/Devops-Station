@@ -17,6 +17,7 @@ import {
 
 import { Sidebar } from "./components/Sidebar";
 import { TabBar } from "./components/TabBar";
+import { PetsPanel } from "./components/PetsPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ContextMenu } from "./components/ContextMenu";
 
@@ -47,6 +48,7 @@ import { useAppStore, type Page } from "./store/useAppStore";
 import { useTabsStore } from "./store/useTabsStore";
 import { usePermStore } from "./store/usePermStore";
 import { useContextMenu, type MenuItem } from "./store/useContextMenu";
+import { petReact, petAlert, petAlertClear } from "./pets/usePetController";
 import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import { checkForUpdate } from "./lib/updater";
@@ -54,7 +56,7 @@ import { permHook } from "./lib/api";
 import { pullSync, isSyncConfigured } from "./lib/sync";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { HostKeyPrompt } from "./components/HostKeyPrompt";
-import { approveWaitingNow } from "./lib/quickApprove";
+import { approveWaitingNow, approveSession, rejectSession, findApproveTarget } from "./lib/quickApprove";
 import { focusActiveTerminal } from "./ai/terminalBridge";
 import {
   isShortcutRecording,
@@ -424,6 +426,56 @@ export default function App() {
     };
   }, []);
 
+  // Pet ↔ AI agent status: mirror the agent status onto the desktop pet so it
+  // reacts like the ChatGPT Desktop companion (working / waiting / success).
+  // When the AI is blocked waiting for the user's approval we also pop a
+  // persistent reminder bubble so the status is impossible to miss.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    let wasWorking = false;
+    let wasWaiting = false;
+    void listen<{ lights: { sessions: { status: string }[] }[] }>(
+      "perm-state-changed",
+      (e) => {
+        const { pet } = useAppStore.getState().settings;
+        if (!pet.enabled || !pet.reactToAi) return;
+        const sessions = e.payload.lights.flatMap((l) => l.sessions);
+        const statuses = sessions.map((s) => s.status);
+        const working = statuses.includes("working");
+        const waiting = statuses.includes("waitingapproval");
+        if (waiting) {
+          if (!wasWaiting) {
+            wasWaiting = true;
+            // Surface the most relevant pending request (tool name / snippet).
+            const top = usePermStore.getState().items[0];
+            const tool = top?.tool;
+            const text = tool
+              ? t("pets.alertTool", { tool })
+              : t("pets.alertPlain");
+            petAlert(text, top?.targetSessionId);
+          }
+          petReact("waiting");
+        } else if (working) {
+          if (wasWaiting) {
+            wasWaiting = false;
+            petAlertClear();
+          }
+          wasWorking = true;
+          petReact("running");
+        } else {
+          if (wasWaiting) {
+            wasWaiting = false;
+            petAlertClear();
+          }
+          if (wasWorking) petReact("success");
+          wasWorking = false;
+          petReact("idle");
+        }
+      },
+    ).then((fn) => (un = fn));
+    return () => un?.();
+  }, []);
+
   // When the window regains focus (e.g. Alt+Tab back), put keyboard focus back
   // on the active terminal so typing works immediately without a click. Text
   // fields are left alone — the user may have been typing in the inline ask /
@@ -492,6 +544,33 @@ export default function App() {
     const un = listen("approval-shortcut", () => {
       void approveWaitingNow();
     });
+    return () => {
+      void un.then((fn) => fn());
+    };
+  }, []);
+
+  // Approve / reject straight from the pet's approval-reminder dialog. The pet
+  // window emits the action with the local session id it was given; if that's
+  // missing we fall back to the same target-resolution the global shortcut uses.
+  useEffect(() => {
+    const un = listen<{ action: "approve" | "reject"; sessionId?: string }>(
+      "pet:approval-action",
+      (e) => {
+        const sid = e.payload.sessionId || findApproveTarget();
+        if (!sid) return;
+        const done =
+          e.payload.action === "approve"
+            ? approveSession(sid)
+            : rejectSession(sid);
+        void done.then(() => {
+          // Clear the in-app bell entry so it doesn't linger after the decision.
+          const item = usePermStore.getState().items.find(
+            (i) => i.targetSessionId === sid,
+          );
+          if (item) usePermStore.getState().dismiss(item.id);
+        });
+      },
+    );
     return () => {
       void un.then((fn) => fn());
     };
@@ -610,6 +689,7 @@ export default function App() {
       <ContextMenu />
       <UpdateDialog />
       <HostKeyPrompt />
+      <PetsPanel />
     </div>
   );
 }
