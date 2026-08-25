@@ -20,6 +20,7 @@ import { useT, type TKey } from "@/i18n";
 import { useAppStore, type Page } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { NotificationBell } from "./NotificationBell";
+import { AiStatusWidget } from "./AiStatusWidget";
 import { AboutDialog } from "./AboutDialog";
 
 interface NavItem {
@@ -226,7 +227,7 @@ export function Sidebar() {
         <div
           className={cn(
             "grid select-none rounded-lg bg-bg/50 p-1",
-            collapsed ? "grid-cols-1" : "grid-cols-3 justify-items-center",
+            collapsed ? "grid-cols-1" : "grid-cols-4 justify-items-center",
           )}
         >
           <button
@@ -247,6 +248,7 @@ export function Sidebar() {
           >
             <Info size={15} strokeWidth={2} />
           </button>
+          <AiStatusWidget />
           <NotificationBell />
         </div>
       </div>

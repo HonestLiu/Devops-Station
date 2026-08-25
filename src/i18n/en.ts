@@ -1353,4 +1353,12 @@ export const en: Record<keyof typeof zh, string> = {
   "update.downloading": "Downloading update",
   "update.install": "Update now",
   "update.later": "Later",
+
+  // --- AI status widget ----------------------------------------------------
+  "aiStatus.title": "AI Status",
+  "aiStatus.empty": "No AI coding-assistant activity yet. When Claude Code / Codex etc. start working or wait for your approval, this traffic light shows it.",
+  "aiStatus.waiting": "Waiting for approval",
+  "aiStatus.working": "Working",
+  "aiStatus.resolved": "Done",
+  "aiStatus.escalated": "Still unhandled",
 };

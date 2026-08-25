@@ -35,9 +35,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
 
-use crate::types::PermRequest;
+use crate::perm_aggregator::AgentStatus;
 
 // ---------------------------------------------------------------------------
 // Script templates
@@ -78,8 +77,10 @@ def main():
         print(json.dumps({"continue": True}))
         return
     event = payload.get("hook_event_name", "")
-    # Only the exact "needs approval" event matters; everything else passes.
-    if event not in ("PermissionRequest", "PreToolUse"):
+    # Forward the events we surface (approval / notification / session end);
+    # everything else is ignored — and we still fail-open so the agent's native
+    # approval prompt is never blocked.
+    if event not in ("PermissionRequest", "Notification", "Stop", "SessionEnd"):
         print(json.dumps({"continue": True}))
         return
     ti = payload.get("tool_input") or {}
@@ -164,6 +165,53 @@ export default async () => {
 "#;
 
 // ---------------------------------------------------------------------------
+// Event model (tolerant, tool-agnostic)
+// ---------------------------------------------------------------------------
+
+/// Incoming payload from a tool hook/plugin. Field names are normalised with
+/// serde `alias` so Claude Code (`session_id`/`tool_name`/`hook_event_name`),
+/// Codex, OpenCode, and any future tool can POST slightly different shapes and
+/// still parse.
+#[derive(Debug, Deserialize)]
+struct IncomingEvent {
+    /// Normalised-by-the-sender event type, e.g. `PermissionRequest`,
+    /// `Notification`, `Stop`, `PreToolUse`, … (see `normalize_event`).
+    #[serde(default, alias = "event_type", alias = "eventType", alias = "type")]
+    event: String,
+    #[serde(default, alias = "sessionId")]
+    session_id: Option<String>,
+    #[serde(default, alias = "toolName", alias = "tool_name", alias = "tool")]
+    tool: Option<String>,
+    #[serde(
+        default,
+        alias = "snippet",
+        alias = "detail",
+        alias = "command",
+        alias = "message",
+        alias = "text"
+    )]
+    snippet: Option<String>,
+    #[serde(default, alias = "cwd", alias = "projectDir", alias = "project_dir")]
+    cwd: Option<String>,
+}
+
+/// Map a tool-specific event name to our canonical `AgentStatus`. Accepts the
+/// raw strings Claude Code / Codex / OpenCode use (with mixed separators).
+fn normalize_event(event: &str) -> Option<AgentStatus> {
+    match event.to_ascii_lowercase().replace(['-', '_', ' '], "").as_str() {
+        "permissionrequest" | "permission" | "notification" | "notify" | "tuitoastshow" => {
+            Some(AgentStatus::WaitingApproval)
+        }
+        "pretooluse" | "posttooluse" | "promptsubmit" | "userpromptsubmit" | "working" => {
+            Some(AgentStatus::Working)
+        }
+        "stop" | "sessionend" | "session-end" | "end" | "done" => Some(AgentStatus::Resolved),
+        "sessionstart" | "session-start" | "start" | "idle" => Some(AgentStatus::Idle),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Local HTTP listener
 // ---------------------------------------------------------------------------
 
@@ -221,7 +269,6 @@ fn server_lock() -> &'static Mutex<Option<HookServerState>> {
 /// user having to reinstall anything.
 #[tauri::command]
 pub async fn perm_hook_start(
-    app: AppHandle,
     port: u16,
     // Tools the user wants managed (Claude Code / Codex / OpenCode). When
     // `None` we keep the old behaviour of re-syncing everything, so callers
@@ -302,7 +349,7 @@ pub async fn perm_hook_start(
     let shutdown2 = shutdown.clone();
     let thread = std::thread::Builder::new()
         .name("perm-hook-server".into())
-        .spawn(move || serve(app, listener, shutdown2))
+        .spawn(move || serve(listener, shutdown2))
         .map_err(|e| format!("启动审批服务失败：{e}"))?;
 
     *guard = Some(HookServerState { port: actual, thread, shutdown });
@@ -321,10 +368,10 @@ pub async fn perm_hook_stop() -> Result<(), String> {
     Ok(())
 }
 
-fn serve(app: AppHandle, listener: TcpListener, shutdown: Arc<AtomicBool>) {
+fn serve(listener: TcpListener, shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Relaxed) {
         match listener.accept() {
-            Ok((stream, _)) => handle_conn(app.clone(), stream),
+            Ok((stream, _)) => handle_conn(stream),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -334,9 +381,10 @@ fn serve(app: AppHandle, listener: TcpListener, shutdown: Arc<AtomicBool>) {
 }
 
 /// Minimal HTTP/1.1 handler: accepts `POST /approval` with a JSON body,
-/// emits a `perm-request` event (source = "hook") and raises the OS
-/// notification. Anything else gets 404.
-fn handle_conn(app: AppHandle, mut stream: TcpStream) {
+/// normalises the event and routes it to the shared `PermAggregator` (which
+/// owns dedup, the bell emit, the OS notification, and the traffic-light
+/// state). Anything else gets 404.
+fn handle_conn(mut stream: TcpStream) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
     let mut buf = [0u8; 16384];
     let mut read = 0usize;
@@ -377,59 +425,37 @@ fn handle_conn(app: AppHandle, mut stream: TcpStream) {
     let mut status_line = "HTTP/1.1 404 Not Found";
     let mut body_out: &[u8] = b"";
     if path == "/approval" && !body.trim().is_empty() {
-        if let Ok(v) = serde_json::from_str::<Value>(&body) {
-            let tool = v
-                .get("tool")
-                .and_then(|x| x.as_str())
-                .unwrap_or("Coding Agent")
-                .to_string();
-            let snippet = v.get("snippet").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            let session_id = v
-                .get("session_id")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            let ts = v
-                .get("ts")
-                .and_then(|x| x.as_u64())
-                .unwrap_or_else(|| {
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0)
-                });
-            let payload = PermRequest {
-                session_id,
-                tool: tool.clone(),
-                snippet: snippet.clone(),
-                ts,
-                source: "hook".to_string(),
-            };
-            // In-app bell entry. Log the outcome so a "toast OK but bell empty"
-            // report can be diagnosed from server.log instead of guessed at.
-            match app.emit("perm-request", &payload) {
-                Ok(()) => debug_log(&format!(
-                    "POST /approval tool={tool} -> perm-request emitted (snippet: {})",
-                    snippet.chars().take(60).collect::<String>()
-                )),
-                Err(e) => debug_log(&format!(
-                    "POST /approval tool={tool} -> perm-request emit FAILED: {e}"
-                )),
-            }
-            // OS notification (same switch as the scan path).
-            if crate::perm::approval_notifications_enabled() {
-                let app2 = app.clone();
-                let tool2 = tool.clone();
-                let snippet2 = snippet.clone();
-                std::thread::spawn(move || {
-                    let lines: Vec<&str> = snippet2.lines().collect();
-                    let body = if lines.len() > 3 {
-                        format!("{}\n…", lines[..3].join("\n"))
-                    } else {
-                        snippet2
-                    };
-                    crate::notify::show(&app2, &format!("Approval needed · {tool2}"), &body);
-                });
+        if let Ok(ev) = serde_json::from_str::<IncomingEvent>(&body) {
+            let event = normalize_event(&ev.event);
+            let session_id = ev
+                .session_id
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "unknown".to_string());
+            let tool = ev
+                .tool
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "Coding Agent".to_string());
+            match event {
+                Some(AgentStatus::WaitingApproval) => {
+                    let snippet = ev
+                        .snippet
+                        .filter(|s| !s.trim().is_empty())
+                        .unwrap_or_else(|| tool.clone());
+                    if let Some(agg) = crate::perm_aggregator::global() {
+                        agg.ingest_waiting(&tool, &snippet, ev.cwd, &session_id, "hook");
+                    }
+                }
+                Some(AgentStatus::Resolved) => {
+                    if let Some(agg) = crate::perm_aggregator::global() {
+                        agg.ack(&session_id);
+                    }
+                }
+                Some(status) => {
+                    if let Some(agg) = crate::perm_aggregator::global() {
+                        agg.ingest_status(&session_id, &tool, status, ev.cwd);
+                    }
+                }
+                None => {}
             }
             status_line = "HTTP/1.1 200 OK";
             body_out = b"OK";
@@ -608,6 +634,38 @@ fn remove_our_hooks(events: &mut Value, event_name: &str) -> bool {
     true
 }
 
+// Event names we register our hook under (and clean up from). They drive the
+// traffic-light: `PermissionRequest`/`Notification` → red (waiting), `Stop` →
+// clears. Fail-open, so the agent's native prompt is never blocked.
+const HOOK_EVENTS: &[&str] = &["PermissionRequest", "Notification", "Stop"];
+
+/// Back up a config file to `<path>.bak` before we mutate it (ai-light style),
+/// so a broken edit can be recovered. Best-effort.
+fn backup_config(path: &Path) {
+    if path.exists() && path.is_file() {
+        let _ = std::fs::copy(path, path.with_extension("json.bak"));
+    }
+}
+
+/// Ensure our notify command is registered under `hooks.{event}` exactly once.
+/// Strips any earlier copy of ours first so re-installs are idempotent.
+fn add_hook_for_event(root: &mut Value, event: &str, cmd: &str) {
+    if let Some(hooks) = root.get_mut("hooks") {
+        remove_our_hooks(hooks, event);
+    }
+    let hooks = ensure_obj(root, "hooks");
+    let arr = ensure_arr(hooks, event);
+    let already = arr
+        .as_array()
+        .map(|a| a.iter().any(has_our_command))
+        .unwrap_or(false);
+    if !already {
+        if let Some(a) = arr.as_array_mut() {
+            a.push(json!({ "matcher": "", "hooks": [{ "type": "command", "command": cmd }] }));
+        }
+    }
+}
+
 // --- Claude Code ------------------------------------------------------------
 
 fn claude_settings_path() -> PathBuf {
@@ -619,22 +677,11 @@ fn install_claude(port: u16) -> Result<String, String> {
     if !cfg.exists() {
         return Err("未检测到 Claude Code 配置（~/.claude/settings.json）。请先安装并至少运行一次 Claude Code。".to_string());
     }
+    backup_config(&cfg);
     let cmd = write_hook_script(port)?;
     let mut settings = read_json(&cfg)?;
-    // Drop any previous install of ours first (borrow ends before re-acquire).
-    if let Some(hooks) = settings.get_mut("hooks") {
-        remove_our_hooks(hooks, "PermissionRequest");
-    }
-    let hooks = ensure_obj(&mut settings, "hooks");
-    let perm = ensure_arr(hooks, "PermissionRequest");
-    let already = perm
-        .as_array()
-        .map(|arr| arr.iter().any(has_our_command))
-        .unwrap_or(false);
-    if !already {
-        perm.as_array_mut()
-            .ok_or_else(|| "hooks.PermissionRequest 格式异常".to_string())?
-            .push(json!({ "matcher": "", "hooks": [{ "type": "command", "command": cmd }] }));
+    for ev in HOOK_EVENTS {
+        add_hook_for_event(&mut settings, ev, &cmd);
     }
     write_json(&cfg, &settings)?;
     Ok(format!("已为 Claude Code 安装审批 HOOK（{}）", cfg.display()))
@@ -647,15 +694,19 @@ fn uninstall_claude() -> Result<String, String> {
     }
     let mut settings = read_json(&cfg)?;
     if let Some(hooks) = settings.get_mut("hooks") {
-        remove_our_hooks(hooks, "PermissionRequest");
-        // Drop empty PermissionRequest arrays so we never leave junk behind.
-        if hooks
-            .get("PermissionRequest")
-            .and_then(|v| v.as_array())
-            .map(|a| a.is_empty())
-            .unwrap_or(false)
-        {
-            hooks.as_object_mut().map(|m| m.remove("PermissionRequest"));
+        for ev in HOOK_EVENTS {
+            remove_our_hooks(hooks, ev);
+        }
+        // Drop now-empty arrays so we never leave junk behind.
+        if let Some(obj) = hooks.as_object_mut() {
+            let empty: Vec<String> = obj
+                .iter()
+                .filter(|(_, v)| v.as_array().map(|a| a.is_empty()).unwrap_or(false))
+                .map(|(k, _)| k.clone())
+                .collect();
+            for k in empty {
+                obj.remove(&k);
+            }
         }
         write_json(&cfg, &settings)?;
     }
@@ -670,10 +721,12 @@ fn status_claude() -> HookStatus {
             .ok()
             .and_then(|s| s.get("hooks").cloned())
             .map(|h| {
-                h.get("PermissionRequest")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().any(has_our_command))
-                    .unwrap_or(false)
+                HOOK_EVENTS.iter().any(|ev| {
+                    h.get(*ev)
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().any(has_our_command))
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false);
     HookStatus {
@@ -701,25 +754,14 @@ fn install_codex(port: u16) -> Result<String, String> {
     let cmd = write_hook_script(port)?;
 
     let hooks_file = codex_hooks_path();
+    backup_config(&hooks_file);
     let mut hooks = if hooks_file.exists() {
         read_json(&hooks_file)?
     } else {
         json!({})
     };
-    // Drop any previous install of ours first.
-    if let Some(h) = hooks.get_mut("hooks") {
-        remove_our_hooks(h, "PermissionRequest");
-    }
-    let h = ensure_obj(&mut hooks, "hooks");
-    let perm = ensure_arr(h, "PermissionRequest");
-    let already = perm
-        .as_array()
-        .map(|arr| arr.iter().any(has_our_command))
-        .unwrap_or(false);
-    if !already {
-        perm.as_array_mut()
-            .ok_or_else(|| "hooks.PermissionRequest 格式异常".to_string())?
-            .push(json!({ "matcher": "", "hooks": [{ "type": "command", "command": cmd, "timeout": 5 }] }));
+    for ev in HOOK_EVENTS {
+        add_hook_for_event(&mut hooks, ev, &cmd);
     }
     write_json(&hooks_file, &hooks)?;
 
@@ -759,14 +801,18 @@ fn uninstall_codex() -> Result<String, String> {
     if hooks_file.exists() {
         let mut hooks = read_json(&hooks_file)?;
         if let Some(h) = hooks.get_mut("hooks") {
-            remove_our_hooks(h, "PermissionRequest");
-            if h
-                .get("PermissionRequest")
-                .and_then(|v| v.as_array())
-                .map(|a| a.is_empty())
-                .unwrap_or(false)
-            {
-                h.as_object_mut().map(|m| m.remove("PermissionRequest"));
+            for ev in HOOK_EVENTS {
+                remove_our_hooks(h, ev);
+            }
+            if let Some(obj) = h.as_object_mut() {
+                let empty: Vec<String> = obj
+                    .iter()
+                    .filter(|(_, v)| v.as_array().map(|a| a.is_empty()).unwrap_or(false))
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                for k in empty {
+                    obj.remove(&k);
+                }
             }
             write_json(&hooks_file, &hooks)?;
         }
@@ -782,10 +828,12 @@ fn status_codex() -> HookStatus {
             .ok()
             .and_then(|s| s.get("hooks").cloned())
             .map(|h| {
-                h.get("PermissionRequest")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().any(has_our_command))
-                    .unwrap_or(false)
+                HOOK_EVENTS.iter().any(|ev| {
+                    h.get(*ev)
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().any(has_our_command))
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false);
     HookStatus {

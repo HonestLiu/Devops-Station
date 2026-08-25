@@ -13,6 +13,7 @@ mod local_fs;
 mod mqtt;
 mod notify;
 mod perm;
+mod perm_aggregator;
 mod perm_hook;
 mod protocol;
 pub use protocol::{
@@ -721,6 +722,25 @@ fn set_scan_fallback(enabled: bool) {
     crate::perm::set_scan_fallback(enabled);
 }
 
+/// Snapshot of the AI-agent activity state (per-project traffic lights) for the
+/// frontend status widget. The same data is also pushed via the
+/// `perm-state-changed` event whenever it changes.
+#[tauri::command]
+fn perm_state() -> crate::perm_aggregator::PermState {
+    crate::perm_aggregator::global()
+        .map(|a| a.get_state())
+        .unwrap_or_default()
+}
+
+/// Tell the backend the user has acted on (approved / rejected / dismissed) a
+/// given agent session, so escalation stops and the traffic light clears.
+#[tauri::command]
+fn perm_ack(session_id: String) {
+    if let Some(a) = crate::perm_aggregator::global() {
+        a.ack(&session_id);
+    }
+}
+
 /// Register (or clear) the OS-level quick-approve shortcut. The accelerator is
 /// a plugin-format string like "Ctrl+Shift+Enter"; an empty string unregisters.
 /// While registered, pressing the combo anywhere on the system emits
@@ -1082,6 +1102,12 @@ pub fn run() {
             // that already ship the shortcut via the installer.
             crate::notify::register_aumid();
 
+            // Single source of truth for the AI approval-reminder state
+            // (per-project traffic light + dedup + escalation). Must be created
+            // before any approval event can arrive (the HOOK listener below, or
+            // the legacy scan path during a session).
+            crate::perm_aggregator::init(app.handle().clone());
+
             let data_dir = match app.path().app_data_dir() {
                 Ok(d) => d,
                 Err(e) => return Err(format!("cannot resolve app data dir: {e}").into()),
@@ -1138,11 +1164,10 @@ pub fn run() {
                         "setup: approval={approval} enabled={enabled} port={port} managed={managed:?}"
                     ));
                     if enabled && port > 0 {
-                        let handle = app.handle().clone();
                         // block_on (not spawn): guarantees the listener starts
                         // before setup returns, immune to task-scheduling quirks.
                         let r = tauri::async_runtime::block_on(
-                            crate::perm_hook::perm_hook_start(handle, port, Some(managed)),
+                            crate::perm_hook::perm_hook_start(port, Some(managed)),
                         );
                         crate::perm_hook::debug_log(&format!(
                             "setup: listener start result {r:?}"
@@ -1279,6 +1304,8 @@ pub fn run() {
             notify_show,
             set_approval_notifications,
             set_scan_fallback,
+            perm_state,
+            perm_ack,
             set_global_approve_shortcut,
             perm_hook::perm_hook_start,
             perm_hook::perm_hook_stop,

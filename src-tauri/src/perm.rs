@@ -21,12 +21,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use regex::Regex;
-use tauri::{AppHandle, Emitter};
-
-use crate::types::PermRequest;
 
 /// One matcher: a regex that flags a permission prompt (in the tail of output).
 /// The tool *label* is derived separately by `attribute_tool`, because the agent's
@@ -282,9 +279,9 @@ fn attribute_tool(text: &str) -> &'static str {
 }
 
 /// Inspect one chunk of raw terminal output. If it reads as a permission prompt,
-/// emit a `perm-request` event and raise an OS notification — at most once per
-/// `ALERT_WINDOW` per session, and with the OS notification raised off the hot path.
-pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
+/// route it to the shared `PermAggregator`, which owns dedup, the bell emit, the
+/// OS notification, and the per-project traffic-light state.
+pub fn scan_and_emit(session_id: &str, chunk: &[u8]) {
     // Legacy scan path — off by default now that per-tool HOOKS are the primary
     // detection mechanism. Keeping this gate here means the scan can be
     // re-enabled from Settings as a compatibility fallback without touching the
@@ -410,42 +407,10 @@ pub fn scan_and_emit(app: &AppHandle, session_id: &str, chunk: &[u8]) {
         last.insert(session_id.to_string(), AlertStamp { at: now, prefix: sig });
     }
 
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    let payload = PermRequest {
-        session_id: session_id.to_string(),
-        tool: tool.to_string(),
-        snippet: snippet.clone(),
-        ts,
-        source: "scan".to_string(),
-    };
-    // In-app bell + history (frontend listens on this event). Throttled to once
-    // per ALERT_WINDOW, so this can no longer flood the webview main thread.
-    let _ = app.emit("perm-request", &payload);
-
-    // OS-level system notification so the user is pulled away from whatever
-    // they were doing and comes back to approve. Failures are non-fatal. This is
-    // spawned onto the async runtime (not run inline) so a slow or blocking
-    // `show()` can never stall the terminal output thread, which was part of
-    // what made the app feel frozen.
-    if APPROVAL_NOTIFICATIONS_ENABLED.load(Ordering::Relaxed) {
-        let app2 = app.clone();
-        let snippet2 = snippet;
-        tauri::async_runtime::spawn(async move {
-            let title = format!("Approval needed · {tool}");
-            // Cap the toast body at 3 whole lines so a long prompt never lands on
-            // a truncated word in the OS notification centre.
-            let lines: Vec<&str> = snippet2.lines().collect();
-            let body = if lines.len() > 3 {
-                format!("{}\n…", lines[..3].join("\n"))
-            } else {
-                snippet2
-            };
-            // Attribute the OS notification to this app (see crate::notify).
-            crate::notify::show(&app2, &title, &body);
-        });
+    // Route to the shared aggregator: it handles dedup, the bell emit, the OS
+    // notification, and the per-project traffic light in one place (so the scan
+    // path and the hook path can never disagree).
+    if let Some(agg) = crate::perm_aggregator::global() {
+        agg.ingest_waiting(&tool, &snippet, None, session_id, "scan");
     }
 }

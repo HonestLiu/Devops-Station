@@ -804,6 +804,36 @@ export interface PermRequest {
   /** `"hook"` — the tool's own permission hook fired (primary, exact);
    *  `"scan"` — legacy terminal-output regex scan (opt-in compat). */
   source: "hook" | "scan";
+  /** Project directory the agent runs in, when known. */
+  cwd?: string;
+}
+
+/** Status of a single AI-agent session (mirrors `AgentStatus` in Rust). */
+export type AgentStatus = "idle" | "working" | "waitingapproval" | "resolved";
+
+/** One agent session tracked by the backend (per-project traffic light). */
+export interface AgentSession {
+  sessionId: string;
+  tool: string;
+  status: AgentStatus;
+  snippet: string;
+  cwd?: string | null;
+  ts: number;
+  escalated: boolean;
+}
+
+/** A project (or fallback grouping) aggregating its agent sessions. */
+export interface ProjectLight {
+  projectId: string;
+  projectLabel: string;
+  status: AgentStatus;
+  sessions: AgentSession[];
+  lastEventAt: number;
+}
+
+/** Snapshot of all AI-agent activity; payload of `perm-state-changed`. */
+export interface PermState {
+  lights: ProjectLight[];
 }
 
 // --- J-Link (SEGGER debug probe) ---------------------------------------------

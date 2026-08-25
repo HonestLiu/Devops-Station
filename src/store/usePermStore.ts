@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { isWaitingForInput } from "@/ai/errorScan";
+import { permHook } from "@/lib/api";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useSessionStore } from "@/store/useSessionStore";
 
@@ -163,8 +164,11 @@ export const usePermStore = create<PermState>((set, get) => ({
       // window (TUI still on screen) doesn't pop straight back.
       const key = `${item.sessionId}|${fingerprint(item.snippet)}`;
       dismissed.set(key, Date.now());
-      // Dismissing the entry means the user has dealt with it — clear the tab's
-      // "waiting" badge (and hook marker) so the hourglass doesn't linger.
+      // Dismissing the entry means the user has dealt with it — tell the backend
+      // so escalation stops and the traffic-light entry clears.
+      void permHook.ack(item.sessionId).catch(() => undefined);
+      // Clear the tab's "waiting" badge (and hook marker) so the hourglass
+      // doesn't linger.
       if (item.targetSessionId) {
         useSessionStore.getState().markSettled(item.targetSessionId);
       }
@@ -178,6 +182,7 @@ export const usePermStore = create<PermState>((set, get) => ({
     const now = Date.now();
     for (const i of get().items) {
       dismissed.set(`${i.sessionId}|${fingerprint(i.snippet)}`, now);
+      void permHook.ack(i.sessionId).catch(() => undefined);
     }
     set({ items: [], unseen: 0 });
   },

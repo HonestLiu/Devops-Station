@@ -316,6 +316,12 @@ export const zh = {
   "perm.minsAgo": "{n} 分钟前",
   "perm.hoursAgo": "{n} 小时前",
   "perm.empty": "暂无待审批请求。当编码代理（Claude Code 等）等待你确认时，会在这里（以及系统通知）提醒你。",
+  "aiStatus.title": "AI 状态",
+  "aiStatus.empty": "暂无 AI 编程助手活动。当 Claude Code / Codex 等开始工作、或等待你审批时，会在这里以红绿灯显示。",
+  "aiStatus.waiting": "等待审批",
+  "aiStatus.working": "工作中",
+  "aiStatus.resolved": "已完成",
+  "aiStatus.escalated": "仍未处理",
 
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "主机",

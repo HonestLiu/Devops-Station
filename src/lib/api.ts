@@ -33,6 +33,7 @@ import type {
   JLinkResponse,
   ProfileExportInfo,
   ProfileImportInfo,
+  PermState,
   MqttConnection,
   MqttConnectConfig,
   MqttMessage,
@@ -567,6 +568,11 @@ export const permHook = {
   /** Enable/disable the legacy terminal-output scan (compat mode, default off). */
   setScanFallback: (enabled: boolean) =>
     call<void>("set_scan_fallback", { enabled }),
+  /** Fetch the current AI-agent activity snapshot (per-project traffic lights). */
+  state: () => call<PermState>("perm_state", {}),
+  /** Tell the backend a session was acted on (approve/reject/dismiss) so it
+   *  stops reminding and clears the traffic-light entry. */
+  ack: (sessionId: string) => call<void>("perm_ack", { sessionId }),
   /**
    * Register the OS-level quick-approve shortcut (accelerator string like
    * "Ctrl+Shift+Enter", or null/empty to unregister). Fires "approval-shortcut"

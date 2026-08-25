@@ -506,6 +506,10 @@ pub struct PermRequest {
     ///     false positives; this is the primary path).
     ///   - `"scan"` — legacy terminal-output regex scan (opt-in compatibility).
     pub source: String,
+    /// Project directory the agent is operating in, when known (drives the
+    /// per-project traffic-light grouping on the frontend).
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
