@@ -94,31 +94,63 @@ function topicMatches(topic: string, sub: string): boolean {
   return i === t.length;
 }
 
-/** Decode a base64 payload for display in the selected format. */
-function formatPayload(b64: string, format: PayloadFormat): { text: string; kind: "text" | "binary" } {
+/** Cheap validation: does `s` parse as JSON? Used to decide code-block rendering. */
+function isJsonValue(s: string): boolean {
+  try {
+    JSON.parse(s);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Escape a string for safe insertion into `innerHTML`. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Lightweight, dependency-free JSON syntax highlighter.
+ * Returns HTML with `<span class="tok-*">` wrappers. The input is HTML-escaped
+ * first, so it is safe to inject via `dangerouslySetInnerHTML`.
+ */
+function highlightJson(json: string): string {
+  return escapeHtml(json).replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    (match) => {
+      let cls = "tok-number";
+      if (match.startsWith('"')) {
+        cls = /:$/.test(match) ? "tok-key" : "tok-string";
+      } else if (match === "true" || match === "false") {
+        cls = "tok-boolean";
+      } else if (match === "null") {
+        cls = "tok-null";
+      }
+      return `<span class="${cls}">${match}</span>`;
+    },
+  );
+}
+
+/** Decode a base64 payload, auto-detecting JSON for a highlighted view. */
+function formatPayload(
+  b64: string,
+): { text: string; kind: "text" | "binary" | "json" } {
   try {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
-    if (format === "base64") return { text: b64, kind: "text" };
-    if (format === "hex") {
-      return {
-        text: Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(" "),
-        kind: "text",
-      };
-    }
-
     const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
     const hasBinary = !text || /[�]/.test(text) || /[\x00-\x08\x0E-\x1F]/.test(text);
     if (hasBinary) return { text: b64, kind: "binary" };
 
-    if (format === "json") {
+    // Auto-detect JSON so payloads arrive as a highlighted code block instead
+    // of a wall of plain text.
+    const trimmed = text.trim();
+    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && isJsonValue(trimmed)) {
       try {
-        return { text: JSON.stringify(JSON.parse(text), null, 2), kind: "text" };
-      } catch {
-        return { text, kind: "text" };
-      }
+        return { text: JSON.stringify(JSON.parse(trimmed), null, 2), kind: "json" };
+      } catch {}
     }
     return { text, kind: "text" };
   } catch {
@@ -216,7 +248,6 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
   // message list
   const [filter, setFilter] = useState("");
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
-  const [displayFormat, setDisplayFormat] = useState<PayloadFormat>("text");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -569,18 +600,6 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
               <span className="text-[12px] font-semibold text-fg">{t("mqtt.messages")}</span>
               <span className="text-[11px] text-muted">({filtered.length})</span>
 
-              <select
-                className={`${selectCls} ml-2`}
-                value={displayFormat}
-                onChange={(e) => setDisplayFormat(e.target.value as PayloadFormat)}
-                title={t("mqtt.format")}
-              >
-                <option value="text">{t("mqtt.text")}</option>
-                <option value="json">{t("mqtt.json")}</option>
-                <option value="hex">{t("mqtt.hex")}</option>
-                <option value="base64">{t("mqtt.base64")}</option>
-              </select>
-
               <div className="ml-auto flex items-center gap-1">
                 <FilterTab value="all" />
                 <FilterTab value="received" />
@@ -614,7 +633,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
               ) : (
                 <div className="space-y-1">
                   {filtered.map((m, i) => {
-                    const { text, kind } = formatPayload(m.payloadBase64, displayFormat);
+                    const { text, kind } = formatPayload(m.payloadBase64);
                     const key = `${m.timestamp}-${i}`;
                     return (
                       <div key={key} className="rounded-md border border-border/50 bg-bg/60 px-2.5 py-1.5">
@@ -634,9 +653,16 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                           </span>
                         </div>
                         <div className="mt-1 flex items-start gap-2">
-                          <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[12px] text-fg">
-                            {text}
-                          </pre>
+                          {kind === "json" ? (
+                            <pre
+                              className="json-code min-w-0 flex-1 rounded-md border border-border/50 bg-bg/70 p-2 font-mono text-[12px] leading-relaxed text-fg"
+                              dangerouslySetInnerHTML={{ __html: highlightJson(text) }}
+                            />
+                          ) : (
+                            <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[12px] text-fg">
+                              {text}
+                            </pre>
+                          )}
                           <button
                             className="shrink-0 rounded p-1 text-subtle hover:bg-hover hover:text-fg"
                             onClick={() => copy(kind === "text" ? text : m.payloadBase64, key)}
@@ -704,14 +730,14 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
 
               {pubErr && <span className="ml-2 truncate text-[11px] text-danger">{pubErr}</span>}
 
-              {pubTopicNotSubscribed && !pubErr && (
+              {/* {pubTopicNotSubscribed && !pubErr && (
                 <span
                   className="ml-2 truncate text-[11px] text-amber-500"
                   title={t("mqtt.pubNotSubscribedHint")}
                 >
                   {t("mqtt.pubNotSubscribed")}
                 </span>
-              )}
+              )} */}
 
               <Button
                 variant="primary"

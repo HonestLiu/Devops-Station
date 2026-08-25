@@ -320,7 +320,7 @@ export const zh = {
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "主机",
   "hosts.subtitle": "已保存的 SSH、WSL 和 Frp 目标",
-  "hosts.quickCommands": "快捷命令",
+  "hosts.openTerminal": "本地终端",
   "hosts.newHost": "新建主机",
   "hosts.quickConnectPlaceholder": "快速连接：ssh user@host 或 host:port",
   "hosts.filterPlaceholder": "筛选主机…",
@@ -339,7 +339,6 @@ export const zh = {
   "hosts.kindFrp": "Frp",
   "hosts.kindLocal": "本地",
   "hosts.thisMachine": "本机",
-  "hosts.openTerminal": "打开本地终端",
   "hosts.wslDistro": "WSL · {distro}",
   "hosts.frpConfigured": "Frp · 已配置",
   "hosts.frpUnconfigured": "Frp · 未配置",

@@ -34,7 +34,6 @@ export type DistroId =
   | "oracle"
   | "kali"
   | "almalinux"
-  | "rhel"
   | "linux";
 
 export interface Host {

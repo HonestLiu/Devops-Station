@@ -11,7 +11,7 @@ import { CheckForUpdatesButton } from "./UpdateDialog";
  */
 const INTRO = [
   "DevOps Station 是一个融合 Termius、SecureCRT、MobaXterm、VS Code Terminal、Serial Studio、yazi 等工具能力的现代运维终端工作站。",
-  "内置本地 Shell（自动适配 PowerShell / pwsh / bash / zsh / fish）、SSH、SFTP 文件传输、串口与蓝牙串口、WSL 以及 FRP 内网穿透，并提供 AI 助手、命令片段、实时监控等功能，覆盖日常运维与嵌入式调试场景。",
+  "内置本地 Shell（自动适配 PowerShell / pwsh / bash / zsh / fish）、SSH、SFTP 文件传输、串口与蓝牙串口、WSL，并提供 AI 助手、命令片段、实时监控等功能，覆盖日常运维与嵌入式调试场景。",
 ];
 
 /** Open-source references surfaced inside the collapsible declaration. */
@@ -21,6 +21,11 @@ const REFERENCES: { name: string; url: string; note: string }[] = [
     url: "https://github.com/BaudDance/SerialAssistant",
     note: "串口（Serial）功能的参考与派生来源。",
   },
+  {
+    name: "emqx/MQTTX",
+    url: "https://github.com/emqx/MQTTX",
+    note: "MQTT 客户端工具的参考与派生来源。",
+  },  
 ];
 
 export function AboutDialog({

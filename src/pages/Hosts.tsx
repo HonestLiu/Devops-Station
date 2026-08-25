@@ -15,14 +15,12 @@ import {
   Server,
   TerminalSquare,
   Trash2,
-  Zap,
 } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { HostDialog } from "@/components/HostDialog";
-import { QuickCommandsEditor } from "@/components/QuickCommandsEditor";
-import { DistroIcon } from "@/components/DistroIcon";
-import { parseSshCommand, hashColor, cn } from "@/lib/utils";
+import { DistroIcon, normalizeDistro } from "@/components/DistroIcon";
+import { parseSshCommand, cn } from "@/lib/utils";
 import { isWindows } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
 import { useHostsStore, emptyHost } from "@/store/useHostsStore";
@@ -66,38 +64,39 @@ function HostRow({
   onConnect,
   onEdit,
   onDelete,
-  onOpenTerminal,
   onContextMenu,
 }: {
   h: Host;
   onConnect: (h: Host) => void;
   onEdit: (h: Host) => void;
   onDelete: (h: Host) => void;
-  onOpenTerminal: (h: Host) => void;
   onContextMenu: (e: ReactMouseEvent, h: Host) => void;
 }) {
   const t = useT();
   const Icon = KIND_ICON[h.kind];
-  const color = h.color || hashColor(h.name);
   return (
     <div
       className="group flex items-center gap-3 rounded-xl border border-border/70 bg-surface px-3 py-2 transition-colors hover:border-accent/40"
       onContextMenu={(e) => onContextMenu(e, h)}
     >
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold text-accent-fg"
-        style={{ backgroundColor: color }}
-      >
-        {h.name.slice(0, 1).toUpperCase()}
-      </span>
+      {h.kind === "ssh" || h.kind === "wsl" ? (
+        <DistroIcon
+          distro={h.kind === "wsl" ? (h.distro ?? normalizeDistro(h.wslDistro)) : h.distro}
+          size={28}
+          className="shrink-0"
+        />
+      ) : (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-hover text-subtle">
+          <Icon size={15} />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium text-fg">{h.name}</span>
           <Badge tone={h.kind === "serial" ? "warning" : "accent"}>{t(KIND_LABEL[h.kind])}</Badge>
-          <DistroIcon distro={h.distro} size={18} />
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-muted">
-          <Icon size={12} className="shrink-0 text-subtle" />
+          {h.kind === "ssh" && <Icon size={12} className="shrink-0 text-subtle" />}
           <span className="truncate">{hostSubtitle(h, t)}</span>
         </div>
       </div>
@@ -116,14 +115,6 @@ function HostRow({
         </Button>
         <Button variant="ghost" size="sm" onClick={() => onEdit(h)} title={t("common.edit")}>
           <Pencil size={13} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onOpenTerminal(h)}
-          title={t("hosts.openTerminal")}
-        >
-          <TerminalSquare size={13} />
         </Button>
         <Button
           variant="ghost"
@@ -149,7 +140,6 @@ export function Hosts() {
   const [quick, setQuick] = useState("");
   const [editing, setEditing] = useState<Host | null>(null);
   const [creating, setCreating] = useState(false);
-  const [qcOpen, setQcOpen] = useState(false);
   const [view, setView] = useState<HostView>("grid");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -190,8 +180,6 @@ export function Hosts() {
     else void openFromHost(h);
   };
 
-  const openTerminal = () => void openLocal();
-
   const deleteWithConfirm = (h: Host) => {
     if (window.confirm(t("hosts.deleteConfirm", { name: h.name }))) void deleteHost(h.id);
   };
@@ -219,15 +207,6 @@ export function Hosts() {
         onClick: () => {
           closeCtx();
           setEditing(h);
-        },
-      },
-      {
-        id: "openTerminal",
-        label: t("hosts.openTerminal"),
-        icon: <TerminalSquare size={14} />,
-        onClick: () => {
-          closeCtx();
-          openTerminal();
         },
       },
       { id: "sep", separator: true, label: "" },
@@ -288,8 +267,8 @@ export function Hosts() {
           <p className="page-subtitle">{t("hosts.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setQcOpen(true)}>
-            <Zap size={14} /> {t("hosts.quickCommands")}
+          <Button variant="secondary" size="sm" onClick={() => void openLocal()}>
+            <TerminalSquare size={14} /> {t("hosts.openTerminal")}
           </Button>
           <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
             <Plus size={14} /> {t("hosts.newHost")}
@@ -350,7 +329,6 @@ export function Hosts() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((h) => {
             const Icon = KIND_ICON[h.kind];
-            const color = h.color || hashColor(h.name);
             return (
               <div
                 key={h.id}
@@ -358,22 +336,26 @@ export function Hosts() {
                 onContextMenu={(e) => onHostContextMenu(e, h)}
               >
                 <div className="mb-3 flex items-center gap-2.5">
-                  <span
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-semibold text-accent-fg"
-                    style={{ backgroundColor: color }}
-                  >
-                    {h.name.slice(0, 1).toUpperCase()}
-                  </span>
+                  {h.kind === "ssh" || h.kind === "wsl" ? (
+                    <DistroIcon
+                      distro={h.kind === "wsl" ? (h.distro ?? normalizeDistro(h.wslDistro)) : h.distro}
+                      size={32}
+                      className="shrink-0"
+                    />
+                  ) : (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-hover text-subtle">
+                      <Icon size={16} />
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
                     {h.name}
                   </span>
                   <Badge tone={h.kind === "serial" ? "warning" : "accent"}>
                     {t(KIND_LABEL[h.kind])}
                   </Badge>
-                  <DistroIcon distro={h.distro} size={18} />
                 </div>
                 <div className="mb-3 flex items-center gap-1.5 text-[12px] text-muted">
-                  <Icon size={13} className="shrink-0 text-subtle" />
+                  {h.kind === "ssh" && <Icon size={13} className="shrink-0 text-subtle" />}
                   <span className="truncate">{hostSubtitle(h, t)}</span>
                 </div>
 
@@ -400,14 +382,6 @@ export function Hosts() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => openTerminal()}
-                    title={t("hosts.openTerminal")}
-                  >
-                    <TerminalSquare size={13} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
                     onClick={() => deleteWithConfirm(h)}
                     title={t("common.delete")}
                   >
@@ -427,7 +401,6 @@ export function Hosts() {
               onConnect={connect}
               onEdit={setEditing}
               onDelete={deleteWithConfirm}
-              onOpenTerminal={openTerminal}
               onContextMenu={onHostContextMenu}
             />
           ))}
@@ -458,7 +431,6 @@ export function Hosts() {
                         onConnect={connect}
                         onEdit={setEditing}
                         onDelete={deleteWithConfirm}
-                        onOpenTerminal={openTerminal}
                         onContextMenu={onHostContextMenu}
                       />
                     ))}
@@ -484,7 +456,6 @@ export function Hosts() {
           onSaved={() => setEditing(null)}
         />
       )}
-      {qcOpen && <QuickCommandsEditor onClose={() => setQcOpen(false)} />}
     </div>
   );
 }

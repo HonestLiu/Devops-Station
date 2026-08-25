@@ -425,3 +425,62 @@ input[type="number"] {
 .pulse-dot {
   animation: pulse-dot 1.8s ease-in-out infinite;
 }
+
+/* ==========================================================================
+   JSON syntax highlighting (MQTT payload viewer)
+   Token colours are driven by the active theme variables so they stay
+   readable across all colour schemes.
+   ========================================================================== */
+
+.json-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Dark themes: a single high-contrast palette that reads well on every dark
+   background (e.g. github-dark #0d1117, gruvbox #282828, nord #2e3440). Using
+   fixed colours here avoids the low-contrast semantic tokens some themes map
+   (e.g. --c-warning / --c-info) onto. */
+.tok-key {
+  color: #6cb6ff;
+}
+.tok-string {
+  color: #7ee787;
+}
+.tok-number {
+  color: #f0a868;
+}
+.tok-boolean {
+  color: #56d4dd;
+}
+.tok-null {
+  color: #ff7b72;
+}
+
+/* Light themes need darker tokens for legibility on white / cream backgrounds. */
+[data-theme="light"] .tok-key,
+[data-theme="solarized-light"] .tok-key,
+[data-theme="catppuccin-latte"] .tok-key {
+  color: #0550ae;
+}
+[data-theme="light"] .tok-string,
+[data-theme="solarized-light"] .tok-string,
+[data-theme="catppuccin-latte"] .tok-string {
+  color: #0a7d33;
+}
+[data-theme="light"] .tok-number,
+[data-theme="solarized-light"] .tok-number,
+[data-theme="catppuccin-latte"] .tok-number {
+  color: #953800;
+}
+[data-theme="light"] .tok-boolean,
+[data-theme="solarized-light"] .tok-boolean,
+[data-theme="catppuccin-latte"] .tok-boolean {
+  color: #0a6fb0;
+}
+[data-theme="light"] .tok-null,
+[data-theme="solarized-light"] .tok-null,
+[data-theme="catppuccin-latte"] .tok-null {
+  color: #cf222e;
+}

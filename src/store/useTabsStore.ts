@@ -6,8 +6,10 @@ import { useAppStore } from "@/store/useAppStore";
 import { useHostKeyStore } from "@/store/useHostKeyStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useSessionStore } from "@/store/useSessionStore";
+import { normalizeDistro } from "@/components/DistroIcon";
 import type {
   BleOpenConfig,
+  DistroId,
   FrpConfig,
   FrpLaunchConfig,
   Host,
@@ -64,6 +66,58 @@ async function connectSshWithHostKeyPrompt(
     });
     if (!trust) throw err;
     return await ssh.connect({ ...config, trustHostKey: true });
+  }
+}
+
+/**
+ * After a successful SSH connection, detect the remote distribution and persist
+ * it on the host so the list icon updates. Best-effort and non-blocking: callers
+ * should invoke it without awaiting and swallow rejections.
+ */
+async function detectAndSaveDistro(sessionId: string, hostId?: string) {
+  if (!hostId) return;
+  try {
+    const raw = await ssh.exec(
+      sessionId,
+      "cat /etc/os-release 2>/dev/null || uname -s 2>/dev/null",
+    );
+    const distro = normalizeDistro(raw);
+    if (!distro) return;
+    const host = useHostsStore.getState().hosts.find((h) => h.id === hostId);
+    if (host && host.distro !== distro) {
+      await useHostsStore.getState().saveHost({ ...host, distro });
+    }
+  } catch {
+    // Detection is best-effort; ignore failures (e.g. exec unsupported).
+  }
+}
+
+/**
+ * Resolve a WSL host's distribution so its list icon can match the actual OS.
+ * WSL is a local PTY with no exec channel, so unlike SSH we can't run
+ * `cat /etc/os-release` inside the session. Instead we use the launch config's
+ * distro, or — when that's empty (the WSL default) — the Windows-side
+ * `wsl -l` list. The result is persisted on the host as `distro`.
+ * Best-effort and non-blocking.
+ */
+async function detectAndSaveWslDistro(distroName: string | undefined, hostId?: string) {
+  if (!hostId) return;
+  let detected: DistroId | null = null;
+  try {
+    if (distroName) {
+      detected = normalizeDistro(distroName);
+    } else {
+      const list = await wsl.listDistros();
+      const def = list.find((d) => d.isDefault) ?? list[0];
+      if (def) detected = normalizeDistro(def.name);
+    }
+  } catch {
+    return;
+  }
+  if (!detected) return;
+  const host = useHostsStore.getState().hosts.find((h) => h.id === hostId);
+  if (host && host.distro !== detected) {
+    await useHostsStore.getState().saveHost({ ...host, distro: detected });
   }
 }
 
@@ -230,10 +284,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       get().patch(id, {
         status: "connected",
         sessionId: result.sessionId,
-        cwd: result.homeDir,
-        remoteShell: result.shell,
-        fingerprint: result.serverKeyFingerprint,
+      cwd: result.homeDir,
+      remoteShell: result.shell,
+      fingerprint: result.serverKeyFingerprint,
       });
+      detectAndSaveDistro(result.sessionId, config.hostId).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -276,6 +331,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         remoteShell: result.shell,
         fingerprint: result.serverKeyFingerprint,
       });
+      detectAndSaveDistro(result.sessionId, host.id).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -492,6 +548,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       // WSL sessions are plain PTY sessions — wsl.spawn returns a pty session id.
       const sessionId = await wsl.spawn(config, 120, 32);
       get().patch(id, { status: "connected", sessionId });
+      detectAndSaveWslDistro(config.distro, config.hostId).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -622,6 +679,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         remoteShell = r.shell;
       } else if (tab.kind === "wsl" && tab.wsl) {
         sessionId = await wsl.spawn(tab.wsl, 120, 32);
+        detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
       } else if (tab.kind === "frp" && tab.frp) {
         sessionId = await frp.spawn(tab.frp, 120, 32);
       } else {
@@ -630,6 +688,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       get().patchPane(tabId, pId, { status: "connected", sessionId });
       // Focus the new pane so typing goes there immediately.
       get().patch(tabId, { sessionId, cwd: homeDir, fingerprint, remoteShell });
+      if (tab.kind === "ssh" && tab.hostId) {
+        detectAndSaveDistro(sessionId, tab.hostId).catch(() => {});
+      }
     } catch (err) {
       get().patchPane(tabId, pId, { status: "error", error: (err as Error).message });
     }
@@ -794,6 +855,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         });
       } else if (tab.kind === "wsl" && tab.wsl) {
         get().patch(id, { status: "connected", sessionId: syncPane(await wsl.spawn(tab.wsl, 120, 32)) });
+        detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
       } else if (tab.kind === "frp" && tab.frp) {
         get().patch(id, { status: "connected", sessionId: syncPane(await frp.spawn(tab.frp, 120, 32)) });
       } else if (tab.kind === "sftp" && tab.sftpConfig) {
@@ -844,6 +906,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           remoteShell: result.shell,
           fingerprint: result.serverKeyFingerprint,
         });
+        detectAndSaveDistro(result.sessionId, tab.hostId).catch(() => {});
       } else {
         // SSH reconnect needs the original credentials, which only the Hosts
         // page holds — surface a clear message instead of failing silently.

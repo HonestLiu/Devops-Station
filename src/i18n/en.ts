@@ -311,7 +311,7 @@ export const en: Record<keyof typeof zh, string> = {
   // --- hosts page -----------------------------------------------------------
   "hosts.title": "Hosts",
   "hosts.subtitle": "Saved SSH, WSL and Frp targets",
-  "hosts.quickCommands": "Quick Commands",
+  "hosts.openTerminal": "local terminal",
   "hosts.newHost": "New Host",
   "hosts.quickConnectPlaceholder": "Quick connect: ssh user@host or host:port",
   "hosts.filterPlaceholder": "Filter hosts…",
@@ -330,7 +330,6 @@ export const en: Record<keyof typeof zh, string> = {
   "hosts.kindFrp": "Frp",
   "hosts.kindLocal": "Local",
   "hosts.thisMachine": "this machine",
-  "hosts.openTerminal": "Open local terminal",
   "hosts.wslDistro": "WSL · {distro}",
   "hosts.frpConfigured": "Frp · configured",
   "hosts.frpUnconfigured": "Frp · unconfigured",
