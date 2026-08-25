@@ -29,6 +29,8 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -37,6 +39,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::perm_aggregator::AgentStatus;
+
+/// Windows creation flag that prevents a spawned console app (e.g. `python
+/// --version`) from flashing a `cmd.exe` window. Mirror of the same constant used
+/// by the docker/git/jlink command wrappers.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 // ---------------------------------------------------------------------------
 // Script templates
@@ -539,8 +547,14 @@ fn hooks_dir() -> PathBuf {
 /// Detect a usable Python interpreter for the hook command.
 fn python_cmd() -> Option<String> {
     for c in ["python", "python3", "py"] {
-        if Command::new(c)
-            .arg("--version")
+        let mut cmd = Command::new(c);
+        cmd.arg("--version");
+        // Without this, each probe flashes a `cmd.exe` console window — and
+        // `python_cmd` runs at startup (the approval hook self-heals on launch),
+        // so the user would see several consoles pop up on every app start.
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if cmd
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)

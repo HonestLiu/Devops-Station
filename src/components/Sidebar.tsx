@@ -93,6 +93,7 @@ export function Sidebar() {
   const updateSetting = useAppStore((s) => s.updateSetting);
   const petPanelOpen = useAppStore((s) => s.petPanelOpen);
   const setPetPanelOpen = useAppStore((s) => s.setPetPanelOpen);
+  const petEnabled = useAppStore((s) => s.settings.pet.enabled);
 
   const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
@@ -226,8 +227,9 @@ export function Sidebar() {
           )}
         </button>
 
-        {/* Desktop pet companion (ChatGPT-Desktop-style) — sits under the
-            command palette in the bottom cluster. */}
+        {/* Desktop pet companion (easter egg) — only shown when enabled in
+            settings; otherwise it is completely hidden. */}
+        {petEnabled && (
         <button
           onClick={() => setPetPanelOpen(!petPanelOpen)}
           title={collapsed ? t("nav.pets") : undefined}
@@ -244,6 +246,7 @@ export function Sidebar() {
             {!collapsed && t("nav.pets")}
           </span>
         </button>
+        )}
 
         {/* Grouped icon toolbar: collapse · about · approval bell */}
         <div

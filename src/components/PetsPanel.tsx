@@ -35,6 +35,7 @@ export function PetsPanel() {
   const open = useAppStore((s) => s.petPanelOpen);
   const setOpen = useAppStore((s) => s.setPetPanelOpen);
   const pet = useAppStore((s) => s.settings.pet);
+  const petEnabled = pet.enabled;
   const ctrl = usePetController();
 
   const [pets, setPets] = useState<PetDef[]>([]);
@@ -52,7 +53,7 @@ export function PetsPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
-  if (!open) return null;
+  if (!open || !petEnabled) return null;
 
   const toggleEnabled = () => {
     if (pet.enabled) void ctrl.hide();

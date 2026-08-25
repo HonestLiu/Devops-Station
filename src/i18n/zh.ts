@@ -459,6 +459,8 @@ export const zh = {
   "settings.featUsbDesc": "WSL USB 设备",
   "settings.featKnownHosts": "Known Hosts",
   "settings.featKnownHostsDesc": "SSH 已知主机",
+  "settings.pet": "桌宠（彩蛋）",
+  "settings.petDesc": "一只在桌面上溜达的趣味伙伴。默认隐藏——关闭时桌宠及其所有入口都会完全消失。",
   "settings.groupSystem": "系统",
   "settings.searchPh": "搜索设置…",
   "settings.reset": "恢复默认",

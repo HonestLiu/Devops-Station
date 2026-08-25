@@ -23,6 +23,7 @@ pub use protocol::{
 };
 mod pty;
 mod serial;
+mod single_instance;
 mod ssh;
 mod storage;
 mod stream;
@@ -1089,6 +1090,14 @@ fn eval_dash_js(
 }
 
 pub fn run() {
+    // Single-instance guard: if another copy is already running, ask it to raise
+    // its window and exit this one. Keeps exactly one process alive (and thus a
+    // single desktop-pet overlay). Offline-safe — uses a localhost sentinel port
+    // instead of the tauri-plugin-single-instance crate.
+    if !crate::single_instance::try_become_primary() {
+        crate::single_instance::signal_primary_and_exit();
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -1122,6 +1131,10 @@ pub fn run() {
             };
             crate::perm_hook::debug_log("setup: store ok");
             crate::perm_hook::debug_log(&format!("setup: data_dir={}", data_dir.display()));
+
+            // Let the single-instance listener thread raise this window if a
+            // second launch pings us.
+            crate::single_instance::set_app_handle(app.handle().clone());
 
             // Start the approval-HOOK listener right away, reading the persisted
             // settings (enabled / port). This makes the listener independent of
@@ -1195,8 +1208,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Tear every live session down cleanly so remote shells don't linger.
             if let tauri::WindowEvent::Destroyed = event {
+                // The pet is an always-on-top, skip-taskbar overlay window. If the
+                // user closes the main window we must also tear the pet down,
+                // otherwise it keeps the process alive — and every re-launch would
+                // then spawn a *second* pet. Closing the main window therefore
+                // exits the whole app (the pet is the last window left).
+                if window.label() != "pet" {
+                    if let Some(pet) = window.app_handle().get_webview_window("pet") {
+                        let _ = pet.destroy();
+                    }
+                }
+                // Tear every live session down cleanly so remote shells don't linger.
                 if let Some(state) = window.try_state::<AppState>() {
                     state.serial.close_all();
                     state.ble.close_all();

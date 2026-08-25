@@ -15,6 +15,7 @@ import {
   Monitor,
   Palette,
   PanelTop,
+  Cat,
   RefreshCw,
   RotateCcw,
   Search,
@@ -41,7 +42,8 @@ import {
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { THEME_LIST } from "@/lib/themes";
-import { useAppStore, DEFAULT_SETTINGS, type AppSettings, type FeatureSettings, type Language } from "@/store/useAppStore";
+import { useAppStore, DEFAULT_SETTINGS, type AppSettings, type FeatureSettings, type PetSettings, type Language } from "@/store/useAppStore";
+import { hidePetWindow } from "@/pets/usePetController";
 import { useHostsStore } from "@/store/useHostsStore";
 import { CheckForUpdatesButton } from "@/components/UpdateDialog";
 import type {
@@ -411,6 +413,7 @@ export function Settings() {
       titleKey: "settings.groupFeatures",
       sections: [
         { id: "toolbar", icon: <PanelTop size={15} />, titleKey: "settings.toolbarFeatures" },
+        { id: "pet", icon: <Cat size={15} />, titleKey: "settings.pet" },
         { id: "ai", icon: <Bot size={15} />, titleKey: "settings.aiAssistant" },
         { id: "jlink", icon: <Cpu size={15} />, titleKey: "settings.jlink" },
       ],
@@ -457,6 +460,10 @@ export function Settings() {
   // --- Toolbar feature toggles ---------------------------------------------
   const setFeature = <K extends keyof FeatureSettings>(k: K, v: FeatureSettings[K]) =>
     void updateSetting("features", { ...settings.features, [k]: v });
+
+  // --- Desktop pet (easter egg) --------------------------------------------
+  const setPet = <K extends keyof PetSettings>(k: K, v: PetSettings[K]) =>
+    void updateSetting("pet", { ...settings.pet, [k]: v });
 
   // --- Object-storage sync ------------------------------------------------
   const sync = settings.sync;
@@ -1267,6 +1274,23 @@ export function Settings() {
             </Row>
             <Row title={t("settings.featKnownHosts")} desc={t("settings.featKnownHostsDesc")}>
               <Switch checked={settings.features.knownHosts} onChange={(v) => setFeature("knownHosts", v)} label={t("settings.featKnownHosts")} />
+            </Row>
+          </Section>
+
+          {/* Desktop pet (easter egg) */}
+          <Section id="pet" hidden={!secVisible("settings.pet")} icon={<Cat size={15} />} title={t("settings.pet")}>
+            <Row title={t("settings.pet")} desc={t("settings.petDesc")}>
+              <Switch
+                checked={settings.pet.enabled}
+                onChange={(v) => {
+                  setPet("enabled", v);
+                  if (!v) {
+                    // Turning the easter egg off must fully remove the pet.
+                    void hidePetWindow();
+                  }
+                }}
+                label={t("settings.pet")}
+              />
             </Row>
           </Section>
 

@@ -444,6 +444,8 @@ export const en: Record<keyof typeof zh, string> = {
   "settings.featUsbDesc": "WSL USB devices",
   "settings.featKnownHosts": "Known Hosts",
   "settings.featKnownHostsDesc": "SSH known hosts",
+  "settings.pet": "Desktop Pet (Easter Egg)",
+  "settings.petDesc": "A fun companion that wanders your desktop. Hidden by default — when off, the pet and all its controls disappear completely.",
   "settings.groupSystem": "System",
   "settings.searchPh": "Search settings…",
   "settings.reset": "Reset to defaults",
