@@ -8,6 +8,12 @@
 //! relaunched while an earlier instance is still alive.
 //!
 //! (This is the offline-safe equivalent of `tauri-plugin-single-instance`.)
+//!
+//! The sentinel port is split per build flavor so a dev build and an installed
+//! release build can run side by side (each guards only its own family of
+//! instances). Dev builds (`cargo run` / `tauri dev`) hold 48712; release
+//! builds hold 48713. Consequence: with both running you get two app instances
+//! — and therefore two desktop pets — which is the accepted trade-off.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -20,7 +26,14 @@ use tauri::{AppHandle, Manager};
 /// Localhost port used as the single-instance sentinel. A plain constant so we
 /// don't need any hashing/ident lookup. Low collision risk (high ephemeral-ish
 /// range), only ever bound on 127.0.0.1.
+///
+/// Split by build flavor: dev/debug builds and release builds use different
+/// ports so a `tauri dev` session never blocks an installed release build (and
+/// vice versa).
+#[cfg(debug_assertions)]
 const SENTINEL_PORT: u16 = 48_712;
+#[cfg(not(debug_assertions))]
+const SENTINEL_PORT: u16 = 48_713;
 fn sentinel_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], SENTINEL_PORT))
 }

@@ -3,13 +3,13 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
-  Download,
   Eye,
+  FileInput,
+  FileOutput,
   LayoutDashboard,
   Pencil,
   Plus,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { Button, Dialog, EmptyState } from "@/components/ui";
 import { useT } from "@/i18n";
@@ -105,7 +105,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
     { id: "edit", label: t("dash.ctx.edit"), icon: <Pencil size={14} />, onClick: () => openEdit(p) },
     { id: "open", label: t("dash.open"), icon: <Eye size={14} />, onClick: () => setActiveId(p.id) },
     { id: "duplicate", label: t("dash.ctx.duplicate"), icon: <Copy size={14} />, onClick: () => void duplicate(p) },
-    { id: "export", label: t("dash.export"), icon: <Download size={14} />, onClick: () => exportOne(p) },
+    { id: "export", label: t("dash.export"), icon: <FileOutput size={14} />, onClick: () => exportOne(p) },
     { id: "sep1", separator: true, label: "" },
     { id: "up", label: t("dash.moveUp"), icon: <ArrowUp size={14} />, disabled: i === 0, onClick: () => void move(i, -1) },
     { id: "down", label: t("dash.moveDown"), icon: <ArrowDown size={14} />, disabled: i === panels.length - 1, onClick: () => void move(i, 1) },
@@ -199,7 +199,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
               }}
             />
             <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-              <Upload size={14} /> {t("dash.import")}
+              <FileInput size={14} /> {t("dash.import")}
             </Button>
             <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
               <Plus size={14} /> {t("dash.newPanel")}
@@ -265,7 +265,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
                         <Copy size={13} />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); exportOne(p); }} title={t("dash.export")}>
-                        <Download size={13} />
+                        <FileOutput size={13} />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); void remove(p); }} title={t("dash.delete")}>
                         <Trash2 size={13} className="text-danger" />

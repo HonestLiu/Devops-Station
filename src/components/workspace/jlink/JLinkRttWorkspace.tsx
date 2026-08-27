@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Activity,
   ArrowUpDown,
   Cable,
-  Download,
+  Check,
   Eraser,
+  FileOutput,
+  Loader2,
   Pause,
   Play,
   Power,
   PowerOff,
   Radio,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { Badge, Button, ModuleHeader, Select } from "@/components/ui";
@@ -27,7 +31,7 @@ import {
   LINE_ENDINGS,
 } from "@/lib/utils";
 import { encodeSendData, type SendMeta } from "@/lib/serialCodec";
-import { jlink } from "@/lib/api";
+import { jlink, localFs } from "@/lib/api";
 import { useJlinkBase } from "./useJlinkBase";
 import { JLinkConnectionFields } from "./JLinkConnectionFields";
 import { JLinkInstallBanner } from "./JLinkShared";
@@ -76,6 +80,8 @@ export function JLinkRttWorkspace() {
   const [frozen, setFrozen] = useState(false);
   const [txBytes, setTxBytes] = useState(0);
   const [rxBytes, setRxBytes] = useState(0);
+  // Export button feedback: "idle" | "busy" (spinner) | "ok" (check) | "err".
+  const [exportState, setExportState] = useState<"idle" | "busy" | "ok" | "err">("idle");
 
   const logId = useRef(0);
   const encodingRef = useRef(encoding);
@@ -257,15 +263,30 @@ export function JLinkRttWorkspace() {
     if (r.bytes) writeOut(r.bytes, { format: asHex ? "hex" : "text", raw, checksum: "none" });
   };
 
-  const exportLog = () => {
-    const lines = logs.map((e) => `[${formatTime(e.at)}] ${e.dir.toUpperCase()} ${e.text}`);
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `jlink-rtt-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportLog = async () => {
+    if (exportState === "busy") return;
+    const content = logs
+      .map((e) => `[${formatTime(e.at)}] ${e.dir.toUpperCase()} ${e.text}`)
+      .join("\n");
+    if (!content) return;
+
+    const picked = await save({
+      title: "导出 RTT 日志",
+      defaultPath: `jlink-rtt-${Date.now()}.txt`,
+      filters: [{ name: "文本文件", extensions: ["txt"] }],
+    });
+    if (!picked) return; // user canceled — keep idle state
+
+    setExportState("busy");
+    try {
+      await localFs.writeText(picked, content);
+      setExportState("ok");
+      window.setTimeout(() => setExportState("idle"), 1500);
+    } catch (e) {
+      console.error("[JLinkRttWorkspace] export failed", e);
+      setExportState("err");
+      window.setTimeout(() => setExportState("idle"), 1500);
+    }
   };
 
   return (
@@ -373,11 +394,20 @@ export function JLinkRttWorkspace() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={exportLog}
-                disabled={logs.length === 0}
+                onClick={() => void exportLog()}
+                disabled={exportState === "busy" || logs.length === 0}
                 title={t("ws.exportTitle")}
               >
-                <Download size={13} /> 导出
+                {exportState === "busy" ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : exportState === "ok" ? (
+                  <Check size={13} className="text-success" />
+                ) : exportState === "err" ? (
+                  <X size={13} className="text-danger" />
+                ) : (
+                  <FileOutput size={13} />
+                )}
+                导出
               </Button>
             </div>
             <div className="flex items-center gap-1">
@@ -396,7 +426,7 @@ export function JLinkRttWorkspace() {
           </div>
 
           {/* Display content */}
-          <div className="relative flex-1">
+          <div className="relative min-h-0 flex-1">
             <SerialRecordView
               logs={logs}
               rxHex={rxHex}

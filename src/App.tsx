@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { DoorOpen } from "lucide-react";
 import {
   Cable,
   ClipboardPaste,
@@ -52,7 +53,8 @@ import { petReact, petAlert, petAlertClear } from "./pets/usePetController";
 import { useT } from "./i18n";
 import { cn } from "./lib/utils";
 import { checkForUpdate } from "./lib/updater";
-import { permHook } from "./lib/api";
+import { Button, Dialog } from "./components/ui";
+import { permHook, appExit } from "./lib/api";
 import { pullSync, isSyncConfigured } from "./lib/sync";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { HostKeyPrompt } from "./components/HostKeyPrompt";
@@ -690,6 +692,72 @@ export default function App() {
       <UpdateDialog />
       <HostKeyPrompt />
       <PetsPanel />
+      <ConfirmExitDialog />
     </div>
+  );
+}
+
+/**
+ * Modal that shows when the backend intercepts a window close and asks
+ * whether the user really wants to quit. Shows a prominent icon, an
+ * informative message about what happens on exit, and a "don't ask again"
+ * link that disables the confirmation and exits immediately.
+ */
+function ConfirmExitDialog() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+
+  useEffect(() => {
+    const un = listen("confirm-exit", () => setOpen(true));
+    return () => void un.then((fn) => fn());
+  }, []);
+
+  const handleConfirm = async () => {
+    setOpen(false);
+    await appExit();
+  };
+
+  const handleDontAsk = async () => {
+    updateSetting("confirmOnExit", false);
+    setOpen(false);
+    await appExit();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={() => setOpen(false)}
+      title={t("common.confirmExitTitle")}
+      width="max-w-sm"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => void handleDontAsk()}
+            className="text-[11px] text-subtle transition-colors hover:text-fg"
+          >
+            {t("common.confirmExitDontAsk")}
+          </button>
+          <div className="ml-auto flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => void handleConfirm()}>
+              <DoorOpen size={13} /> {t("common.confirm")}
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <div className="flex flex-col items-center gap-4 py-2">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-danger/10 text-danger">
+          <DoorOpen size={28} />
+        </div>
+        <p className="text-center text-[13px] leading-relaxed text-muted">
+          {t("common.confirmExitBody")}
+        </p>
+      </div>
+    </Dialog>
   );
 }

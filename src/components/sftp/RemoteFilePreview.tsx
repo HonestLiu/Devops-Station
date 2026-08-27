@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Download, File as FileIcon, Loader2, Pencil } from "lucide-react";
+import { AlertTriangle, Download, File as FileIcon, FilePen, Loader2 } from "lucide-react";
 
 import { sftp } from "@/lib/api";
 import { Button, Dialog } from "@/components/ui";
@@ -175,7 +175,7 @@ export function RemoteFilePreview({
             onEdit(path, name);
           }}
         >
-          <Pencil size={13} /> {t("sftp.previewEdit")}
+          <FilePen size={13} /> {t("sftp.previewEdit")}
         </Button>
       )}
       {onDownload && (

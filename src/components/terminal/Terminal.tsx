@@ -19,6 +19,7 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { useAppStore } from "@/store/useAppStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useHostsStore } from "@/store/useHostsStore";
+import { useSerialLog } from "@/ai/serialLog";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { isBenignContext, isWaitingForInput, scanForError, errorFingerprint } from "@/ai/errorScan";
 import { maybeAutoDiagnose } from "@/ai/diagnose";
@@ -103,6 +104,19 @@ function preparePasteText(text: string): string {
   return mergeContinuationLines(cleaned);
 }
 
+/**
+ * Write one chunk to the xterm surface. In hex display mode the raw bytes are
+ * rendered as a space-separated hex dump instead of their decoded form — used
+ * by the serial terminal's "接收:HEX" toggle.
+ */
+function writeBytes(term: XTerm, bytes: Uint8Array, hex: boolean): void {
+  if (hex) {
+    term.write(Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(" "));
+  } else {
+    term.write(bytes);
+  }
+}
+
 // Snippets submenu — mirrors the "Snippets" flyout in the terminal's AI bar. Each
 // group becomes its own nested submenu (e.g. "Snippets → Git → <command>") so the
 // top-level entry stays short. Every command is *inserted* into the active
@@ -144,6 +158,12 @@ const SNIPPET_MENU: MenuItem[] = SNIPPET_GROUPS.map((g) => ({
 //                         line straddling a chunk boundary is still caught.
 /** Bytes of pre-chunk buffer kept as overlap for cross-chunk error lines. */
 const SCAN_OVERLAP = 320;
+
+/**
+ * Hard cap on the freeze buffer (serial terminal pause). Oldest chunks are
+ * dropped beyond this so an endless stream can't grow the buffer unboundedly.
+ */
+const MAX_PAUSED_BUFFER_BYTES = 1024 * 1024;
 
 /**
  * A TUI (opencode, …) that exits without cleaning up can leave the terminal's
@@ -213,6 +233,11 @@ export interface TerminalProps {
   scrollback: number;
   /** When false, input is ignored (e.g. while reconnecting). */
   interactive?: boolean;
+  /** When true, incoming output is buffered off-screen instead of being
+   *  rendered; buffered bytes flush when unpaused (serial terminal freeze). */
+  paused?: boolean;
+  /** When true, incoming output is rendered as a hex dump (serial terminal). */
+  rxHex?: boolean;
   /** Fired when the remote side hangs up, so the tab can stop saying "connected". */
   onClosed?: (info: SessionClosed) => void;
   /** When true, capture the shell's working directory over OSC 7 and ask the
@@ -332,6 +357,8 @@ export function Terminal(props: TerminalProps) {
     cursorStyle,
     scrollback,
     interactive = true,
+    paused = false,
+    rxHex = false,
     onClosed,
     trackCwd = false,
     shell,
@@ -363,6 +390,15 @@ export function Terminal(props: TerminalProps) {
   const waitingRef = useRef(false);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
+  // Freeze buffer for serial terminal pause: while `paused`, incoming chunks are
+  // parked here instead of reaching the screen, then flushed on resume.
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const pausedBufRef = useRef<Uint8Array[]>([]);
+  const pausedBytesRef = useRef(0);
+  // Hex display mode (serial terminal): read live from the data closure.
+  const rxHexRef = useRef(rxHex);
+  rxHexRef.current = rxHex;
   // Kept in a ref so a changing callback never re-runs the session effect.
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
@@ -759,6 +795,23 @@ export function Terminal(props: TerminalProps) {
     const parked: Uint8Array[] = [];
     const unlisteners: UnlistenFn[] = [];
 
+    // Route output to the screen, or park it while the freeze (pause) is active.
+    const writeOrPark = (bytes: Uint8Array) => {
+      if (pausedRef.current) {
+        pausedBytesRef.current += bytes.length;
+        pausedBufRef.current.push(bytes);
+        while (
+          pausedBytesRef.current > MAX_PAUSED_BUFFER_BYTES &&
+          pausedBufRef.current.length > 1
+        ) {
+          const dropped = pausedBufRef.current.shift();
+          if (dropped) pausedBytesRef.current -= dropped.length;
+        }
+      } else {
+        writeBytes(term, bytes, rxHexRef.current);
+      }
+    };
+
     const markClosed = (info: SessionClosed) => {
       closedRef.current = true;
       onClosedRef.current?.(info);
@@ -772,7 +825,7 @@ export function Terminal(props: TerminalProps) {
           if (!flushed) {
             parked.push(bytes);
           } else {
-            term.write(bytes);
+            writeOrPark(bytes);
           }
           // Decode once and snapshot `prevTail` (the rolling buffer BEFORE this
           // chunk is appended) so the error scan below can examine only the new
@@ -783,6 +836,12 @@ export function Terminal(props: TerminalProps) {
             text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
           } catch {
             /* decode/scan must never break the terminal stream */
+          }
+          // Serial/BLE terminals also feed the AI-side serial log (data mode
+          // does the same), so the "parse protocol" action sees the stream the
+          // user is looking at — not stale data-mode output.
+          if (text && (transport === "serial" || transport === "ble")) {
+            useSerialLog.getState().push(text);
           }
           let prevTail = recentRef.current;
           if (text) {
@@ -874,9 +933,9 @@ export function Terminal(props: TerminalProps) {
 
         const pending = await api.attach(sessionId);
         if (disposed) return;
-        if (pending.backlog) term.write(base64ToBytes(pending.backlog));
+        if (pending.backlog) writeOrPark(base64ToBytes(pending.backlog));
         flushed = true;
-        for (const bytes of parked) term.write(bytes);
+        for (const bytes of parked) writeOrPark(bytes);
         parked.length = 0;
         if (pending.closed) markClosed(pending.closed);
 
@@ -945,6 +1004,17 @@ export function Terminal(props: TerminalProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, transport]);
+
+  // Flush the freeze buffer the moment pause is lifted, preserving arrival order.
+  useEffect(() => {
+    if (paused) return;
+    const term = termRef.current;
+    if (!term || pausedBufRef.current.length === 0) return;
+    const buf = pausedBufRef.current;
+    pausedBufRef.current = [];
+    pausedBytesRef.current = 0;
+    for (const bytes of buf) writeBytes(term, bytes, rxHexRef.current);
+  }, [paused]);
 
   // Grab keyboard focus when this terminal becomes the active one: on mount
   // (newly opened tab / pane), on tab switch, and on split-pane focus changes.

@@ -16,6 +16,8 @@ import { cssColor } from "@/lib/themes";
 
 const MAX_POINT_OPTIONS = [120, 240, 480, 1000, 5000];
 const CHANNEL_COLORS = ["accent", "success", "warning", "info", "danger", "purple", "teal", "pink"] as const;
+/** Safety cap for a line fragment that never gets a newline (flush it anyway). */
+const MAX_LINE_BUFFER = 8192;
 
 interface ParsedLine {
   /** Plain numeric columns without a key, e.g. "1,2,3" or "12.3". */
@@ -91,6 +93,7 @@ export function SerialPlot({
   const dataRef = useRef<number[][]>([[]]); // [x(epoch sec), ch0, ch1, ...]
   const rawRef = useRef<string[]>([]); // raw line per x index
   const startRef = useRef<number>(0); // first sample wall-clock ms (for relative axis)
+  const lineBufferRef = useRef(""); // reassembles lines split across serial chunks
   const rebuildRef = useRef<() => void>(() => {});
   const clearRef = useRef<() => void>(() => {});
   const [hasData, setHasData] = useState(false);
@@ -138,7 +141,10 @@ export function SerialPlot({
       for (const name of names) {
         if (!channelsRef.current.includes(name)) {
           channelsRef.current.push(name);
-          dataRef.current.push([]);
+          // Backfill the new channel with NaN for every point captured so far.
+          // Without this a mid-stream channel is shorter than the x-axis data,
+          // which corrupts uPlot alignment and crashes the tooltip (undefined).
+          dataRef.current.push(new Array(dataRef.current[0].length).fill(NaN));
           changed = true;
         }
       }
@@ -179,8 +185,15 @@ export function SerialPlot({
         ],
         series,
       };
-      plotRef.current = new uPlot(opts, dataRef.current as unknown as uPlot.AlignedData, host);
-      setPointCount(dataRef.current[0].length);
+      // Guard the uPlot construction: a hiccup here must leave plotRef null so
+      // the next ingest tries again, instead of crashing the whole workspace.
+      try {
+        plotRef.current = new uPlot(opts, dataRef.current as unknown as uPlot.AlignedData, host);
+        setPointCount(dataRef.current[0].length);
+      } catch (e) {
+        plotRef.current = null;
+        console.error("[SerialPlot] uPlot create failed", e);
+      }
     };
     rebuildRef.current = buildPlot;
 
@@ -203,10 +216,28 @@ export function SerialPlot({
       } catch {
         text = "";
       }
-      const lines = text.split(/\r?\n/);
-      for (const line of lines) {
-        const parsed = parseLine(line.trim());
-        if (!parsed) continue;
+      // Reassemble lines split across chunks so a partial "temp=24,hu" + "m=63"
+      // never parses as two fragments (which would create a spurious "m" channel).
+      // An over-long buffer (no newline ever seen) is force-flushed so a stream
+      // that doesn't terminate lines can't grow unbounded.
+      const pending = lineBufferRef.current + text;
+      if (pending.length > MAX_LINE_BUFFER) {
+        // Force a flush: treat everything up to the last newline as lines, keep
+        // the trailing fragment as the new buffer.
+        const flushed = pending.split(/\r?\n/);
+        lineBufferRef.current = flushed.pop() ?? "";
+        for (const ln of flushed) processLine(ln);
+        return;
+      }
+      const parts = pending.split(/\r?\n/);
+      lineBufferRef.current = parts.pop() ?? "";
+      for (const ln of parts) processLine(ln);
+    };
+
+    const processLine = (rawLine: string) => {
+      try {
+        const parsed = parseLine(rawLine.trim());
+        if (!parsed) return;
 
         const required: string[] = Object.keys(parsed.keyed);
         if (parsed.numeric.length > 0) {
@@ -240,9 +271,23 @@ export function SerialPlot({
           rawRef.current.splice(0, drop);
         }
 
-        if (needRebuild || !plotRef.current) buildPlot();
-        else plotRef.current.setData(dataRef.current as unknown as uPlot.AlignedData);
+        if (needRebuild || !plotRef.current) {
+          try {
+            buildPlot();
+          } catch (e) {
+            console.error("[SerialPlot] rebuild failed", e);
+          }
+        } else {
+          try {
+            plotRef.current.setData(dataRef.current as unknown as uPlot.AlignedData);
+          } catch (e) {
+            console.error("[SerialPlot] setData failed", e);
+          }
+        }
         setPointCount(d[0].length);
+      } catch (e) {
+        // A single malformed line must never stop the live stream.
+        console.error("[SerialPlot] processLine failed", rawLine, e);
       }
     };
 
@@ -272,7 +317,11 @@ export function SerialPlot({
 
   // Rebuild the chart when a control that changes uPlot options changes.
   useEffect(() => {
-    rebuildRef.current();
+    try {
+      rebuildRef.current();
+    } catch (e) {
+      console.error("[SerialPlot] rebuild failed", e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeMode, showLegend]);
 
@@ -305,7 +354,8 @@ export function SerialPlot({
       const values: { name: string; value: number }[] = [];
       for (let i = 0; i < channelsRef.current.length; i++) {
         const v = dataRef.current[i + 1][idx];
-        if (Number.isNaN(v)) continue;
+        // NaN/undefined/out-of-range channel data must never reach the tooltip.
+        if (typeof v !== "number" || !Number.isFinite(v)) continue;
         values.push({ name: channelsRef.current[i], value: v });
       }
       if (values.length === 0) {
@@ -451,7 +501,7 @@ export function SerialPlot({
       </div>
 
       {/* Plot area */}
-      <div className="relative min-h-0 flex-1">
+      <div className="serial-plot relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing" />
         {tooltip && (
           <div
@@ -464,7 +514,13 @@ export function SerialPlot({
               {tooltip.values.map((v) => (
                 <div key={v.name} className="flex items-center justify-between gap-4 tabular-nums">
                   <span>{v.name}</span>
-                  <span>{Number.isInteger(v.value) ? v.value : v.value.toFixed(3)}</span>
+                  <span>
+                    {Number.isFinite(v.value)
+                      ? Number.isInteger(v.value)
+                        ? v.value
+                        : v.value.toFixed(3)
+                      : "—"}
+                  </span>
                 </div>
               ))}
             </div>

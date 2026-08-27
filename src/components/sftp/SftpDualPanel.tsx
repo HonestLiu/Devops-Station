@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   File as FileIcon,
+  FilePen,
   Folder,
   FolderPlus,
   HardDrive,
@@ -710,7 +711,7 @@ export function SftpDualPanel({ sessionId }: { sessionId: string }) {
                           />
                         )}
                         <RowAction
-                          icon={<Pencil size={13} />}
+                          icon={<FilePen size={13} />}
                           label="Edit file"
                           onClick={() => setEditing({ path: f.path, name: f.name })}
                         />

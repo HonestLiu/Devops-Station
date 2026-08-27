@@ -63,6 +63,48 @@ pub struct JLinkResponse {
     pub output: String,
 }
 
+/// Cached "last successful connect" snapshot. The probe connection itself is
+/// one-shot per script run (Commander connects, runs the body, disconnects,
+/// exits), so there's no long-lived session to introspect. Instead we
+/// remember the last config the user successfully connected with — plus any
+/// extra info we could scrape from Commander's banner — so the UI can show a
+/// meaningful "Connected to X via Y @ Z" badge and a Disconnect button that
+/// clears the cache (and the local view) without lying about a connection
+/// that was never persistent.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct JLinkStatus {
+    /// Last device the user successfully connected to (e.g. `STM32F103C8`).
+    pub device: String,
+    /// Transport — `SWD` or `JTAG`.
+    pub iface: String,
+    /// Interface speed in kHz; `0` means auto.
+    pub speed: u32,
+    /// Probe serial number scraped from the connect banner, if available.
+    pub serial: Option<String>,
+    /// Unix seconds of the last successful connect.
+    pub connected_at: u64,
+}
+
+static LAST_CONNECT: Mutex<Option<JLinkStatus>> = Mutex::new(None);
+
+/// Pull the probe serial number out of a typical connect banner:
+/// `S/N: 30500729`. Best-effort — if the banner is missing or in another
+/// locale we just return `None` rather than failing the whole connect.
+fn extract_serial(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let t = line.trim_start();
+        let after = t.strip_prefix("S/N:").or_else(|| t.strip_prefix("S/N"));
+        if let Some(rest) = after {
+            let digits: String = rest.trim().chars().take_while(|c| !c.is_whitespace()).collect();
+            if !digits.is_empty() {
+                return Some(digits);
+            }
+        }
+    }
+    None
+}
+
 /// Handle to the (optionally) running GDB server child process.
 static GDB: Mutex<Option<Child>> = Mutex::new(None);
 
@@ -525,9 +567,12 @@ fn connect_prefix(config: &JLinkConfig) -> String {
         // `ExitOnError` is a *commander-script command*, not a CLI option.
         // Passing it as `-ExitOnError` on the command line makes J-Link
         // Commander bail with "Missing command line parameter after command"
-        // before doing anything. Emit it as a script line instead so a failed
-        // connect aborts the script instead of continuing to e.g. loadfile.
-        s.push_str("ExitOnError\n");
+        // before doing anything. Emit it as a script line instead, and pass
+        // the required `1` argument — without it Commander prints
+        // `Syntax: ExitonError <1|0>` and silently leaves the flag at its
+        // default (off), so a failed `connect` would still let later commands
+        // like `loadfile` run instead of aborting the script.
+        s.push_str("ExitOnError 1\n");
         s.push_str("connect\n");
     }
     s
@@ -590,7 +635,43 @@ pub async fn jlink_connect(
     exe_path: Option<String>,
 ) -> AppResult<JLinkResponse> {
     let empty: &[String] = &[];
-    run_script(&config, empty, exe_path).await
+    let res = run_script(&config, empty, exe_path).await?;
+    if res.success && !config.device.trim().is_empty() {
+        // Cache the (client-side) "last connect" so the UI badge + Disconnect
+        // button have something to render. We only cache when the device
+        // field is filled in, otherwise the connect was a no-op probe-check.
+        let status = JLinkStatus {
+            device: config.device.trim().to_string(),
+            iface: config.iface.clone(),
+            speed: config.speed,
+            serial: extract_serial(&res.output),
+            connected_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        };
+        *LAST_CONNECT.lock() = Some(status);
+    }
+    Ok(res)
+}
+
+/// Return the cached "last successful connect" snapshot, or a default empty
+/// status when nothing has been connected yet. The frontend uses this to
+/// render the connection badge in the workspace header.
+#[tauri::command]
+pub fn jlink_status() -> JLinkStatus {
+    LAST_CONNECT.lock().clone().unwrap_or_default()
+}
+
+/// Clear the cached "last successful connect" snapshot. The frontend calls
+/// this when the user clicks Disconnect in the workspace header so the badge
+/// flips back to "Not connected". (There is no actual probe-side connection
+/// to tear down — every operation is a one-shot script — but the UI now
+/// behaves like a real session lifecycle.)
+#[tauri::command]
+pub fn jlink_disconnect() -> JLinkStatus {
+    *LAST_CONNECT.lock() = None;
+    JLinkStatus::default()
 }
 
 #[tauri::command]

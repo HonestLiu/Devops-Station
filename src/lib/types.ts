@@ -854,6 +854,21 @@ export interface JLinkResponse {
   output: string;
 }
 
+/**
+ * Cached "last successful connect" snapshot, mirrored from the Rust backend.
+ * The probe itself is one-shot per script — there's no long-lived session —
+ * so this is purely a UI snapshot that the workspace header shows in the
+ * connection badge. Empty `device` means "not connected".
+ */
+export interface JLinkStatus {
+  device: string;
+  iface: string;
+  speed: number;
+  serial?: string;
+  /** Unix seconds of the last successful connect. 0 when not connected. */
+  connectedAt: number;
+}
+
 /** Summary returned after exporting the unified data profile. */
 export interface ProfileExportInfo {
   path: string;

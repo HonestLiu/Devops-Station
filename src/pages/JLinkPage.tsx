@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cpu, Download, Radio, Server, Wrench } from "lucide-react";
+import { Cpu, Radio, Server, Upload, Wrench } from "lucide-react";
 
 import { useT } from "@/i18n";
 import { useAppStore } from "@/store/useAppStore";
@@ -37,7 +37,7 @@ export function JLinkPage() {
   }[] = [
     {
       key: "flash",
-      icon: <Download size={22} />,
+      icon: <Upload size={22} />,
       title: t("jlink.flash"),
       desc: t("jlink.moduleFlashDesc"),
     },

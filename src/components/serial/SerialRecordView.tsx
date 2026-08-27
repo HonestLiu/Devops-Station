@@ -32,10 +32,11 @@ function formatStamp(at: number, full: boolean): string {
 /**
  * Normal-mode record panel, parity-ported from SerialAssistant's RecordList.
  *
- * Each row is a bubble (RX hugs the left, TX the right) with:
+ * Each row is a log line with:
+ *  - a thin direction accent bar (accent = RX, warning = TX) + subtle tint
  *  - click the timestamp to toggle HH:mm:ss:SSS <-> full date
  *  - click the body to flip that row between decoded text and hex
- *  - a copy button (appears on hover) for the displayed content
+ *  - a copy / hex toggle (appears on hover) for the displayed content
  *  - a byte count
  * A search box filters by either representation; a freeze toggle pauses capture
  * upstream so the view stays put while data keeps flowing into the buffer.
@@ -93,10 +94,7 @@ export function SerialRecordView({
         </span>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="h-full flex-1 overflow-y-auto py-1 font-mono text-[12px]"
-      >
+      <div ref={scrollRef} className="h-full flex-1 overflow-y-auto py-1">
         {filtered.map((e) => {
           const showHex = hexOverride[e.id] ?? rxHex;
           const content = showHex ? e.hex : e.text || "(binary)";
@@ -105,50 +103,71 @@ export function SerialRecordView({
             <div
               key={e.id}
               className={cn(
-                "group flex flex-col gap-0.5 border-b border-border/30 px-3 py-1 break-all",
-                isRx ? "items-start" : "items-end",
+                "group flex gap-3 border-b border-border/30 px-3 py-2 transition-colors",
+                isRx
+                  ? "bg-accent/[0.03] hover:bg-accent/[0.06]"
+                  : "bg-warning/[0.03] hover:bg-warning/[0.06]",
               )}
             >
-              <div className="flex w-full items-center gap-2 text-[10px] text-subtle">
-                <button
-                  onClick={() => setFullTime((v) => !v)}
-                  title="点击切换时间格式"
-                  className="hover:text-fg"
-                >
-                  {formatStamp(e.at, fullTime)}
-                </button>
-                <span
+              {/* Direction accent bar */}
+              <div
+                className={cn(
+                  "w-[3px] shrink-0 self-stretch rounded-full",
+                  isRx ? "bg-accent/70" : "bg-warning/70",
+                )}
+              />
+
+              <div className="min-w-0 flex-1">
+                {/* Meta line */}
+                <div className="flex items-center gap-2 text-[10px] text-subtle">
+                  <button
+                    onClick={() => setFullTime((v) => !v)}
+                    title="点击切换时间格式"
+                    className="shrink-0 font-mono tabular-nums transition-colors hover:text-fg"
+                  >
+                    {formatStamp(e.at, fullTime)}
+                  </button>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wider",
+                      isRx ? "bg-accent/15 text-accent" : "bg-warning/15 text-warning",
+                    )}
+                  >
+                    {isRx ? "RX" : "TX"}
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    {Math.ceil(e.hex.length / 2)} B
+                  </span>
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      onClick={() => setHexOverride((m) => ({ ...m, [e.id]: !showHex }))}
+                      title={showHex ? "切换为文本" : "切换为 HEX"}
+                      className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
+                    >
+                      {showHex ? <EyeOff size={11} /> : <Eye size={11} />}
+                    </button>
+                    <button
+                      onClick={() => copy(content)}
+                      title="复制"
+                      className="rounded p-1 text-subtle transition-colors hover:bg-hover hover:text-fg"
+                    >
+                      <Copy size={11} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Data block */}
+                <div
+                  onClick={() => setHexOverride((m) => ({ ...m, [e.id]: !showHex }))}
                   className={cn(
-                    "rounded px-1 font-semibold",
-                    isRx ? "bg-accent/15 text-accent" : "bg-warning/15 text-warning",
+                    "mt-1.5 max-w-full cursor-pointer whitespace-pre-wrap break-all rounded-md border px-2.5 py-1.5 font-mono text-[12px] leading-relaxed transition-colors",
+                    isRx
+                      ? "border-accent/15 bg-accent/[0.07] text-fg hover:border-accent/30"
+                      : "border-warning/15 bg-warning/[0.07] text-fg hover:border-warning/30",
                   )}
                 >
-                  {isRx ? "RX" : "TX"}
-                </span>
-                <span className="tabular-nums">{Math.ceil(e.hex.length / 2)} B</span>
-                <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={() => setHexOverride((m) => ({ ...m, [e.id]: !showHex }))}
-                    title={showHex ? "切换为文本" : "切换为 HEX"}
-                    className="hover:text-fg"
-                  >
-                    {showHex ? <EyeOff size={11} /> : <Eye size={11} />}
-                  </button>
-                  <button onClick={() => copy(content)} title="复制" className="hover:text-fg">
-                    <Copy size={11} />
-                  </button>
+                  {content}
                 </div>
-              </div>
-              <div
-                onClick={() => setHexOverride((m) => ({ ...m, [e.id]: !showHex }))}
-                className={cn(
-                  "max-w-full cursor-pointer whitespace-pre-wrap rounded px-2 py-1",
-                  isRx
-                    ? "bg-accent/5 text-accent"
-                    : "bg-warning/5 text-warning",
-                )}
-              >
-                {content}
               </div>
             </div>
           );

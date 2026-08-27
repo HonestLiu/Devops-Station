@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, FilePlus2, Loader2, Pencil, Trash2, Upload, Download, X } from "lucide-react";
+import { Check, Copy, FileOutput, FilePlus2, Loader2, Pencil, Trash2, Download, X } from "lucide-react";
 
 import { useProtocolDesignerStore } from "@/store/useProtocolDesignerStore";
 import { useTabsStore } from "@/store/useTabsStore";
@@ -295,7 +295,7 @@ export function ProtocolList({ dir }: { dir: "rx" | "tx" }) {
                       ) : doneExportId === p.id ? (
                         <Check size={13} className="text-success" />
                       ) : (
-                        <Upload size={13} />
+                        <FileOutput size={13} />
                       )}
                     </button>
                     <button

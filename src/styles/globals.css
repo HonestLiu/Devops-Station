@@ -32,6 +32,7 @@
   --c-accent-fg: 26 27 38;
   --c-success: 158 206 106;
   --c-warning: 224 175 104;
+  --c-warning-fg: 26 27 38;
   --c-danger: 247 118 142;
   --c-info: 125 207 255;
 }
@@ -50,6 +51,7 @@
   --c-accent-fg: 255 255 255;
   --c-success: 78 201 176;
   --c-warning: 220 220 170;
+  --c-warning-fg: 30 30 30;
   --c-danger: 241 76 76;
   --c-info: 86 156 214;
 }
@@ -68,6 +70,7 @@
   --c-accent-fg: 255 255 255;
   --c-success: 26 127 55;
   --c-warning: 154 103 0;
+  --c-warning-fg: 255 255 255;
   --c-danger: 207 34 46;
   --c-info: 5 80 174;
 }
@@ -86,6 +89,7 @@
   --c-accent-fg: 46 52 64;
   --c-success: 163 190 140;
   --c-warning: 235 203 139;
+  --c-warning-fg: 46 52 64;
   --c-danger: 191 97 106;
   --c-info: 129 161 193;
 }
@@ -104,6 +108,7 @@
   --c-accent-fg: 40 42 54;
   --c-success: 80 250 123;
   --c-warning: 241 250 140;
+  --c-warning-fg: 40 42 54;
   --c-danger: 255 85 85;
   --c-info: 139 233 253;
 }
@@ -122,6 +127,7 @@
   --c-accent-fg: 40 44 52;
   --c-success: 152 195 121;
   --c-warning: 229 192 123;
+  --c-warning-fg: 40 44 52;
   --c-danger: 224 108 117;
   --c-info: 86 182 194;
 }
@@ -140,6 +146,7 @@
   --c-accent-fg: 13 17 23;
   --c-success: 63 185 80;
   --c-warning: 210 153 34;
+  --c-warning-fg: 13 17 23;
   --c-danger: 255 123 114;
   --c-info: 57 197 207;
 }
@@ -158,6 +165,7 @@
   --c-accent-fg: 40 40 40;
   --c-success: 184 187 38;
   --c-warning: 250 189 47;
+  --c-warning-fg: 40 40 40;
   --c-danger: 251 73 52;
   --c-info: 104 157 106;
 }
@@ -176,6 +184,7 @@
   --c-accent-fg: 39 40 34;
   --c-success: 166 226 46;
   --c-warning: 230 219 116;
+  --c-warning-fg: 39 40 34;
   --c-danger: 249 38 114;
   --c-info: 161 239 228;
 }
@@ -194,6 +203,7 @@
   --c-accent-fg: 253 246 227;
   --c-success: 133 153 0;
   --c-warning: 181 137 0;
+  --c-warning-fg: 253 246 227;
   --c-danger: 220 50 47;
   --c-info: 42 161 152;
 }
@@ -212,6 +222,7 @@
   --c-accent-fg: 239 241 245;
   --c-success: 64 160 43;
   --c-warning: 223 142 29;
+  --c-warning-fg: 239 241 245;
   --c-danger: 210 15 57;
   --c-info: 23 146 153;
 }
@@ -306,6 +317,23 @@ input[type="number"] {
 .xterm .xterm-screen canvas {
   /* Avoids a sub-pixel seam between the canvas layers on fractional DPI. */
   image-rendering: auto;
+}
+
+/* ==========================================================================
+   Serial plot (uPlot)
+   ========================================================================== */
+
+/* uPlot appends its legend table AFTER the chart in normal flow, so it renders
+   below the plot and can overflow into the composer bar underneath. Overlay it
+   at the top of the chart instead (the plot wrapper supplies .serial-plot). */
+.serial-plot .u-legend {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  padding: 2px 8px;
+  background: rgb(var(--c-surface) / 0.85);
 }
 
 /* ==========================================================================

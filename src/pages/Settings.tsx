@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import {
@@ -10,6 +10,7 @@ import {
   Cpu,
   Database,
   Download,
+  FileOutput,
   Keyboard,
   Loader2,
   Monitor,
@@ -23,7 +24,6 @@ import {
   Terminal,
   Trash2,
   Type,
-  Upload,
   Wrench,
 } from "lucide-react";
 
@@ -114,6 +114,33 @@ function Switch({
 // Label + optional description on the left, control on the right. On narrow
 // screens it stacks; on wider screens the control is right-aligned. `full`
 // lets a control span the entire width (multi-control rows like a path picker).
+const SettingsSearchCtx = createContext("");
+
+/** Wrap substrings matching the active settings search query in <mark>. */
+function Highlight({ text }: { text: string }) {
+  const q = useContext(SettingsSearchCtx).toLowerCase();
+  if (!q || !text) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const out: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  for (;;) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark key={key++} className="rounded-sm bg-accent/25 px-0.5 text-fg">
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    );
+    i = idx + q.length;
+  }
+  return <>{out}</>;
+}
+
 function Row({
   title,
   desc,
@@ -137,12 +164,18 @@ function Row({
       <div className={cn("min-w-0", !full && "sm:max-w-[58%]")}>
         {htmlFor ? (
           <label htmlFor={htmlFor} className="cursor-pointer text-[13px] font-medium text-fg">
-            {title}
+            <Highlight text={title} />
           </label>
         ) : (
-          <div className="text-[13px] font-medium text-fg">{title}</div>
+          <div className="text-[13px] font-medium text-fg">
+            <Highlight text={title} />
+          </div>
         )}
-        {desc && <div className="mt-1 text-[11px] leading-relaxed text-subtle">{desc}</div>}
+        {desc && (
+          <div className="mt-1 text-[11px] leading-relaxed text-subtle">
+            <Highlight text={desc} />
+          </div>
+        )}
       </div>
       <div className={cn("shrink-0", full ? "w-full" : "sm:max-w-[42%] sm:flex-1")}>
         {children}
@@ -175,7 +208,9 @@ function Section({
     >
       <div className="mb-3 flex items-center gap-2.5 border-b border-border/60 pb-3">
         <span className="icon-chip">{icon}</span>
-        <h2 className="text-[14px] font-semibold text-fg">{title}</h2>
+        <h2 className="text-[14px] font-semibold text-fg">
+          <Highlight text={title} />
+        </h2>
       </div>
       <div className="divide-y divide-border/60">{children}</div>
     </section>
@@ -432,6 +467,9 @@ export function Settings() {
   const SECTION_META = SECTION_GROUPS.flatMap((g) => g.sections);
   const [activeSection, setActiveSection] = useState("account");
   const [query, setQuery] = useState("");
+  // Search corpus: cached lowercase text of each section's rendered rows, so the
+  // search box can match row-level settings, not just section titles.
+  const sectionTextRef = useRef<Record<string, string>>({});
   useEffect(() => {
     const els = SECTION_META.map((s) => document.getElementById(s.id)).filter(
       (el): el is HTMLElement => !!el,
@@ -447,6 +485,17 @@ export function Settings() {
     els.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, []);
+
+  // Rebuild the search corpus after every commit so conditional rows (approval
+  // hooks, keyword rules, …) and language switches stay searchable.
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const s of SECTION_META) {
+      const el = document.getElementById(s.id);
+      next[s.id] = el ? (el.textContent ?? "").replace(/\s+/g, " ").toLowerCase() : "";
+    }
+    sectionTextRef.current = next;
+  });
 
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) =>
     void updateSetting(k, v);
@@ -552,9 +601,17 @@ export function Settings() {
   };
 
   // Section cards matching the current search query (empty query = all).
+  // Matches the section title, the group title, AND the on-screen row text
+  // inside each section — so searching a specific setting (e.g. "字体大小",
+  // "主题", "审批端口") surfaces the section that contains it.
   const q = query.trim().toLowerCase();
-  const secVisible = (titleKey: Parameters<typeof t>[0]) =>
-    !q || t(titleKey).toLowerCase().includes(q);
+  const groupMatch =
+    !!q && SECTION_GROUPS.some((g) => t(g.titleKey).toLowerCase().includes(q));
+  const secVisible = (id: string, titleKey: Parameters<typeof t>[0]) =>
+    !q ||
+    groupMatch ||
+    t(titleKey).toLowerCase().includes(q) ||
+    (sectionTextRef.current[id] ?? "").includes(q);
 
   const setApproval = <K extends keyof ApprovalSettings>(k: K, v: ApprovalSettings[K]) =>
     void updateSetting("approval", {
@@ -738,46 +795,55 @@ export function Settings() {
 
       <div className="flex gap-6">
         {/* Left navigation rail, grouped */}
+        <SettingsSearchCtx.Provider value={q}>
         <nav className="sticky top-0 hidden h-[calc(100vh-150px)] w-48 shrink-0 flex-col gap-5 overflow-y-auto pr-1 lg:flex">
-          {SECTION_GROUPS.map((g) => (
-            <div key={g.id}>
-              <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                {t(g.titleKey)}
+          {SECTION_GROUPS.map((g) => {
+            // Hide a whole group when search matches none of its sections.
+            const groupShown = !q || g.sections.some((s) => secVisible(s.id, s.titleKey));
+            if (!groupShown) return null;
+            return (
+              <div key={g.id}>
+                <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                  <Highlight text={t(g.titleKey)} />
+                </div>
+                <ul className="space-y-0.5">
+                  {g.sections.map((s) => {
+                    const active = activeSection === s.id;
+                    const shown = secVisible(s.id, s.titleKey);
+                    return (
+                      <li key={s.id} className={shown ? undefined : "hidden"}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById(s.id)
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                          }
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                            active
+                              ? "border-accent bg-accent/10 text-accent"
+                              : "border-transparent text-muted hover:bg-hover hover:text-fg",
+                          )}
+                        >
+                          <span className="shrink-0">{s.icon}</span>
+                          <span className="truncate">
+                            <Highlight text={t(s.titleKey)} />
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              <ul className="space-y-0.5">
-                {g.sections.map((s) => {
-                  const active = activeSection === s.id;
-                  return (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          document
-                            .getElementById(s.id)
-                            ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                        }
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-lg border-l-2 px-2.5 py-1.5 text-[12px] font-medium transition-colors",
-                          active
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-transparent text-muted hover:bg-hover hover:text-fg",
-                        )}
-                      >
-                        <span className="shrink-0">{s.icon}</span>
-                        <span className="truncate">{t(s.titleKey)}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Content */}
         <div className="min-w-0 flex-1 space-y-6 pb-6">
           {/* Account */}
-          <Section id="account" hidden={!secVisible("settings.account")} icon={<Cloud size={15} />} title={t("settings.account")}>
+          <Section id="account" hidden={!secVisible("account", "settings.account")} icon={<Cloud size={15} />} title={t("settings.account")}>
             <Row title={t("settings.accIdentity")} full>
               <div className="flex items-center gap-3">
                 <button
@@ -910,7 +976,7 @@ export function Settings() {
           </Section>
 
           {/* Theme */}
-          <Section id="appearance" hidden={!secVisible("settings.appearance")} icon={<Palette size={15} />} title={t("settings.appearance")}>
+          <Section id="appearance" hidden={!secVisible("appearance", "settings.appearance")} icon={<Palette size={15} />} title={t("settings.appearance")}>
             <Row title={t("settings.language")} htmlFor="set-language">
               <Select
                 id="set-language"
@@ -950,7 +1016,7 @@ export function Settings() {
           </Section>
 
           {/* Terminal */}
-          <Section id="terminal" hidden={!secVisible("settings.terminal")} icon={<Terminal size={15} />} title={t("settings.terminal")}>
+          <Section id="terminal" hidden={!secVisible("terminal", "settings.terminal")} icon={<Terminal size={15} />} title={t("settings.terminal")}>
             <Row title={t("settings.fontFamily")} desc={t("settings.fontHint")} full>
               <div className="flex flex-col gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setFontOpen(true)}>
@@ -1094,6 +1160,13 @@ export function Settings() {
                 label={t("settings.inlineImages")}
               />
             </Row>
+            <Row title={t("settings.confirmOnExit")} desc={t("settings.confirmOnExitDesc")}>
+              <Switch
+                checked={settings.confirmOnExit}
+                onChange={(v) => set("confirmOnExit", v)}
+                label={t("settings.confirmOnExit")}
+              />
+            </Row>
 
             {/* Keyword highlighting */}
             <Row title={t("settings.keywordHighlight")} desc={t("settings.keywordHighlightHint")}>
@@ -1210,7 +1283,7 @@ export function Settings() {
           </Section>
 
           {/* Local Shell */}
-          <Section id="shell" hidden={!secVisible("settings.localShell")} icon={<Monitor size={15} />} title={t("settings.localShell")}>
+          <Section id="shell" hidden={!secVisible("shell", "settings.localShell")} icon={<Monitor size={15} />} title={t("settings.localShell")}>
             <Row title={t("settings.defaultShell")} desc={t("settings.shellHint")}>
               <Select
                 value={settings.localShell}
@@ -1238,7 +1311,7 @@ export function Settings() {
           </Section>
 
           {/* Monitoring */}
-          <Section id="monitoring" hidden={!secVisible("settings.monitoring")} icon={<Activity size={15} />} title={t("settings.monitoring")}>
+          <Section id="monitoring" hidden={!secVisible("monitoring", "settings.monitoring")} icon={<Activity size={15} />} title={t("settings.monitoring")}>
             <Row title={t("settings.metricsInterval")}>
               <Select
                 value={settings.metricsInterval}
@@ -1252,7 +1325,7 @@ export function Settings() {
           </Section>
 
           {/* Toolbar features */}
-          <Section id="toolbar" hidden={!secVisible("settings.toolbarFeatures")} icon={<PanelTop size={15} />} title={t("settings.toolbarFeatures")}>
+          <Section id="toolbar" hidden={!secVisible("toolbar", "settings.toolbarFeatures")} icon={<PanelTop size={15} />} title={t("settings.toolbarFeatures")}>
             <p className="mb-2 px-1 text-[11px] leading-snug text-subtle">{t("settings.toolbarFeaturesHint")}</p>
             <Row title={t("settings.featFiles")} desc={t("settings.featFilesDesc")}>
               <Switch checked={settings.features.files} onChange={(v) => setFeature("files", v)} label={t("settings.featFiles")} />
@@ -1278,7 +1351,7 @@ export function Settings() {
           </Section>
 
           {/* Desktop pet (easter egg) */}
-          <Section id="pet" hidden={!secVisible("settings.pet")} icon={<Cat size={15} />} title={t("settings.pet")}>
+          <Section id="pet" hidden={!secVisible("pet", "settings.pet")} icon={<Cat size={15} />} title={t("settings.pet")}>
             <Row title={t("settings.pet")} desc={t("settings.petDesc")}>
               <Switch
                 checked={settings.pet.enabled}
@@ -1295,7 +1368,7 @@ export function Settings() {
           </Section>
 
           {/* AI Assistant */}
-          <Section id="ai" hidden={!secVisible("settings.aiAssistant")} icon={<Bot size={15} />} title={t("settings.aiAssistant")}>
+          <Section id="ai" hidden={!secVisible("ai", "settings.aiAssistant")} icon={<Bot size={15} />} title={t("settings.aiAssistant")}>
             <Row title={t("settings.provider")}>
               <Select
                 value={settings.ai.provider}
@@ -1383,7 +1456,7 @@ export function Settings() {
           </Section>
 
           {/* J-Link */}
-          <Section id="jlink" hidden={!secVisible("settings.jlink")} icon={<Cpu size={15} />} title={t("settings.jlink")}>
+          <Section id="jlink" hidden={!secVisible("jlink", "settings.jlink")} icon={<Cpu size={15} />} title={t("settings.jlink")}>
             <Row
               title={t("settings.jlinkPath")}
               desc={t("settings.jlinkHint")}
@@ -1418,7 +1491,7 @@ export function Settings() {
           </Section>
 
           {/* Shortcuts */}
-          <Section id="shortcuts" hidden={!secVisible("settings.shortcuts")} icon={<Keyboard size={15} />} title={t("settings.shortcuts")}>
+          <Section id="shortcuts" hidden={!secVisible("shortcuts", "settings.shortcuts")} icon={<Keyboard size={15} />} title={t("settings.shortcuts")}>
             <p className="mb-2 px-1 text-[11px] leading-snug text-subtle">{t("settings.shortcutsHint")}</p>
             {SHORTCUT_DEFS.map((def) => {
               const b = settings.shortcuts?.[def.id] ?? defaultShortcutBindings()[def.id];
@@ -1468,7 +1541,7 @@ export function Settings() {
           </Section>
 
           {/* Notifications */}
-          <Section id="notifications" hidden={!secVisible("settings.notifications")} icon={<Bell size={15} />} title={t("settings.notifications")}>
+          <Section id="notifications" hidden={!secVisible("notifications", "settings.notifications")} icon={<Bell size={15} />} title={t("settings.notifications")}>
             <Row
               title={t("settings.approvalNotifications")}
               desc={t("settings.approvalNotificationsHint")}
@@ -1616,7 +1689,7 @@ export function Settings() {
           </Section>
 
           {/* Updates */}
-          <Section id="updates" hidden={!secVisible("settings.updates")} icon={<RefreshCw size={15} />} title={t("settings.updates")}>
+          <Section id="updates" hidden={!secVisible("updates", "settings.updates")} icon={<RefreshCw size={15} />} title={t("settings.updates")}>
             <Row title={t("settings.autoCheckUpdates")} desc={t("settings.autoCheckUpdatesHint")}>
               <Switch
                 checked={settings.autoCheckUpdates}
@@ -1645,7 +1718,7 @@ export function Settings() {
           </Section>
 
           {/* Data */}
-          <Section id="data" hidden={!secVisible("settings.data")} icon={<Database size={15} />} title={t("settings.data")}>
+          <Section id="data" hidden={!secVisible("data", "settings.data")} icon={<Database size={15} />} title={t("settings.data")}>
             <Row title={t("settings.exportLabel")} desc={t("settings.exportHint")} full>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2 text-[13px] text-fg">
@@ -1662,7 +1735,7 @@ export function Settings() {
                   disabled={dataBusy}
                   onClick={() => void doExport()}
                 >
-                  <Upload size={14} /> {t("settings.exportData")}
+                  <FileOutput size={14} /> {t("settings.exportData")}
                 </Button>
               </div>
             </Row>
@@ -1691,6 +1764,7 @@ export function Settings() {
             )}
           </Section>
         </div>
+        </SettingsSearchCtx.Provider>
       </div>
     </div>
   );

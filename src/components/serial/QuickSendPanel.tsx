@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Plus, Play, Repeat, Square, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, Play, Repeat, Square, Trash2 } from "lucide-react";
 
 import { Button, Input, Checkbox } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,13 @@ function nextId() {
 }
 
 export function QuickSendPanel({ connected, onSend }: QuickSendPanelProps) {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("devops-station:quick-send-collapsed") === "1",
+  );
+  useEffect(() => {
+    localStorage.setItem("devops-station:quick-send-collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
+
   const [items, setItems] = useState<QuickSendItem[]>([
     { id: nextId(), enabled: true, content: "AT+RST", note: "重启模块", hex: false, delayMs: 1000 },
     { id: nextId(), enabled: true, content: "AT+GMR", note: "查询版本信息", hex: false, delayMs: 1000 },
@@ -85,13 +92,36 @@ export function QuickSendPanel({ connected, onSend }: QuickSendPanelProps) {
     }
   };
 
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-7 shrink-0 flex-col items-center border-l border-border bg-surface">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="flex h-9 w-7 shrink-0 items-center justify-center text-muted hover:bg-hover"
+          title="展开快捷输入面板"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <span className="mt-2 select-none text-[10px] uppercase tracking-widest text-subtle [writing-mode:vertical-rl]">
+          快捷输入
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col border-l border-border bg-surface">
       <div className="flex h-9 items-center justify-between border-b border-border px-3">
         <span className="text-[12px] font-semibold text-fg">快捷输入面板</span>
-        <Button variant="ghost" size="sm" onClick={addItem} disabled={!connected} title="添加一行">
-          <Plus size={14} />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button variant="ghost" size="sm" onClick={addItem} disabled={!connected} title="添加一行">
+            <Plus size={14} />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setCollapsed(true)} title="折叠面板">
+            <ChevronRight size={14} />
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">

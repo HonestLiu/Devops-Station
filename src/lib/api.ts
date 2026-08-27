@@ -31,6 +31,7 @@ import type {
   AIChatMessage,
   JLinkConfig,
   JLinkResponse,
+  JLinkStatus,
   ProfileExportInfo,
   ProfileImportInfo,
   PermState,
@@ -477,6 +478,10 @@ export const jlink = {
     call<string[]>("jlink_devices", { exePath: jlinkExe(exePath) }),
   connect: (config: JLinkConfig, exePath?: string) =>
     call<JLinkResponse>("jlink_connect", { config, exePath: jlinkExe(exePath) }),
+  /** Cached "last successful connect" — used to render the workspace header badge. */
+  status: () => call<JLinkStatus>("jlink_status"),
+  /** Clear the cached connect — wired to the workspace Disconnect button. */
+  disconnect: () => call<JLinkStatus>("jlink_disconnect"),
   reset: (config: JLinkConfig, mode: "reset" | "halt" | "go", exePath?: string) =>
     call<JLinkResponse>("jlink_reset", { config, mode, exePath: jlinkExe(exePath) }),
   readMem: (config: JLinkConfig, addr: string, len: number, exePath?: string) =>
@@ -686,8 +691,7 @@ export const protocol = {
   /** Delete a protocol by id. */
   delete: (id: string) => call<void>("protocol_delete", { id }),
   /** Duplicate a protocol under a new name; returns the new config. */
-  duplicate: (id: string, newName: string) =>
-    call<ProtocolConfig>("protocol_duplicate", { id, newName }),
+  duplicate: (id: string, newName: string) => call<ProtocolConfig>("protocol_duplicate", { id, newName }),
   /** Parse a base64 byte buffer into all contained frames. */
   parse: (id: string, raw: string, config?: ProtocolConfig | null) =>
     call<ParsedFrame[]>("protocol_parse", { id, raw, config: config ?? null }),
@@ -710,3 +714,11 @@ export const protocol = {
   onFrame: (id: string, cb: (evt: ProtocolFrameEvent) => void): Promise<UnlistenFn> =>
     listen<ProtocolFrameEvent>(`protocol-frame-${id}`, (e) => cb(e.payload)),
 };
+
+/**
+ * Terminate the application process. Called by the frontend after the
+ * `confirm-exit` dialog accepts; the backend side of the close-request hook
+ * has already called `api.prevent_close()`, so we have to drive the exit
+ * ourselves from JS-land.
+ */
+export const appExit = () => invoke("app_exit");

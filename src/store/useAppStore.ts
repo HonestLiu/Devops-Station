@@ -72,6 +72,10 @@ export interface AppSettings {
   features: FeatureSettings;
   /** Desktop pet (ChatGPT-Desktop-style companion) settings. */
   pet: PetSettings;
+  /** Show a confirmation dialog before the app quits (window close, Alt+F4,
+   *  taskbar right-click → Close). When off, the window closes immediately.
+   *  Default true so a stray close doesn't lose unsaved work. */
+  confirmOnExit: boolean;
 }
 
 /** Persisted desktop-pet configuration. */
@@ -179,6 +183,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reactToAi: true,
     stayPut: false,
   },
+  confirmOnExit: true,
   ai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",
@@ -334,6 +339,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...DEFAULT_SETTINGS.pet,
           ...((stored as Partial<AppSettings>).pet ?? {}),
         },
+        // `confirmOnExit` is a plain boolean — fall back to the default so an
+        // older settings blob (pre-this-feature) still gets the safe default.
+        confirmOnExit:
+          typeof (stored as Partial<AppSettings>).confirmOnExit === "boolean"
+            ? (stored as Partial<AppSettings>).confirmOnExit!
+            : DEFAULT_SETTINGS.confirmOnExit,
       };
       merged.fontFamily = repairFontFamily(merged.fontFamily);
       // Persist the repair so it isn't re-detected on every startup.

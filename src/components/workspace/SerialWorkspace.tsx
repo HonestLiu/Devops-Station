@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Activity,
   ArrowUpDown,
   Cable,
-  Download,
+  Check,
   Eraser,
+  FileOutput,
   FileUp,
   LineChart,
+  Loader2,
   Pause,
   Play,
   Power,
@@ -16,12 +19,14 @@ import {
   ScrollText,
   TerminalSquare,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { Badge, Button, Select } from "@/components/ui";
 import { ConnectionOverlay } from "@/components/ConnectionOverlay";
 import { Terminal } from "@/components/terminal/Terminal";
 import { TerminalInlineAsk } from "@/ai/TerminalInlineAsk";
+import { getTerminal, getTerminalText } from "@/ai/terminalBridge";
 import { parseSerialProtocol } from "@/ai/tasks";
 import { SerialPlot } from "@/components/serial/SerialPlot";
 import { SendBar, type SendBarHandle } from "@/components/serial/SendBar";
@@ -37,7 +42,7 @@ import {
   formatTime,
   LINE_ENDINGS,
 } from "@/lib/utils";
-import { serial } from "@/lib/api";
+import { serial, localFs } from "@/lib/api";
 import { dataLink, type DataLink, type LinkKind } from "@/lib/dataLink";
 import { shortUuid } from "@/lib/bleGatt";
 import { useSerialLog } from "@/ai/serialLog";
@@ -57,6 +62,9 @@ const MODES: { id: SerialViewMode; labelKey: TKey; icon: typeof ScrollText }[] =
 ];
 
 const ENCODINGS: SerialEncoding[] = ["utf-8", "gbk", "ascii", "hex"];
+
+/** Safety cap for an RX line fragment that never receives a newline. */
+const MAX_RX_LINE_BUFFER = 64 * 1024;
 
 function decodeBytes(bytes: Uint8Array, enc: SerialEncoding): string {
   if (enc === "hex") return bytesToHex(bytes);
@@ -99,6 +107,8 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   const [frozen, setFrozen] = useState(false);
   const [txBytes, setTxBytes] = useState(0);
   const [rxBytes, setRxBytes] = useState(0);
+  // Export button feedback: "idle" | "busy" (spinner) | "ok" (check) | "err".
+  const [exportState, setExportState] = useState<"idle" | "busy" | "ok" | "err">("idle");
 
   const logId = useRef(0);
   const modeRef = useRef(mode);
@@ -113,8 +123,12 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
   frozenRef.current = frozen;
   const pendingRef = useRef<SerialLogEntry[]>([]);
   const sendBarRef = useRef<SendBarHandle>(null);
+  // RX line buffer: reassembles a device line that arrives split across serial
+  // reads, so "temp:31,hum=32" is one log entry even when the first byte
+  // arrives in its own read.
+  const rxBufRef = useRef<Uint8Array>(new Uint8Array(0));
 
-  const appendLog = (dir: "rx" | "tx", text: string, hex: string, rawLen: number) => {
+  const appendLog = (dir: "rx" | "tx", text: string, hex: string) => {
     const entry: SerialLogEntry = { id: ++logId.current, at: Date.now(), dir, text, hex };
     if (frozenRef.current) {
       pendingRef.current.push(entry);
@@ -126,8 +140,6 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
         return next;
       });
     }
-    if (dir === "rx") setRxBytes((v) => v + rawLen);
-    else setTxBytes((v) => v + rawLen);
   };
 
   const toggleFreeze = () => {
@@ -156,12 +168,62 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     const parked: Uint8Array[] = [];
     let stop: (() => void) | undefined;
 
-    const receive = (bytes: Uint8Array) => {
-      const text = decodeBytes(bytes, encodingRef.current);
-      const hex = bytesToHex(bytes);
+    // Emit one log entry for a complete RX line. A trailing CR is stripped so
+    // CRLF lines don't carry a dangling "\r" into the displayed text.
+    const flushLine = (lineBytes: Uint8Array) => {
+      const end =
+        lineBytes.length > 0 && lineBytes[lineBytes.length - 1] === 0x0d
+          ? lineBytes.length - 1
+          : lineBytes.length;
+      const line = lineBytes.slice(0, end);
+      if (line.length === 0) return;
+      const text = decodeBytes(line, encodingRef.current);
+      const hex = bytesToHex(line);
       const displayText = rxHexRef.current ? hex : text;
-      appendLog("rx", displayText, hex, bytes.length);
+      appendLog("rx", displayText, hex);
       useSerialLog.getState().push(text);
+    };
+
+    const receive = (bytes: Uint8Array) => {
+      // Coalesce reads into whole lines: a device line split across reads (e.g.
+      // "t" then "emp:31,hum=32") must appear as ONE entry, not two.
+      const merged = new Uint8Array(rxBufRef.current.length + bytes.length);
+      merged.set(rxBufRef.current, 0);
+      merged.set(bytes, rxBufRef.current.length);
+
+      // Split at the last line terminator (\n or \r) so the tail stays buffered.
+      let lastSep = -1;
+      for (let i = 0; i < merged.length; i++) {
+        if (merged[i] === 0x0a || merged[i] === 0x0d) lastSep = i;
+      }
+
+      if (lastSep < 0) {
+        // No complete line yet — keep buffering (with a safety cap).
+        if (merged.length > MAX_RX_LINE_BUFFER) {
+          flushLine(merged);
+          rxBufRef.current = new Uint8Array(0);
+        } else {
+          rxBufRef.current = merged;
+        }
+        setRxBytes((v) => v + bytes.length);
+        return;
+      }
+
+      // Emit one entry per terminator-separated segment; "\r\n" counts once.
+      const complete = merged.slice(0, lastSep + 1);
+      rxBufRef.current = merged.slice(lastSep + 1);
+      let start = 0;
+      let i = 0;
+      while (i < complete.length) {
+        const b = complete[i];
+        if (b === 0x0a || b === 0x0d) {
+          flushLine(complete.slice(start, i));
+          if (b === 0x0d && i + 1 < complete.length && complete[i + 1] === 0x0a) i++;
+          start = i + 1;
+        }
+        i++;
+      }
+      setRxBytes((v) => v + bytes.length);
     };
 
     void (async () => {
@@ -192,6 +254,11 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     return () => {
       disposed = true;
       stop?.();
+      // Flush a trailing partial RX line so a mode switch never drops it.
+      if (rxBufRef.current.length > 0) {
+        flushLine(rxBufRef.current);
+        rxBufRef.current = new Uint8Array(0);
+      }
     };
   }, [sessionId, mode]);
 
@@ -233,10 +300,9 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     if (mode === "normal") {
       const hex = bytesToHex(bytes);
       const displayText = meta.format === "text" ? meta.raw : hex;
-      appendLog("tx", displayText, hex, bytes.length);
-    } else {
-      setTxBytes((v) => v + bytes.length);
+      appendLog("tx", displayText, hex);
     }
+    setTxBytes((v) => v + bytes.length);
   };
 
   // Byte-based send — used by the SendBar composer (format + checksum resolved upstream).
@@ -254,15 +320,34 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
     if (r.bytes) writeOut(r.bytes, { format: asHex ? "hex" : "text", raw, checksum: "none" });
   };
 
-  const exportLog = () => {
-    const lines = logs.map((e) => `[${formatTime(e.at)}] ${e.dir.toUpperCase()} ${e.text}`);
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `serial-log-${tab.title}-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportLog = async () => {
+    if (exportState === "busy") return;
+    // Terminal mode: the data-mode log list is empty, so export the xterm
+    // scrollback instead.
+    const content =
+      mode === "terminal"
+        ? (sessionId ? getTerminalText(sessionId) : "")
+        : logs.map((e) => `[${formatTime(e.at)}] ${e.dir.toUpperCase()} ${e.text}`).join("\n");
+    if (!content) return;
+
+    const base = mode === "terminal" ? "serial-terminal" : "serial-log";
+    const picked = await save({
+      title: "导出串口日志",
+      defaultPath: `${base}-${tab.title}-${Date.now()}.txt`,
+      filters: [{ name: "文本文件", extensions: ["txt"] }],
+    });
+    if (!picked) return; // user canceled — keep idle state
+
+    setExportState("busy");
+    try {
+      await localFs.writeText(picked, content);
+      setExportState("ok");
+      window.setTimeout(() => setExportState("idle"), 1500);
+    } catch (e) {
+      console.error("[SerialWorkspace] export failed", e);
+      setExportState("err");
+      window.setTimeout(() => setExportState("idle"), 1500);
+    }
   };
 
   const cfg = tab.serial;
@@ -322,29 +407,33 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
           <Badge tone={connected ? "success" : tab.status === "error" ? "danger" : "warning"}>
             {connected ? t("ws.statusConnected") : tab.status === "error" ? t("ws.statusError") : tab.status === "connecting" ? t("ws.statusConnecting") : t("ws.statusWaiting")}
           </Badge>
-          <Select
-            value={encoding}
-            onChange={(e) => setEncoding(e.target.value as SerialEncoding)}
-            className="w-24"
-            title={t("ws.receiveEncoding")}
-          >
-            {ENCODINGS.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </Select>
+          {mode === "normal" && (
+            <Select
+              value={encoding}
+              onChange={(e) => setEncoding(e.target.value as SerialEncoding)}
+              className="w-24"
+              title={t("ws.receiveEncoding")}
+            >
+              {ENCODINGS.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </Select>
+          )}
           <Button variant="ghost" size="sm" onClick={() => void reconnect(tab.id)} title={t("common.reconnect")}>
             <RotateCw size={14} />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            title={t("ws.protocolParseTitle")}
-            onClick={() => void parseSerialProtocol()}
-          >
-            协议解析
-          </Button>
+          {mode !== "plot" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title={t("ws.protocolParseTitle")}
+              onClick={() => void parseSerialProtocol()}
+            >
+              协议解析
+            </Button>
+          )}
         </div>
       </div>
 
@@ -446,64 +535,88 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
 
         {/* Center: display area */}
         <div className="relative flex min-w-0 flex-1 flex-col">
-          {/* Display toolbar */}
-          <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setRxHex((v) => !v)}
-                className={
-                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
-                  (rxHex ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
-                }
-                title={t("ws.receiveHex")}
-              >
-                <Activity size={12} /> 接收:HEX
-              </button>
-              <button
-                onClick={() => setAutoScroll((v) => !v)}
-                className={
-                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
-                  (autoScroll ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
-                }
-                title={t("ws.autoScroll")}
-              >
-                <ArrowUpDown size={12} /> 自动滚动
-              </button>
-              <button
-                onClick={toggleFreeze}
-                className={
-                  "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
-                  (frozen ? "bg-warning text-warning-fg" : "text-muted hover:bg-hover")
-                }
-                title={t("ws.pauseTitle")}
-              >
-                {frozen ? <Play size={12} /> : <Pause size={12} />}
-                {frozen ? t("ws.paused") : t("ws.pause")}
-              </button>
-              <Button variant="ghost" size="sm" onClick={exportLog} disabled={logs.length === 0} title={t("ws.exportTitle")}>
-                <Download size={13} /> 导出
-              </Button>
+          {/* Display toolbar. Hidden in plot mode — the plot has its own toolbar
+              (pause / follow / clear / time / legend). */}
+          {mode !== "plot" && (
+            <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setRxHex((v) => !v)}
+                  className={
+                    "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                    (rxHex ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+                  }
+                  title={t("ws.receiveHex")}
+                >
+                  <Activity size={12} /> 接收:HEX
+                </button>
+                {mode === "normal" && (
+                  <button
+                    onClick={() => setAutoScroll((v) => !v)}
+                    className={
+                      "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                      (autoScroll ? "bg-accent text-accent-fg" : "text-muted hover:bg-hover")
+                    }
+                    title={t("ws.autoScroll")}
+                  >
+                    <ArrowUpDown size={12} /> 自动滚动
+                  </button>
+                )}
+                <button
+                  onClick={toggleFreeze}
+                  className={
+                    "flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors " +
+                    (frozen ? "bg-warning text-warning-fg" : "text-muted hover:bg-hover")
+                  }
+                  title={t("ws.pauseTitle")}
+                >
+                  {frozen ? <Play size={12} /> : <Pause size={12} />}
+                  {frozen ? t("ws.paused") : t("ws.pause")}
+                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void exportLog()}
+                  disabled={
+                    exportState === "busy" ||
+                    (mode === "normal" ? logs.length === 0 : !sessionId)
+                  }
+                  title={t("ws.exportTitle")}
+                >
+                  {exportState === "busy" ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : exportState === "ok" ? (
+                    <Check size={13} className="text-success" />
+                  ) : exportState === "err" ? (
+                    <X size={13} className="text-danger" />
+                  ) : (
+                    <FileOutput size={13} />
+                  )}
+                  导出
+                </Button>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" disabled title={t("ws.sendFileTitle")}>
+                  <FileUp size={13} /> 发送文件
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setLogs([]);
+                    pendingRef.current = [];
+                    if (sessionId) getTerminal(sessionId)?.clear();
+                  }}
+                  title={t("ws.clearTitle")}
+                >
+                  <Eraser size={13} /> 清屏
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" disabled title={t("ws.sendFileTitle")}>
-                <FileUp size={13} /> 发送文件
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setLogs([]);
-                  pendingRef.current = [];
-                }}
-                title={t("ws.clearTitle")}
-              >
-                <Eraser size={13} /> 清屏
-              </Button>
-            </div>
-          </div>
+          )}
 
           {/* Display content */}
-          <div className="relative flex-1">
+          <div className="relative min-h-0 flex-1">
             {mode === "terminal" && connected && sessionId && (
               <div className="flex h-full min-h-0 flex-col">
                 <div className="relative min-h-0 flex-1">
@@ -511,6 +624,8 @@ export function SerialWorkspace({ tab }: { tab: Tab }) {
                     key={sessionId}
                     sessionId={sessionId}
                     transport={isBle ? "ble" : "serial"}
+                    paused={frozen}
+                    rxHex={rxHex}
                     theme={tt.theme}
                     fontFamily={tt.fontFamily}
                     fontSize={tt.fontSize}

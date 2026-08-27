@@ -36,7 +36,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::path::Path;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use ble::BleManager;
 use error::{AppError, AppResult};
@@ -742,6 +742,19 @@ fn perm_ack(session_id: String) {
     }
 }
 
+/// Terminate the application process. Called by the frontend after the
+/// `confirm-exit` dialog accepts; the backend side of the close-request hook
+/// has already called `api.prevent_close()`, so we have to drive the exit
+/// ourselves from JS-land.
+#[tauri::command]
+fn app_exit(app: AppHandle) {
+    // `exit(0)` skips the cleanup hooks (good — by the time the user
+    // confirmed, the UI already tore down the active sessions via the
+    // `Destroyed` handler in the normal close path; here we just want out).
+    // Use 130 to signal "user-confirmed exit" in case we ever add logging.
+    app.exit(130);
+}
+
 /// Register (or clear) the OS-level quick-approve shortcut. The accelerator is
 /// a plugin-format string like "Ctrl+Shift+Enter"; an empty string unregisters.
 /// While registered, pressing the combo anywhere on the system emits
@@ -1208,6 +1221,31 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // User asked the OS to close the main window. We need to know
+            // *before* it tears down whether to prompt, so peek the
+            // `confirmOnExit` setting here. Reading the store synchronously
+            // is fine — it's a tiny in-memory struct.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    let confirm = window
+                        .app_handle()
+                        .try_state::<crate::storage::Store>()
+                        .map(|s| {
+                            s.get_settings()
+                                .ok()
+                                .and_then(|v| v.get("confirmOnExit").and_then(|x| x.as_bool()))
+                                .unwrap_or(true)
+                        })
+                        .unwrap_or(true);
+                    if confirm {
+                        // Block this close; the frontend will show the
+                        // confirmation dialog and, on accept, call
+                        // `app_exit` to actually terminate the process.
+                        api.prevent_close();
+                        let _ = window.app_handle().emit("confirm-exit", ());
+                    }
+                }
+            }
             if let tauri::WindowEvent::Destroyed = event {
                 // The pet is an always-on-top, skip-taskbar overlay window. If the
                 // user closes the main window we must also tear the pet down,
@@ -1380,6 +1418,8 @@ pub fn run() {
             docker::docker_compose,
             jlink::jlink_available,
             jlink::jlink_connect,
+            jlink::jlink_status,
+            jlink::jlink_disconnect,
             jlink::jlink_reset,
             jlink::jlink_read_mem,
             jlink::jlink_write_mem,
@@ -1393,6 +1433,7 @@ pub fn run() {
             jlink::jlink_rtt_running,
             jlink::jlink_rtt_send,
             jlink::jlink_launch_tool,
+            app_exit,
             jlink::jlink_devices,
             db_list_hosts,
             db_save_host,

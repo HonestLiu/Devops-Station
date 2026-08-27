@@ -16,6 +16,7 @@ export default {
         "accent-fg": "rgb(var(--c-accent-fg) / <alpha-value>)",
         success: "rgb(var(--c-success) / <alpha-value>)",
         warning: "rgb(var(--c-warning) / <alpha-value>)",
+        "warning-fg": "rgb(var(--c-warning-fg) / <alpha-value>)",
         danger: "rgb(var(--c-danger) / <alpha-value>)",
         info: "rgb(var(--c-info) / <alpha-value>)",
       },

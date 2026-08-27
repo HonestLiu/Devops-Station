@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import {
   ArrowLeft,
   Copy,
-  Download,
   Eye,
+  FileInput,
+  FileOutput,
   Image as ImageIcon,
   LayoutGrid,
   Loader2,
@@ -16,7 +17,6 @@ import {
   Save,
   Server,
   Trash2,
-  Upload,
   Wand2,
   Wifi,
   WifiOff,
@@ -599,10 +599,10 @@ export function DashBoard({
             }}
           />
           <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()} title={t("dash.import")}>
-            <Upload size={14} />
+            <FileInput size={14} />
           </Button>
           <Button variant="ghost" size="sm" onClick={exportJson} title={t("dash.export")}>
-            <Download size={14} />
+            <FileOutput size={14} />
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setShowLib((s) => !s)} title={t("dash.addWidget")}>
             <Plus size={14} />
