@@ -10,8 +10,9 @@
 //! (This is the offline-safe equivalent of `tauri-plugin-single-instance`.)
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::OnceLock;
+use std::thread::sleep;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
@@ -20,6 +21,14 @@ use tauri::{AppHandle, Manager};
 /// don't need any hashing/ident lookup. Low collision risk (high ephemeral-ish
 /// range), only ever bound on 127.0.0.1.
 const SENTINEL_PORT: u16 = 48_712;
+fn sentinel_addr() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], SENTINEL_PORT))
+}
+
+/// Short timeout for the "is a primary alive?" probe. Localhost connect-refused
+/// is normally instant, but Windows can stall the loopback probe in rare driver
+/// states; 300ms is a safe ceiling that still feels instant to a human.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
@@ -28,15 +37,25 @@ static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 /// instances and raises our main window.
 pub fn try_become_primary() -> bool {
     // Fast path: a live primary would already own the port, so a connect
-    // succeeds. If it does, we are secondary.
-    if TcpStream::connect(("127.0.0.1", SENTINEL_PORT)).is_ok() {
-        return false;
+    // succeeds. If it does, we are secondary. Bounded timeout so a wedged
+    // loopback driver can't hold the launch.
+    match TcpStream::connect_timeout(&sentinel_addr(), PROBE_TIMEOUT) {
+        Ok(_) => {
+            eprintln!(
+                "[devops-station] another instance is already running \
+                 (127.0.0.1:{SENTINEL_PORT} is held) — exiting."
+            );
+            return false;
+        }
+        Err(_) => {
+            // No live primary (or probe timed out). Fall through and try to bind.
+        }
     }
 
     // No live listener replied. Bind the sentinel port. Retry a few times to
     // absorb a brief TIME_WAIT left by a previous instance that just exited.
     for attempt in 0..4 {
-        match TcpListener::bind(("127.0.0.1", SENTINEL_PORT)) {
+        match TcpListener::bind(sentinel_addr()) {
             Ok(listener) => {
                 std::thread::spawn(move || {
                     for stream in listener.incoming() {
@@ -58,25 +77,32 @@ pub fn try_become_primary() -> bool {
                 });
                 return true;
             }
-            Err(_) => {
+            Err(e) => {
+                eprintln!(
+                    "[devops-station] sentinel bind attempt {}/4 failed: {e}",
+                    attempt + 1
+                );
                 // Bind failed. It could be a live primary (connect above should
                 // have caught it) or a lingering TIME_WAIT socket. Wait and retry.
                 if attempt < 3 {
-                    std::thread::sleep(Duration::from_millis(120));
+                    sleep(Duration::from_millis(120));
                 }
             }
         }
     }
 
-    // Could not bind after retries. Best-effort: assume we are still the only
-    // meaningful instance and run anyway rather than leaving the user with no
-    // app at all.
+    eprintln!(
+        "[devops-station] could not bind sentinel after retries; \
+         continuing as primary (a second launch may also proceed)."
+    );
+    // Best-effort: assume we are still the only meaningful instance and run
+    // anyway rather than leaving the user with no app at all.
     true
 }
 
 /// Called from a secondary instance: request the primary to focus, then exit.
 pub fn signal_primary_and_exit() {
-    if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", SENTINEL_PORT)) {
+    if let Ok(mut stream) = TcpStream::connect_timeout(&sentinel_addr(), PROBE_TIMEOUT) {
         let _ = stream.write_all(b"\x01");
         let _ = stream.read(&mut [0u8; 1]);
     }

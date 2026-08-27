@@ -16,6 +16,7 @@ import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections, dash } from "@/lib/api";
 import type { MqttConnection, MqttProtocol } from "@/lib/types";
+import { DashPage } from "./DashPage";
 
 const PROTOCOLS: MqttProtocol[] = ["mqtt", "mqtts", "ws", "wss"];
 
@@ -42,12 +43,12 @@ function emptyConn(): MqttConnection {
 export function MqttPage() {
   const t = useT();
   // The MQTT client list is an in-page module (a launcher — only the live
-  // connections become tabs). The HMI dashboard module opens directly as its
-  // own tab from the picker.
-  const [mode, setMode] = useState<"client" | null>(null);
+  // connections become tabs). The HMI dashboard module opens the same way:
+  // picked from the module card, rendered inline with a back button to the
+  // picker, instead of spawning a separate tab.
+  const [mode, setMode] = useState<"client" | "dash" | null>(null);
   const [connCount, setConnCount] = useState<number | null>(null);
   const [panelCount, setPanelCount] = useState<number | null>(null);
-  const openMqttDash = useTabsStore((s) => s.openMqttDash);
 
   useEffect(() => {
     let alive = true;
@@ -65,7 +66,7 @@ export function MqttPage() {
         panelCount={panelCount}
         onPick={(m) => {
           if (m === "client") setMode("client");
-          else openMqttDash();
+          else setMode("dash");
         }}
       />
     );
@@ -84,10 +85,12 @@ export function MqttPage() {
           {t("mqtt.modules")}
         </button>
         <span className="text-muted">/</span>
-        <span className="text-[13px] font-semibold text-fg">{t("mqtt.title")}</span>
+        <span className="text-[13px] font-semibold text-fg">
+          {mode === "client" ? t("mqtt.title") : t("dash.title")}
+        </span>
       </div>
       <div className="min-h-0 flex-1">
-        <MqttClientView />
+        {mode === "client" ? <MqttClientView /> : <DashPage embedded />}
       </div>
     </div>
   );

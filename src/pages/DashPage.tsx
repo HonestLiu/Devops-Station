@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-export function DashPage() {
+export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
   const t = useT();
   const [panels, setPanels] = useState<DashPanel[]>([]);
   const [conns, setConns] = useState<MqttConnection[]>([]);
@@ -181,30 +181,32 @@ export function DashPage() {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-4">
-        <LayoutDashboard size={16} className="text-accent" />
-        <h1 className="text-[14px] font-semibold text-fg">{t("dash.title")}</h1>
-        <span className="text-[11px] text-subtle">{t("dash.subtitle")}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) importFile(f);
-              e.target.value = "";
-            }}
-          />
-          <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-            <Upload size={14} /> {t("dash.import")}
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
-            <Plus size={14} /> {t("dash.newPanel")}
-          </Button>
+      {!embedded && (
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-4">
+          <LayoutDashboard size={16} className="text-accent" />
+          <h1 className="text-[14px] font-semibold text-fg">{t("dash.title")}</h1>
+          <span className="text-[11px] text-subtle">{t("dash.subtitle")}</span>
+          <div className="ml-auto flex items-center gap-1">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) importFile(f);
+                e.target.value = "";
+              }}
+            />
+            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
+              <Upload size={14} /> {t("dash.import")}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
+              <Plus size={14} /> {t("dash.newPanel")}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {panels.length === 0 ? (

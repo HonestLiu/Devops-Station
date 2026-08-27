@@ -522,6 +522,12 @@ fn connect_prefix(config: &JLinkConfig) -> String {
         } else {
             s.push_str("speed auto\n");
         }
+        // `ExitOnError` is a *commander-script command*, not a CLI option.
+        // Passing it as `-ExitOnError` on the command line makes J-Link
+        // Commander bail with "Missing command line parameter after command"
+        // before doing anything. Emit it as a script line instead so a failed
+        // connect aborts the script instead of continuing to e.g. loadfile.
+        s.push_str("ExitOnError\n");
         s.push_str("connect\n");
     }
     s
@@ -554,9 +560,7 @@ async fn run_script(
     }
 
     let mut rs = tokio::process::Command::new(&exe);
-    rs.arg("-CommanderScript")
-        .arg(&script_path)
-        .arg("-ExitOnError");
+    rs.arg("-CommanderScript").arg(&script_path);
     #[cfg(windows)]
     rs.as_std_mut().creation_flags(CREATE_NO_WINDOW);
     let output = rs
@@ -864,7 +868,7 @@ pub async fn jlink_rtt_start(
 
     let host_log: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     let mut cmd = std::process::Command::new(&exe);
-    cmd.arg("-CommanderScript").arg(&script_path).arg("-ExitOnError");
+    cmd.arg("-CommanderScript").arg(&script_path);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     #[cfg(windows)]
