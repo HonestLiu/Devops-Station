@@ -361,6 +361,12 @@ export const en: Record<keyof typeof zh, string> = {
   "hosts.frpUnconfigured": "Frp · unconfigured",
   "hosts.conn": "{user}@{host}:{port}",
   "hosts.baud": "{port} · {baud} baud",
+  "hosts.sort": "Sort",
+  "hosts.sort.recent": "Recently used",
+  "hosts.sort.nameAsc": "Name A-Z",
+  "hosts.sort.nameDesc": "Name Z-A",
+  "hosts.sort.newest": "Newest first",
+  "hosts.sort.oldest": "Oldest first",
 
   // --- host dialog ----------------------------------------------------------
   "hostDialog.new": "New Host",

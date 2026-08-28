@@ -553,12 +553,16 @@ async fn wsl_list_distros() -> AppResult<Vec<wsl::WslDistro>> {
 async fn wsl_spawn(
     app: AppHandle,
     state: State<'_, AppState>,
+    host_id: Option<String>,
     distro: Option<String>,
     user: Option<String>,
     cwd: Option<String>,
     cols: u16,
     rows: u16,
 ) -> AppResult<String> {
+    if let Some(id) = host_id.as_deref() {
+        let _ = state.store.touch_host(id);
+    }
     state.pty.spawn_wsl(app, distro, user, cwd, cols, rows)
 }
 
@@ -688,10 +692,14 @@ async fn usbip_install() -> AppResult<()> {
 async fn frp_spawn(
     app: AppHandle,
     state: State<'_, AppState>,
+    host_id: Option<String>,
     config: frp::FrpConfig,
     cols: u16,
     rows: u16,
 ) -> AppResult<String> {
+    if let Some(id) = host_id.as_deref() {
+        let _ = state.store.touch_host(id);
+    }
     let frpc = frp::locate_frpc(&app)?;
     let cfg_path = frp::write_config_file(&config)?;
     state.pty.spawn_frp(

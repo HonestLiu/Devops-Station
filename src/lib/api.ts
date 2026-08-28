@@ -258,6 +258,7 @@ export const wsl = {
 
   spawn: (cfg: WslLaunchConfig, cols: number, rows: number) =>
     call<string>("wsl_spawn", {
+      hostId: cfg.hostId || undefined,
       distro: cfg.distro || undefined,
       user: cfg.user || undefined,
       cwd: cfg.cwd || undefined,
@@ -276,7 +277,12 @@ export const wsl = {
  */
 export const frp = {
   spawn: (cfg: FrpLaunchConfig, cols: number, rows: number) =>
-    call<string>("frp_spawn", { config: cfg.config, cols, rows }),
+    call<string>("frp_spawn", {
+      hostId: cfg.hostId || undefined,
+      config: cfg.config,
+      cols,
+      rows,
+    }),
 };
 
 // --- WSL USB Device Manager (usbipd-win) ----------------------------------

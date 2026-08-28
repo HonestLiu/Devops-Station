@@ -278,6 +278,9 @@ export interface Snippet {
 /** Sort order for the snippet list. */
 export type SnippetSortKey = "name" | "created" | "updated";
 
+/** Sort order for the host list on the Hosts page. */
+export type HostSortKey = "recent" | "nameAsc" | "nameDesc" | "newest" | "oldest";
+
 export interface StreamChunk {
   sessionId: string;
   /** base64 */

@@ -1,6 +1,8 @@
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
+  ArrowUpDown,
   Cable,
+  Check,
   ChevronDown,
   ChevronRight,
   FolderTree,
@@ -23,10 +25,10 @@ import { DistroIcon, normalizeDistro } from "@/components/DistroIcon";
 import { parseSshCommand, cn } from "@/lib/utils";
 import { isWindows } from "@/lib/platform";
 import { useT, type TKey } from "@/i18n";
-import { useHostsStore, emptyHost } from "@/store/useHostsStore";
+import { useHostsStore, emptyHost, HOST_SORT_KEYS } from "@/store/useHostsStore";
 import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
-import type { Host, HostKind } from "@/lib/types";
+import type { Host, HostKind, HostSortKey } from "@/lib/types";
 
 const KIND_ICON = {
   ssh: Server,
@@ -44,9 +46,52 @@ const KIND_LABEL: Record<HostKind, TKey> = {
   local: "hosts.kindLocal",
 };
 
+const HOST_SORT_LABEL: Record<HostSortKey, TKey> = {
+  recent: "hosts.sort.recent",
+  nameAsc: "hosts.sort.nameAsc",
+  nameDesc: "hosts.sort.nameDesc",
+  newest: "hosts.sort.newest",
+  oldest: "hosts.sort.oldest",
+};
+
 type HostView = "grid" | "list" | "tree";
 
 const UNGROUPED = "__ungrouped__";
+
+/**
+ * `zh-Hans-CN-u-co-pinyin` gives pinyin ordering for Chinese host names;
+ * the plain `zh` fallback covers WebViews without the pinyin collation.
+ * `numeric` sorts "node-2" before "node-10".
+ */
+const SORT_COLLATOR = new Intl.Collator(["zh-Hans-CN-u-co-pinyin", "zh"], {
+  numeric: true,
+  sensitivity: "accent",
+});
+
+function sortHosts(list: Host[], key: HostSortKey): Host[] {
+  // `lastUsed`/`createdAt` are unix *seconds*, so ties are common; the name and
+  // id comparisons keep the order deterministic.
+  const byName = (a: Host, b: Host) =>
+    SORT_COLLATOR.compare(a.name, b.name) || a.id.localeCompare(b.id);
+  // "recent" ranks by last connection, falling back to creation time so a
+  // host that has never been connected still lands in a sensible spot.
+  const recent = (h: Host) => h.lastUsed ?? h.createdAt ?? 0;
+  return [...list].sort((a, b) => {
+    switch (key) {
+      case "nameAsc":
+        return byName(a, b);
+      case "nameDesc":
+        return byName(b, a);
+      case "newest":
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0) || byName(a, b);
+      case "oldest":
+        return (a.createdAt ?? 0) - (b.createdAt ?? 0) || byName(a, b);
+      case "recent":
+      default:
+        return recent(b) - recent(a) || byName(a, b);
+    }
+  });
+}
 
 function hostSubtitle(h: Host, t: (k: TKey, p?: Record<string, string | number>) => string): string {
   if (h.kind === "serial")
@@ -133,6 +178,8 @@ export function Hosts() {
   const t = useT();
   const hosts = useHostsStore((s) => s.hosts);
   const deleteHost = useHostsStore((s) => s.deleteHost);
+  const sort = useHostsStore((s) => s.sort);
+  const setSort = useHostsStore((s) => s.setSort);
   const openFromHost = useTabsStore((s) => s.openFromHost);
   const openLocal = useTabsStore((s) => s.openLocal);
 
@@ -141,6 +188,7 @@ export function Hosts() {
   const [editing, setEditing] = useState<Host | null>(null);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState<HostView>("grid");
+  const [sortOpen, setSortOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
@@ -151,14 +199,16 @@ export function Hosts() {
       (h) => h.kind !== "serial" && (isWindows || h.kind !== "wsl"),
     );
     const q = query.trim().toLowerCase();
-    if (!q) return nonSerial;
-    return nonSerial.filter(
-      (h) =>
-        h.name.toLowerCase().includes(q) ||
-        (h.hostname ?? "").toLowerCase().includes(q) ||
-        (h.tags ?? []).some((t) => t.toLowerCase().includes(q)),
-    );
-  }, [hosts, query]);
+    const matched = !q
+      ? nonSerial
+      : nonSerial.filter(
+          (h) =>
+            h.name.toLowerCase().includes(q) ||
+            (h.hostname ?? "").toLowerCase().includes(q) ||
+            (h.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+        );
+    return sortHosts(matched, sort);
+  }, [hosts, query, sort]);
 
   // Tree grouping by the host's first tag; untagged hosts fall under "Ungrouped".
   const grouped = useMemo(() => {
@@ -171,7 +221,7 @@ export function Hosts() {
     return [...map.entries()].sort(
       (a, b) =>
         (a[0] === UNGROUPED ? 1 : 0) - (b[0] === UNGROUPED ? 1 : 0) ||
-        a[0].localeCompare(b[0]),
+        SORT_COLLATOR.compare(a[0], b[0]),
     );
   }, [filtered]);
 
@@ -308,6 +358,46 @@ export function Hosts() {
           <ViewButton id="grid" icon={LayoutGrid} label={t("hosts.viewGrid")} />
           <ViewButton id="list" icon={ListIcon} label={t("hosts.viewList")} />
           <ViewButton id="tree" icon={FolderTree} label={t("hosts.viewTree")} />
+        </div>
+        <div className="relative flex shrink-0 items-center rounded-xl border border-border/80 bg-surface p-1">
+          <button
+            type="button"
+            onClick={() => setSortOpen((v) => !v)}
+            title={t("hosts.sort")}
+            className={cn(
+              "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors",
+              sortOpen ? "bg-accent/15 text-accent" : "text-subtle hover:bg-hover hover:text-fg",
+            )}
+          >
+            <ArrowUpDown size={14} />
+            <span className="hidden max-w-[8rem] truncate sm:inline">
+              {t(HOST_SORT_LABEL[sort])}
+            </span>
+          </button>
+          {sortOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setSortOpen(false)} />
+              <div className="absolute right-0 top-full z-40 mt-1 w-44 rounded-lg border border-border bg-elevated p-1 shadow-lg">
+                {HOST_SORT_KEYS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setSort(k);
+                      setSortOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-[12px] text-fg transition-colors hover:bg-hover",
+                      sort === k && "text-accent",
+                    )}
+                  >
+                    {t(HOST_SORT_LABEL[k])}
+                    {sort === k && <Check size={12} className="shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

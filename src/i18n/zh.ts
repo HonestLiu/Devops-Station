@@ -375,6 +375,12 @@ export const zh = {
   "hosts.frpUnconfigured": "Frp · 未配置",
   "hosts.conn": "{user}@{host}:{port}",
   "hosts.baud": "{port} · {baud} 波特",
+  "hosts.sort": "排序",
+  "hosts.sort.recent": "最近连接",
+  "hosts.sort.nameAsc": "名称 A-Z",
+  "hosts.sort.nameDesc": "名称 Z-A",
+  "hosts.sort.newest": "最新创建在前",
+  "hosts.sort.oldest": "最早创建在前",
 
   // --- host dialog ----------------------------------------------------------
   "hostDialog.new": "新建主机",

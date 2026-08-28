@@ -211,7 +211,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       ),
     })),
 
-  addTab: (tab) =>
+  addTab: (tab) => {
+    // Opening a tab means "just connected" — keep the host's in-memory
+    // `lastUsed` fresh so the Hosts list can re-sort immediately. The backend
+    // persists the same timestamp; this only mirrors it client-side.
+    if (tab.hostId) useHostsStore.getState().touchHost(tab.hostId);
     set((s) => {
       // Per-host open index: tabs that share a hostId (or, when hostless, the
       // same kind) form one sequence. The next index is 1 + the highest seq
@@ -226,7 +230,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         tabs: [...s.tabs, { ...tab, hostSeq: maxSeq + 1 }],
         activeId: tab.id,
       };
-    }),
+    });
+  },
 
   closeTab: async (id) => {
     const tab = get().tabs.find((t) => t.id === id);
