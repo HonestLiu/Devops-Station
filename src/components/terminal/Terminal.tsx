@@ -657,8 +657,17 @@ export function Terminal(props: TerminalProps) {
 
     // Keyword highlighting: global rules + this host's per-host rules. Re-applied
     // live whenever the settings change.
-    const highlighter = new KeywordHighlighter(term);
+    //
+    // Skipped for serial/BLE terminals. The highlighter re-scans the scrollback
+    // tail and recreates up to 600 line decorations on a debounce after EVERY
+    // `term.write`; each register/dispose fires a full xterm viewport refresh,
+    // so a device streaming continuously saturates the renderer until it can
+    // only repaint the bottom row ("after a while the terminal just refreshes
+    // the last line"). Shell terminals emit bursty output and never hit this.
+    const highlighter =
+      transport === "ssh" || transport === "pty" ? new KeywordHighlighter(term) : null;
     const applyHighlightRules = () => {
+      if (!highlighter) return;
       const s = useAppStore.getState().settings.keywordHighlight;
       const hostId = useTabsStore
         .getState()
