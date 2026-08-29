@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
-import { db } from "@/lib/api";
+import { db, wsl } from "@/lib/api";
+import { normalizeDistro } from "@/components/DistroIcon";
 import type { Host, HostSortKey, QuickCommand } from "@/lib/types";
 
 /** Sort keys offered by the Hosts page dropdown, in menu order. */
@@ -85,6 +86,27 @@ export const useHostsStore = create<HostsState>((set, get) => ({
         db.listQuickCommands(),
       ]);
       set({ hosts, quickCommands, loading: false });
+      // WSL hosts created without an explicit distro ("default") have no
+      // `wslDistro` to fall back on, so their list icon depends entirely on a
+      // detected `distro`. Backfill it from the system's default WSL distro so
+      // the icon is stable across restarts even if connect-time detection was
+      // skipped or lost.
+      const needDistro = hosts.filter(
+        (h) => h.kind === "wsl" && !h.wslDistro && !h.distro,
+      );
+      if (needDistro.length) {
+        wsl
+          .listDistros()
+          .then((list) => {
+            const def = list.find((d) => d.isDefault) ?? list[0];
+            const detected = def ? normalizeDistro(def.name) : null;
+            if (!detected) return;
+            for (const h of needDistro) {
+              void get().saveHost({ ...h, distro: detected });
+            }
+          })
+          .catch(() => undefined);
+      }
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }

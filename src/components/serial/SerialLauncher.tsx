@@ -51,6 +51,10 @@ export function SerialLauncher() {
   const [port, setPort] = useState("");
   const [baudRate, setBaudRate] = useState(115200);
   const [baudRates, setBaudRates] = useState<number[]>(FALLBACK_BAUD_RATES);
+  // Custom baud rate: when true, the dropdown shows a "自定义…" entry and a
+  // numeric input is revealed so any (non-preset) baud rate can be typed in.
+  const [customBaud, setCustomBaud] = useState(false);
+  const [customBaudText, setCustomBaudText] = useState("");
   const [dataBits, setDataBits] = useState<SerialOpenConfig["dataBits"]>(8);
   const [parity, setParity] = useState<SerialOpenConfig["parity"]>("none");
   const [stopBits, setStopBits] = useState<SerialOpenConfig["stopBits"]>(1);
@@ -85,10 +89,6 @@ export function SerialLauncher() {
       alive = false;
     };
   }, []);
-
-  const baudOptions = useMemo(() => {
-    return baudRates.includes(baudRate) ? baudRates : [...baudRates, baudRate].sort((a, b) => a - b);
-  }, [baudRates, baudRate]);
 
   const open = async () => {
     if (!port.trim()) return;
@@ -188,14 +188,44 @@ export function SerialLauncher() {
               </Field>
 
               <Field label={t("ws.baud")}>
-                <Select value={baudRate} onChange={(e) => setBaudRate(Number(e.target.value))}>
-                  {baudOptions.map((b) => (
+                <Select
+                  value={customBaud ? "custom" : baudRate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "custom") {
+                      setCustomBaud(true);
+                      setCustomBaudText((cur) => cur || String(baudRate));
+                    } else {
+                      setCustomBaud(false);
+                      setBaudRate(Number(v));
+                    }
+                  }}
+                >
+                  {baudRates.map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
                   ))}
+                  <option value="custom">{t("serialPage.baudCustom")}</option>
                 </Select>
               </Field>
+
+              {customBaud && (
+                <Field label={t("serialPage.baudCustomLabel")}>
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputCls}
+                    value={customBaudText}
+                    placeholder="e.g. 250000"
+                    onChange={(e) => {
+                      setCustomBaudText(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(n) && n > 0) setBaudRate(n);
+                    }}
+                  />
+                </Field>
+              )}
 
               <Field label={t("ws.dataBits")}>
                 <Select value={dataBits} onChange={(e) => setDataBits(Number(e.target.value) as SerialOpenConfig["dataBits"])}>

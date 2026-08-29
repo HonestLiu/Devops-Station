@@ -1,11 +1,18 @@
 import { create } from "zustand";
-import type { Update } from "@tauri-apps/plugin-updater";
+
+/** Serialisable summary of a pending update, mirroring the Rust `UpdateInfo`. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  date?: string;
+  body?: string;
+}
 
 interface UpdaterState {
   /** True while a check (or the auto-check-on-startup) is in flight. */
   checking: boolean;
   /** The pending update, or null. */
-  update: Update | null;
+  update: UpdateInfo | null;
   /** Whether the update dialog is visible. */
   open: boolean;
   /** True while the update package is downloading + installing. */
@@ -17,7 +24,7 @@ interface UpdaterState {
   /** null = no error. The sentinel "upToDate" means "checked, already latest". */
   error: string | null;
   setChecking: (v: boolean) => void;
-  setUpdating: (u: Update | null) => void;
+  setUpdating: (u: UpdateInfo | null) => void;
   setOpen: (v: boolean) => void;
   setDownloading: (v: boolean) => void;
   setProgress: (downloaded: number, total: number) => void;

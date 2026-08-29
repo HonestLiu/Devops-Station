@@ -1,33 +1,32 @@
-import { check } from "@tauri-apps/plugin-updater";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useUpdaterStore } from "@/store/useUpdaterStore";
 import { useAppStore } from "@/store/useAppStore";
+import { call } from "@/lib/api";
+import type { UpdateInfo } from "@/store/useUpdaterStore";
 
 /**
- * Optional GitHub token used to fetch the updater manifest / assets from a
- * PRIVATE repository. For a public repo this is unnecessary and should be left
- * unset.
+ * Optional GitHub mirror used to accelerate update downloads. The mirror is a
+ * URL *prefix* applied to the asset download URL, e.g.
+ * `https://github.dpik.top/https://github.com/HonestLiu/Devops-Station/releases/download/v0.1.34/DevOps.Station_0.1.34_amd64.deb`.
  *
- * Read at BUILD TIME from the `VITE_GITHUB_UPDATER_TOKEN` env var (kept out of
- * git via `.env.local`, which is already gitignored). Use a fine-grained
- * Personal Access Token scoped to **Contents: Read** on this single repo.
- *
- * Note: the value is inlined into the shipped binary, so it is recoverable by
- * anyone with the app. For a private internal tool this is an acceptable
- * trade-off; if you'd rather not ship a token, make the repo public instead.
+ * The prefix is read from Settings → Updates (`githubMirror`). Empty = download
+ * directly from GitHub (no acceleration). The bytes still carry the original
+ * signature, so update verification is unaffected.
  */
-const UPDATER_TOKEN = import.meta.env
-  .VITE_GITHUB_UPDATER_TOKEN as string | undefined;
+function githubMirror(): string {
+  return (useAppStore.getState().settings.githubMirror ?? "").trim();
+}
 
-/** Authorization header for private-repo fetches, or `undefined` for public. */
-function updaterHeaders(): HeadersInit | undefined {
-  return UPDATER_TOKEN ? { Authorization: `Bearer ${UPDATER_TOKEN}` } : undefined;
+function mirrorArg(): string | null {
+  const m = githubMirror();
+  return m ? m : null;
 }
 
 /**
  * Check GitHub Releases for a newer version.
  *
- * - When an update is found, the pending `Update` is stored and the dialog opens.
+ * - When an update is found, its summary is stored and the dialog opens.
  * - When `notifyWhenCurrent` is set, the dialog also opens (showing "up to date")
  *   even if nothing newer exists — used by the manual "Check for updates" button.
  * - When `auto` is set (startup background check), and the user opted into
@@ -42,9 +41,11 @@ export async function checkForUpdate(
   s.setChecking(true);
   s.setError(null);
   try {
-    const update = await check({ headers: updaterHeaders() });
-    if (update) {
-      s.setUpdating(update);
+    const info = await call<UpdateInfo | null>("updater_check", {
+      mirror: mirrorArg(),
+    });
+    if (info) {
+      s.setUpdating(info);
       s.setOpen(true);
       if (auto && useAppStore.getState().settings.autoDownloadUpdates) {
         // Skip the "click to update" step for the silent startup check.
@@ -63,9 +64,9 @@ export async function checkForUpdate(
 }
 
 /**
- * Download + install the pending update, streaming progress into the store, then
- * relaunch the app so the new build takes over. Failures are reported via the
- * store (the dialog keeps showing so the user can retry / read the error).
+ * Download + install the pending update (delegating to the Rust side, which
+ * applies the GitHub mirror and streams progress via `updater://progress`
+ * events), then relaunch the app so the new build takes over.
  */
 export async function installUpdate(): Promise<void> {
   const update = useUpdaterStore.getState().update;
@@ -77,22 +78,24 @@ export async function installUpdate(): Promise<void> {
   s.setError(null);
 
   let downloaded = 0;
+  let unlisten: UnlistenFn | undefined;
   try {
-    await update.downloadAndInstall(
-      (event) => {
-      const st = useUpdaterStore.getState();
-      if (event.event === "Started") {
-        st.setProgress(0, event.data.contentLength ?? 0);
-      } else if (event.event === "Progress") {
-        downloaded += event.data.chunkLength ?? 0;
-        // Some servers omit Content-Length; fall back to a moving bar.
-        const total = st.total > 0 ? st.total : downloaded;
-        st.setProgress(downloaded, total);
-      } else if (event.event === "Finished") {
-        const total = useUpdaterStore.getState().total;
-        st.setProgress(total > 0 ? total : downloaded, total > 0 ? total : downloaded);
-      }
-    }, { headers: updaterHeaders() });
+    unlisten = await listen<{ kind: string; chunk: number; total: number | null }>(
+      "updater://progress",
+      (ev) => {
+        const st = useUpdaterStore.getState();
+        if (ev.payload.kind === "progress") {
+          downloaded += ev.payload.chunk;
+          const total = ev.payload.total ?? downloaded;
+          st.setProgress(downloaded, total);
+        } else if (ev.payload.kind === "finished") {
+          const total = st.total > 0 ? st.total : downloaded;
+          st.setProgress(total, total);
+        }
+      },
+    );
+
+    await call("updater_download_and_install", { mirror: mirrorArg() });
     // On Windows/Linux the installer replaces the binary; relaunch finishes the
     // hand-off. On macOS the bundle is swapped and relaunch restarts us. Ignore
     // errors here — the process may already be mid-restart.
@@ -100,5 +103,7 @@ export async function installUpdate(): Promise<void> {
   } catch (e) {
     s.setDownloading(false);
     s.setError(e instanceof Error ? e.message : String(e));
+  } finally {
+    unlisten?.();
   }
 }

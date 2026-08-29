@@ -15,7 +15,7 @@ import { Button, Dialog, EmptyState, Select } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqttConnections } from "@/lib/api";
 import type { DashPanel, MqttConnection } from "@/lib/types";
-import { DashBoard } from "@/dash/DashBoard";
+import { useTabsStore } from "@/store/useTabsStore";
 import { useContextMenu, type MenuItem } from "@/store/useContextMenu";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +25,6 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
   const t = useT();
   const [panels, setPanels] = useState<DashPanel[]>([]);
   const [conns, setConns] = useState<MqttConnection[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newConn, setNewConn] = useState("");
@@ -48,8 +47,6 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
     load();
   }, []);
 
-  const active = panels.find((p) => p.id === activeId) ?? null;
-
   const create = async () => {
     if (!newName.trim() || !newConn) return;
     const p = await dash.save({
@@ -63,8 +60,8 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
     });
     setShowNew(false);
     setNewName("");
-    setActiveId(p.id);
     load();
+    useTabsStore.getState().openMqttDashPanel(p);
   };
 
   // --- edit dialog (name + bound MQTT server, opened from the edit button or
@@ -103,7 +100,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
   // Right-click menu on a panel row: reuses the same actions as the buttons.
   const panelMenu = (p: DashPanel, i: number): MenuItem[] => [
     { id: "edit", label: t("dash.ctx.edit"), icon: <Pencil size={14} />, onClick: () => openEdit(p) },
-    { id: "open", label: t("dash.open"), icon: <Eye size={14} />, onClick: () => setActiveId(p.id) },
+    { id: "open", label: t("dash.open"), icon: <Eye size={14} />, onClick: () => useTabsStore.getState().openMqttDashPanel(p) },
     { id: "duplicate", label: t("dash.ctx.duplicate"), icon: <Copy size={14} />, onClick: () => void duplicate(p) },
     { id: "export", label: t("dash.export"), icon: <FileOutput size={14} />, onClick: () => exportOne(p) },
     { id: "sep1", separator: true, label: "" },
@@ -116,7 +113,6 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
   const remove = async (p: DashPanel) => {
     if (!confirm(t("dash.confirmDelete"))) return;
     await dash.delete(p.id);
-    if (activeId === p.id) setActiveId(null);
     load();
   };
 
@@ -166,47 +162,32 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
     reader.readAsText(file);
   };
 
-  if (active) {
-    return (
-      <DashBoard
-        panel={active}
-        onBack={() => {
-          setActiveId(null);
-          load();
-        }}
-        onSaved={(p) => setPanels((ps) => ps.map((x) => (x.id === p.id ? p : x)))}
-      />
-    );
-  }
-
   return (
     <div className="flex h-full flex-col bg-surface">
-      {!embedded && (
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-4">
-          <LayoutDashboard size={16} className="text-accent" />
-          <h1 className="text-[14px] font-semibold text-fg">{t("dash.title")}</h1>
-          <span className="text-[11px] text-subtle">{t("dash.subtitle")}</span>
-          <div className="ml-auto flex items-center gap-1">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,application/json"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importFile(f);
-                e.target.value = "";
-              }}
-            />
-            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-              <FileInput size={14} /> {t("dash.import")}
-            </Button>
-            <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
-              <Plus size={14} /> {t("dash.newPanel")}
-            </Button>
-          </div>
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/70 px-4">
+        <LayoutDashboard size={16} className="text-accent" />
+        <h1 className="text-[14px] font-semibold text-fg">{t("dash.title")}</h1>
+        <span className="text-[11px] text-subtle">{t("dash.subtitle")}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) importFile(f);
+              e.target.value = "";
+            }}
+          />
+          <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
+            <FileInput size={14} /> {t("dash.import")}
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>
+            <Plus size={14} /> {t("dash.newPanel")}
+          </Button>
         </div>
-      )}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {panels.length === 0 ? (
@@ -229,11 +210,16 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
               } catch {
                 /* ignore */
               }
-              const hasConn = !!p.connectionName;
+              // Resolve the bound connection live from the loaded list (by id, the
+              // real association) rather than trusting the persisted display name,
+              // which can be blank if an autosave raced the connection load.
+              const boundConn = conns.find((c) => c.id === p.connectionId);
+              const hasConn = !!boundConn || (!!p.connectionId && p.connectionName !== "");
+              const connLabel = boundConn?.name ?? p.connectionName ?? t("dash.noConnection");
               return (
                 <div
                   key={p.id}
-                  onClick={() => setActiveId(p.id)}
+                  onClick={() => useTabsStore.getState().openMqttDashPanel(p)}
                   className="card card-interactive group relative flex cursor-pointer flex-col gap-3 p-3.5"
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -249,7 +235,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
                       <div className="truncate text-[13px] font-medium text-fg">{p.name}</div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-subtle">
                         <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", hasConn ? "bg-accent" : "bg-subtle")} />
-                        <span className="truncate">{hasConn ? p.connectionName : t("dash.noConnection")}</span>
+                        <span className="truncate">{connLabel}</span>
                       </div>
                     </div>
                   </div>

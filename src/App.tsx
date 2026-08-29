@@ -31,6 +31,7 @@ import { SerialPage } from "./pages/SerialPage";
 import { JLinkPage } from "./pages/JLinkPage";
 import { MqttPage } from "./pages/MqttPage";
 import { DashPage } from "./pages/DashPage";
+import { DashBoard } from "./dash/DashBoard";
 
 import { SshWorkspace } from "./components/workspace/SshWorkspace";
 import { SerialWorkspace } from "./components/workspace/SerialWorkspace";
@@ -154,8 +155,21 @@ function TabContent({ tab }: { tab: Tab }) {
   if (tab.kind === "sftp") return <SftpWorkspace tab={tab} />;
   if (tab.kind === "jlink") return <JLinkWorkspace tab={tab} />;
   // `mqtt` with a profile is a live connection; `mqttModule: "dash"` is the
-  // HMI dashboard module tab opened from the module picker page.
+  // HMI dashboard module. A panel tab carries `dashPanel` and renders that
+  // single panel standalone (no back button); a plain module tab is the list.
   if (tab.kind === "mqtt" && tab.mqtt) return <MqttWorkspace tab={tab} />;
+  if (tab.kind === "mqtt" && tab.mqttModule === "dash" && tab.dashPanel) {
+    return (
+      <DashBoard
+        panel={tab.dashPanel}
+        onSaved={(p) =>
+          useTabsStore
+            .getState()
+            .patch(tab.id, { title: p.name, subtitle: p.connectionName, dashPanel: p })
+        }
+      />
+    );
+  }
   if (tab.kind === "mqtt" && tab.mqttModule === "dash") return <DashPage />;
   if (tab.kind === "mqtt") return <MqttPage />;
   return <LocalWorkspace tab={tab} />;

@@ -60,6 +60,10 @@ export interface AppSettings {
    *  and install it without waiting for the user to click "Update now".
    *  Manual checks always show the release notes first. */
   autoDownloadUpdates: boolean;
+  /** GitHub mirror used to accelerate update downloads. A URL *prefix* applied
+   *  to the asset download URL (e.g. `https://github.dpik.top`). Empty = fetch
+   *  directly from GitHub. */
+  githubMirror: string;
   /** User's display name — synced across devices as identity info. */
   username: string;
   /** User's avatar as a data: URL — synced across devices as identity info. */
@@ -154,6 +158,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   autoCheckUpdates: true,
   autoDownloadUpdates: false,
+  githubMirror: "",
   username: "",
   avatar: "",
   sync: {

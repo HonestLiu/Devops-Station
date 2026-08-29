@@ -9,6 +9,7 @@ import { useSessionStore } from "@/store/useSessionStore";
 import { normalizeDistro } from "@/components/DistroIcon";
 import type {
   BleOpenConfig,
+  DashPanel,
   DistroId,
   FrpConfig,
   FrpLaunchConfig,
@@ -131,6 +132,8 @@ interface TabsState {
   openMqtt: (conn: MqttConnection, title?: string) => Promise<string>;
   /** Open (or focus) the singleton HMI dashboard module tab. */
   openMqttDash: () => string;
+  /** Open a specific dashboard panel as its own standalone tab (no back flow). */
+  openMqttDashPanel: (panel: DashPanel) => string;
   /** Open (or focus) the singleton J-Link module tab (Flash / RTT / GDB). */
   openJlinkModule: (module: JLinkModule, title?: string) => string;
   /** Open (or focus) the singleton Serial module tab (basic launcher /
@@ -268,9 +271,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         sessionId: result.sessionId,
       cwd: result.homeDir,
       remoteShell: result.shell,
-      fingerprint: result.serverKeyFingerprint,
+        fingerprint: result.serverKeyFingerprint,
       });
-      detectAndSaveDistro(result.sessionId, config.hostId).catch(() => {});
+      // Await so the detected `distro` is committed to the DB before the
+      // connect call settles — otherwise a quick app restart could drop the
+      // fire-and-forget save and the host-list icon would revert on reload.
+      await detectAndSaveDistro(result.sessionId, config.hostId).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -313,7 +319,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         remoteShell: result.shell,
         fingerprint: result.serverKeyFingerprint,
       });
-      detectAndSaveDistro(result.sessionId, host.id).catch(() => {});
+      await detectAndSaveDistro(result.sessionId, host.id).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -394,6 +400,33 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       status: "connected",
       mqttModule: "dash",
       mqtt: undefined,
+    });
+    return id;
+  },
+
+  /**
+   * Open a specific HMI dashboard panel as its own tab in the tab bar (no inline
+   * "back" flow). Re-opening the same panel focuses the existing tab instead of
+   * duplicating it. The `dash.title` module tab (panel list) is separate and is
+   * opened via `openMqttDash`.
+   */
+  openMqttDashPanel: (panel: DashPanel) => {
+    const existing = get().tabs.find(
+      (t) => t.kind === "mqtt" && t.mqttModule === "dash" && t.dashPanel?.id === panel.id,
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextId();
+    get().addTab({
+      id,
+      kind: "mqtt",
+      title: panel.name,
+      subtitle: panel.connectionName,
+      status: "connecting",
+      mqttModule: "dash",
+      dashPanel: panel,
     });
     return id;
   },
@@ -530,7 +563,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       // WSL sessions are plain PTY sessions — wsl.spawn returns a pty session id.
       const sessionId = await wsl.spawn(config, 120, 32);
       get().patch(id, { status: "connected", sessionId });
-      detectAndSaveWslDistro(config.distro, config.hostId).catch(() => {});
+      await detectAndSaveWslDistro(config.distro, config.hostId).catch(() => {});
     } catch (err) {
       get().patch(id, { status: "error", error: (err as Error).message });
     }
@@ -661,7 +694,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         remoteShell = r.shell;
       } else if (tab.kind === "wsl" && tab.wsl) {
         sessionId = await wsl.spawn(tab.wsl, 120, 32);
-        detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
+        await detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
       } else if (tab.kind === "frp" && tab.frp) {
         sessionId = await frp.spawn(tab.frp, 120, 32);
       } else {
@@ -671,7 +704,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       // Focus the new pane so typing goes there immediately.
       get().patch(tabId, { sessionId, cwd: homeDir, fingerprint, remoteShell });
       if (tab.kind === "ssh" && tab.hostId) {
-        detectAndSaveDistro(sessionId, tab.hostId).catch(() => {});
+        await detectAndSaveDistro(sessionId, tab.hostId).catch(() => {});
       }
     } catch (err) {
       get().patchPane(tabId, pId, { status: "error", error: (err as Error).message });
@@ -837,7 +870,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         });
       } else if (tab.kind === "wsl" && tab.wsl) {
         get().patch(id, { status: "connected", sessionId: syncPane(await wsl.spawn(tab.wsl, 120, 32)) });
-        detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
+        await detectAndSaveWslDistro(tab.wsl.distro, tab.hostId).catch(() => {});
       } else if (tab.kind === "frp" && tab.frp) {
         get().patch(id, { status: "connected", sessionId: syncPane(await frp.spawn(tab.frp, 120, 32)) });
       } else if (tab.kind === "sftp" && tab.sftpConfig) {
@@ -888,7 +921,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           remoteShell: result.shell,
           fingerprint: result.serverKeyFingerprint,
         });
-        detectAndSaveDistro(result.sessionId, tab.hostId).catch(() => {});
+        await detectAndSaveDistro(result.sessionId, tab.hostId).catch(() => {});
       } else {
         // SSH reconnect needs the original credentials, which only the Hosts
         // page holds — surface a clear message instead of failing silently.

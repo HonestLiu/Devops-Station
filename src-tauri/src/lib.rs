@@ -37,6 +37,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_updater::{UpdaterExt, Update};
 
 use ble::BleManager;
 use error::{AppError, AppResult};
@@ -1136,6 +1137,222 @@ fn eval_dash_js(
     Ok(out)
 }
 
+/// Download an image through Rust (NOT the webview) and return it as a `data:`
+/// URL.
+///
+/// The HMI dashboard renders external images (e.g. MQTT-pushed OSS URLs) with a
+/// plain `<img src>`. That path is subject to the browser's CORS/CSP rules and,
+/// for some CDNs (Alibaba OSS `x-oss-force-download` / `Content-Disposition:
+/// attachment`), the response is not rendered inline — the `<img>` fires `error`
+/// and the widget shows nothing. Fetching the bytes here (Rust-side, immune to
+/// browser CORS) and returning a `data:` URL sidesteps both problems.
+#[tauri::command]
+async fn fetch_image_data_url(url: String) -> AppResult<String> {
+    let parsed = reqwest::Url::parse(&url)
+        .map_err(|e| AppError::Other(format!("无效的图片 URL: {e}")))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => return Err(AppError::Other(format!("不支持的 URL 协议: {other}"))),
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| AppError::Other(format!("创建 HTTP 客户端失败: {e}")))?;
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AppError::Other(format!("图片下载请求失败: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Err(AppError::Other(format!("图片下载失败 (HTTP {})", resp.status())));
+    }
+
+    // Refuse oversized bodies up front when the server reports a length.
+    const MAX_BYTES: u64 = 10 * 1024 * 1024;
+    if let Some(len) = resp.content_length() {
+        if len > MAX_BYTES {
+            return Err(AppError::Other("图片过大（上限 10MB）".into()));
+        }
+    }
+
+    let mime = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .filter(|s| s.starts_with("image/"))
+        .unwrap_or_else(|| "image/png".to_string());
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| AppError::Other(format!("读取图片数据失败: {e}")))?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(AppError::Other("图片过大（上限 10MB）".into()));
+    }
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
+}
+
+/// Serialisable summary of a pending update, handed to the frontend so the
+/// update dialog can show version diff + release notes without holding the
+/// (non-serialisable) plugin `Update` resource.
+#[derive(Clone, serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    current_version: String,
+    date: Option<String>,
+    body: Option<String>,
+}
+
+/// Progress ping emitted (as a Tauri event) while the update package downloads.
+#[derive(Clone, serde::Serialize)]
+struct UpdaterProgress {
+    /// `"progress"` for each chunk, `"finished"` once the download completes.
+    kind: String,
+    /// Bytes received in this chunk (0 for `finished`).
+    chunk: usize,
+    /// Total bytes if the server reported a Content-Length, else `None`.
+    total: Option<u64>,
+}
+
+/// Holds the plugin `Update` between `updater_check` and the later
+/// `updater_download_and_install` so the (heavy) download is only performed when
+/// the user clicks "Install". Also lets us rewrite the asset download URL with a
+/// user-configured GitHub mirror without re-querying the manifest.
+struct UpdaterStash(pub std::sync::Mutex<Option<Update>>);
+
+/// Base updater manifest endpoint, mirroring `plugins.updater.endpoints[0]` in
+/// `tauri.conf.json`. Used only to derive the mirror-prefixed manifest URL; if
+/// the endpoint in `tauri.conf.json` ever changes, update this to match.
+const BASE_UPDATE_ENDPOINT: &str =
+    "https://github.com/HonestLiu/Devops-Station/releases/latest/download/latest.json";
+
+/// Check GitHub Releases for a newer version.
+///
+/// Unlike the stock `@tauri-apps/plugin-updater` `check()` (whose endpoints are
+/// frozen in `tauri.conf.json` and which cannot rewrite the per-asset download
+/// URL), this command keeps a handle on the resulting `Update` and lets the
+/// *install* step apply a user-configured GitHub mirror prefix to the asset URL
+/// — see [`apply_updater_mirror`]. The mirror is purely a download-accelerator:
+/// the bytes still carry the original signature, so verification is untouched.
+#[tauri::command]
+async fn updater_check(app: AppHandle, mirror: Option<String>) -> AppResult<Option<UpdateInfo>> {
+    let mut builder = app.updater_builder();
+    // Route the manifest fetch through the mirror too — otherwise, on a network
+    // where github.com is throttled/blocked, `check()` fails at the manifest
+    // step before the (already-mirrored) asset download ever runs.
+    if let Some(m) = mirror.as_deref() {
+        let m = m.trim();
+        if !m.is_empty() {
+            let mirrored = format!("{}/{}", m.trim_end_matches('/'), BASE_UPDATE_ENDPOINT);
+            if let Ok(url) = reqwest::Url::parse(&mirrored) {
+                builder = builder
+                    .endpoints(vec![url])
+                    .map_err(|e| AppError::Other(format!("更新端点处理失败: {e}")))?;
+            }
+        }
+    }
+    let updater = builder
+        .build()
+        .map_err(|e| AppError::Other(format!("更新器初始化失败: {e}")))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| AppError::Other(format!("检查更新失败: {e}")))?;
+    match update {
+        Some(update) => {
+            if let Ok(mut guard) = app.state::<UpdaterStash>().0.lock() {
+                *guard = Some(update.clone());
+            } else if let Err(poisoned) = app.state::<UpdaterStash>().0.lock() {
+                *poisoned.into_inner() = Some(update.clone());
+            }
+            Ok(Some(UpdateInfo {
+                version: update.version,
+                current_version: update.current_version,
+                date: update.date.map(|d| d.to_string()),
+                body: update.body,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Download + install the update previously returned by [`updater_check`].
+///
+/// Applies the GitHub mirror prefix to the asset download URL (the slow part for
+/// users behind a restricted network) and then delegates to the plugin's own
+/// verified `download_and_install`. Progress is streamed to the frontend via the
+/// `updater://progress` event.
+#[tauri::command]
+async fn updater_download_and_install(app: AppHandle, mirror: Option<String>) -> AppResult<()> {
+    let stashed = {
+        let stash = app.state::<UpdaterStash>();
+        let guard = match stash.0.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.clone()
+    };
+    let update = stashed.ok_or_else(|| {
+        AppError::Other("没有待安装的更新，请先点击“检查更新”".into())
+    })?;
+
+    let update = apply_updater_mirror(update, mirror.as_deref())
+        .map_err(|e| AppError::Other(format!("镜像地址处理失败: {e}")))?;
+
+    let on_event = app.clone();
+    let on_done = app.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                let _ = on_event.emit(
+                    "updater://progress",
+                    UpdaterProgress {
+                        kind: "progress".into(),
+                        chunk,
+                        total,
+                    },
+                );
+            },
+            move || {
+                let _ = on_done.emit(
+                    "updater://progress",
+                    UpdaterProgress {
+                        kind: "finished".into(),
+                        chunk: 0,
+                        total: None,
+                    },
+                );
+            },
+        )
+        .await
+        .map_err(|e| AppError::Other(format!("下载或安装更新失败: {e}")))?;
+
+    Ok(())
+}
+
+/// Prefix an absolute download URL with a GitHub mirror, e.g.
+/// `https://github.dpik.top/https://github.com/.../asset.deb`. An empty/absent
+/// mirror leaves the URL untouched. Returns an error if the result isn't a valid
+/// URL (so we never silently download from nowhere).
+fn apply_updater_mirror(mut update: Update, mirror: Option<&str>) -> Result<Update, String> {
+    if let Some(m) = mirror {
+        let m = m.trim();
+        if !m.is_empty() {
+            let base = update.download_url.as_str();
+            let mirrored = format!("{}/{}", m.trim_end_matches('/'), base);
+            update.download_url =
+                reqwest::Url::parse(&mirrored).map_err(|e| format!("镜像地址无效: {e}"))?;
+        }
+    }
+    Ok(update)
+}
+
 pub fn run() {
     // Single-instance guard: if another copy is already running, ask it to raise
     // its window and exit this one. Keeps exactly one process alive (and thus a
@@ -1151,7 +1368,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .setup(|app| {
+        .manage(UpdaterStash(std::sync::Mutex::new(None)))
+        .setup(|app| {
             // Ensure OS notifications are attributed to this app (not
             // "Windows PowerShell") by registering our Start Menu shortcut +
             // AUMID on Windows. Safe no-op on other platforms / release builds
@@ -1345,6 +1563,7 @@ pub fn run() {
             dash_panel_save,
             dash_panel_delete,
             dash_eval,
+            fetch_image_data_url,
             remote_metrics,
             local_metrics,
             serial_list_ports,
@@ -1483,6 +1702,8 @@ pub fn run() {
             sync_test,
             sync_push,
             sync_pull,
+            updater_check,
+            updater_download_and_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DevOps Station");

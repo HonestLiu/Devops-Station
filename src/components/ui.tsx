@@ -232,6 +232,8 @@ export interface SelectProps {
   title?: string;
   id?: string;
   name?: string;
+  /** Open the menu upward (use when the trigger sits near the bottom edge). */
+  dropUp?: boolean;
   children?: ReactNode;
 }
 
@@ -246,6 +248,7 @@ export function Select({
   title,
   id,
   name,
+  dropUp,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -284,8 +287,12 @@ export function Select({
     onChange?.(evt);
   };
 
+  // Default to full width unless the caller pins an explicit width (e.g. `w-24`).
+  const hasWidth = !!className && /\bw-/.test(className);
+  const wrapperCls = cn("relative inline-block", hasWidth ? className : cn(className, "w-full"));
+
   return (
-    <div ref={ref} className="relative inline-block w-full">
+    <div ref={ref} className={wrapperCls}>
       <button
         type="button"
         id={id}
@@ -297,7 +304,6 @@ export function Select({
           "flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-border bg-bg px-2 text-[13px] text-fg transition-colors hover:border-accent/40",
           open && "border-accent/60",
           disabled && "cursor-not-allowed opacity-50",
-          className,
         )}
       >
         <span className={cn("min-w-0 truncate text-left", !current && "text-muted")}>
@@ -310,7 +316,12 @@ export function Select({
       </button>
 
       {open && !disabled && (
-        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-elevated py-1 shadow-2xl">
+        <div
+          className={cn(
+            "absolute z-50 w-full max-h-64 overflow-auto rounded-lg border border-border bg-elevated py-1 shadow-2xl",
+            dropUp ? "bottom-full mb-1" : "mt-1",
+          )}
+        >
           {groups.map((g, gi) => (
             <div key={gi}>
               {g.label && (

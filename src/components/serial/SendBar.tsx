@@ -239,6 +239,7 @@ export const SendBar = forwardRef<SendBarHandle, SendBarProps>(function SendBar(
           className="w-24 shrink-0"
           title={isHex ? "行尾对原始 HEX 不生效" : "每条发送内容后追加的行尾符"}
           disabled={isHex}
+          dropUp
         >
           {LINE_ENDING_OPTS.map((o) => (
             <option key={o.id} value={o.id}>
@@ -279,6 +280,7 @@ export const SendBar = forwardRef<SendBarHandle, SendBarProps>(function SendBar(
             onChange={(e) => setChecksum(e.target.value as ChecksumAlgo)}
             className="w-28 shrink-0"
             title="在 HEX 帧尾追加校验位"
+            dropUp
           >
             <option value="none">无校验</option>
             {CHECKSUM_ALGOS.map((c) => (

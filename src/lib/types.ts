@@ -403,6 +403,13 @@ export interface Tab {
    */
   mqttModule?: "dash";
   /**
+   * HMI dashboard panel tabs only: the specific panel (by id) this tab renders
+   * via `DashBoard`. A `mqttModule: "dash"` tab WITHOUT this field is the panel
+   * list (`DashPage`); WITH it, the tab hosts that single panel as an
+   * independent view (no "back" affordance — navigation is via the tab bar).
+   */
+  dashPanel?: DashPanel;
+  /**
    * Serial module tabs only: which module this tab hosts. A tab with
    * `serialModule` set renders the matching module (`basic` launcher or
    * `designer` placeholder) instead of a live serial/ BLE session

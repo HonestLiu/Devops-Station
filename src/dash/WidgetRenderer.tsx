@@ -35,6 +35,7 @@ import {
 import type { DashWidget } from "@/lib/types";
 import { widgetMeta, type WidgetMeta } from "./registry";
 import { cn } from "@/lib/utils";
+import { fetchImageDataUrl } from "@/lib/api";
 
 export interface DashLogEntry {
   id: string;
@@ -111,6 +112,40 @@ function Card({
       {children}
     </div>
   );
+}
+
+/**
+ * Renders an external image and transparently recovers when the webview refuses
+ * to load it directly (browser CORS/CSP, or a CDN `Content-Disposition:
+ * attachment` header). On failure we re-fetch the bytes through the Rust backend
+ * and display a `data:` URL instead, so dashboard image widgets work for any
+ * reachable URL. A permanent failure shows a placeholder rather than a blank box.
+ */
+function SafeImage({ src, className, alt = "" }: { src: string; className?: string; alt?: string }) {
+  const [resolved, setResolved] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setResolved(null);
+    setFailed(false);
+  }, [src]);
+
+  if (failed && !resolved) return <ImageIcon size={20} className="text-subtle" />;
+
+  const handleError = async () => {
+    if (resolved) {
+      setFailed(true);
+      return;
+    }
+    try {
+      const dataUrl = await fetchImageDataUrl(src);
+      setResolved(dataUrl);
+    } catch {
+      setFailed(true);
+    }
+  };
+
+  return <img src={resolved ?? src} alt={alt} className={className} onError={handleError} />;
 }
 
 /**
@@ -662,7 +697,7 @@ export function WidgetRenderer(ctx: RenderCtx) {
           {title}
           <div className="relative m-1 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded bg-black/40">
             {str(v.snapshot) ? (
-              <img src={str(v.snapshot)} alt="" className="h-full w-full object-cover" />
+              <SafeImage src={str(v.snapshot)} className="h-full w-full object-cover" alt={widget.title} />
             ) : (
               <Camera size={26} className="text-subtle" />
             )}
@@ -738,19 +773,21 @@ export function WidgetRenderer(ctx: RenderCtx) {
         </Card>
       );
     }
-    case "imageCard":
+    case "imageCard": {
+      const imgSrc = str(v.src) || str(cfg.fallback);
       return (
         <Card ctx={ctx} className="p-1">
           {title}
           <div className="m-1 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded bg-hover/60">
-            {str(v.src) ? (
-              <img src={str(v.src)} alt="" className="h-full w-full object-cover" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
+            {imgSrc ? (
+              <SafeImage src={imgSrc} className="h-full w-full object-cover" alt={widget.title} />
             ) : (
               <ImageIcon size={20} className="text-subtle" />
             )}
           </div>
         </Card>
       );
+    }
     case "divider":
       return <div className="mx-2 my-auto h-px bg-border" />;
     case "clockCard":

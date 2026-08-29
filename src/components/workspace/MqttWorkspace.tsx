@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 
-import { Button, Select, SideIconButton } from "@/components/ui";
+import { Button, Input, Select, SideIconButton, Switch } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { mqtt } from "@/lib/api";
@@ -686,69 +686,58 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
 
           {/* Publisher */}
           <div className="flex h-64 shrink-0 flex-col border-t border-border/60 bg-surface/30">
-            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-              <input
-                className={`${fieldCls} max-w-[260px]`}
-                placeholder={t("mqtt.topic")}
-                value={pubTopic}
-                onChange={(e) => setPubTopic(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void publish()}
-              />
-
-              <Select
-                className={selectCls}
-                value={pubFormat}
-                onChange={(e) => setPubFormat(e.target.value as PayloadFormat)}
-                title={t("mqtt.format")}
-              >
-                <option value="text">{t("mqtt.text")}</option>
-                <option value="json">{t("mqtt.json")}</option>
-                <option value="hex">{t("mqtt.hex")}</option>
-                <option value="base64">{t("mqtt.base64")}</option>
-              </Select>
-
-              <Select
-                className={selectCls}
-                value={pubQos}
-                onChange={(e) => setPubQos(Number(e.target.value))}
-                title={t("mqtt.qos")}
-              >
-                <option value={0}>QoS 0</option>
-                <option value={1}>QoS 1</option>
-                <option value={2}>QoS 2</option>
-              </Select>
-
-              <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-fg">
-                <input
-                  type="checkbox"
-                  checked={pubRetain}
-                  onChange={(e) => setPubRetain(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-[rgb(var(--c-accent))]"
+            <div className="flex h-9 items-center gap-2 border-b border-border/60 px-3">
+              <div className="min-w-0 flex-1">
+                <Input
+                  value={pubTopic}
+                  onChange={(e) => setPubTopic(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void publish()}
+                  placeholder={t("mqtt.topic")}
                 />
-                {t("mqtt.retain")}
-              </label>
+              </div>
 
-              {pubErr && <span className="ml-2 truncate text-[11px] text-danger">{pubErr}</span>}
-
-              {/* {pubTopicNotSubscribed && !pubErr && (
-                <span
-                  className="ml-2 truncate text-[11px] text-amber-500"
-                  title={t("mqtt.pubNotSubscribedHint")}
+              <div className="flex shrink-0 items-center gap-2">
+                <Select
+                  className="w-24"
+                  value={pubFormat}
+                  onChange={(e) => setPubFormat(e.target.value as PayloadFormat)}
+                  title={t("mqtt.format")}
                 >
-                  {t("mqtt.pubNotSubscribed")}
-                </span>
-              )} */}
+                  <option value="text">{t("mqtt.text")}</option>
+                  <option value="json">{t("mqtt.json")}</option>
+                  <option value="hex">{t("mqtt.hex")}</option>
+                  <option value="base64">{t("mqtt.base64")}</option>
+                </Select>
 
-              <Button
-                variant="primary"
-                size="sm"
-                className="ml-auto gap-1"
-                onClick={publish}
-                disabled={!live || !pubTopic.trim()}
-              >
-                <Send size={13} />
-                {t("mqtt.send")}
-              </Button>
+                <Select
+                  className="w-20"
+                  value={pubQos}
+                  onChange={(e) => setPubQos(Number(e.target.value))}
+                  title={t("mqtt.qos")}
+                >
+                  <option value={0}>0</option>
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                </Select>
+
+                <label className="flex cursor-pointer select-none items-center gap-1.5 text-[12px] text-fg">
+                  <Switch checked={pubRetain} onChange={(v) => setPubRetain(v)} />
+                  {t("mqtt.retain")}
+                </label>
+
+                {pubErr && <span className="truncate text-[11px] text-danger">{pubErr}</span>}
+
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="gap-1"
+                  onClick={publish}
+                  disabled={!live || !pubTopic.trim()}
+                >
+                  <Send size={13} />
+                  {t("mqtt.send")}
+                </Button>
+              </div>
             </div>
 
             <textarea

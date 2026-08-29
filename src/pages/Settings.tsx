@@ -1707,6 +1707,17 @@ export function Settings() {
                 label={t("settings.autoDownloadUpdates")}
               />
             </Row>
+            <Row
+              title={t("settings.githubMirror")}
+              desc={t("settings.githubMirrorHint")}
+            >
+              <Input
+                value={settings.githubMirror}
+                onChange={(e) => set("githubMirror", e.target.value)}
+                className="w-80 font-mono text-[12px]"
+                placeholder="https://github.dpik.top"
+              />
+            </Row>
             <Row title={t("settings.currentVersion")}>
               <div className="flex items-center gap-3">
                 <span className="rounded-md border border-border bg-bg px-2.5 py-1 font-mono text-[12px] text-fg">

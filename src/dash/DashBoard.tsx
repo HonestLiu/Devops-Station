@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  ArrowLeft,
   Copy,
   Eye,
   FileInput,
@@ -87,11 +86,9 @@ function sampleValueForWidget(w: DashWidget, meta: WidgetMeta): unknown {
 
 export function DashBoard({
   panel,
-  onBack,
   onSaved,
 }: {
   panel: DashPanel;
-  onBack: () => void;
   onSaved: (p: DashPanel) => void;
 }) {
   const t = useT();
@@ -275,7 +272,9 @@ export function DashBoard({
           name,
           json: JSON.stringify(json),
           connectionId: connId,
-          connectionName: conns.find((c) => c.id === connId)?.name ?? "",
+          // Fall back to the previously stored name when `conns` hasn't loaded
+          // yet, so the autosave never clobbers a valid association to "".
+          connectionName: conns.find((c) => c.id === connId)?.name ?? panel.connectionName,
         })
         .then((p) => {
           onSaved(p);
@@ -534,9 +533,6 @@ export function DashBoard({
     <div className="flex h-full flex-col bg-bg">
       {/* toolbar */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-2">
-        <Button variant="ghost" size="sm" onClick={onBack} title={t("dash.back")}>
-          <ArrowLeft size={14} />
-        </Button>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}

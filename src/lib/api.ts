@@ -61,7 +61,7 @@ import type {
  * Backend errors arrive as plain strings (see `AppError`'s Serialize impl), so
  * every call surface here rethrows a real `Error` with that message intact.
  */
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(cmd, args);
   } catch (err) {
@@ -745,3 +745,14 @@ export const protocol = {
  * ourselves from JS-land.
  */
 export const appExit = () => invoke("app_exit");
+
+/**
+ * Download an image through the Rust backend and return a `data:` URL.
+ *
+ * Used by dashboard image widgets: a plain `<img src="https://...">` can fail to
+ * render in the webview (browser CORS/CSP, or a CDN `Content-Disposition:
+ * attachment` header). Fetching the bytes Rust-side bypasses those restrictions.
+ */
+export async function fetchImageDataUrl(url: string): Promise<string> {
+  return call<string>("fetch_image_data_url", { url });
+}
