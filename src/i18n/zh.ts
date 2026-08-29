@@ -706,6 +706,9 @@ export const zh = {
   "sftp.previewTooLarge": "文件过大，无法内联预览，请下载到本地查看。",
   "sftp.previewUnsupported": "此文件类型暂不支持预览，可下载到本地用其他程序打开。",
   "sftp.previewReadError": "读取失败：{msg}",
+  "sftp.sourceLocal": "本机",
+  "sftp.sourceRemote": "远程主机",
+  "sftp.disconnectRight": "断开右侧连接",
 
   // --- terminal / split -----------------------------------------------------
   "term.copy": "复制",

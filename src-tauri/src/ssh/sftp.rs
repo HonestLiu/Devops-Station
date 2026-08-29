@@ -229,6 +229,60 @@ pub async fn upload(
     Ok(remote_path)
 }
 
+/// Copy a file straight from one remote host to another: read from the source
+/// session, write into the destination directory, never touching local disk.
+///
+/// Pass `offset` to resume an interrupted copy — both sides seek to `offset`
+/// and the destination is opened without TRUNCATE.
+pub async fn remote_copy(
+    app: &AppHandle,
+    src: &SshSession,
+    dst: &SshSession,
+    src_path: &str,
+    dst_dir: &str,
+    transfer_id: &str,
+    offset: Option<u64>,
+) -> AppResult<String> {
+    let file_name = src_path.rsplit('/').next().unwrap_or(src_path).to_string();
+    let dst_path = remote_join(dst_dir, &file_name);
+
+    let src_sftp = src.sftp().await?;
+    let dst_sftp = dst.sftp().await?;
+    let total = src_sftp.metadata(src_path).await?.size.unwrap_or(0);
+
+    let o = offset.unwrap_or(0);
+    let mut reader = src_sftp.open(src_path).await?;
+    if o > 0 {
+        reader.seek(SeekFrom::Start(o)).await?;
+    }
+    let flags = if o == 0 {
+        OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE
+    } else {
+        OpenFlags::CREATE | OpenFlags::WRITE
+    };
+    let mut writer = dst_sftp.open_with_flags(dst_path.clone(), flags).await?;
+    if o > 0 {
+        writer.seek(SeekFrom::Start(o)).await?;
+    }
+
+    let mut buf = vec![0u8; CHUNK];
+    let mut transferred: u64 = o;
+    loop {
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n]).await?;
+        transferred += n as u64;
+        emit_progress(app, transfer_id, &file_name, transferred, total, false, None);
+    }
+    writer.flush().await?;
+    writer.shutdown().await?;
+    reader.shutdown().await?;
+    emit_progress(app, transfer_id, &file_name, transferred, total, true, None);
+    Ok(dst_path)
+}
+
 /// Read a remote text file's contents as a UTF-8 string for inline editing.
 /// Rejects files that are too large (see `EDIT_MAX_BYTES`) or non-text so the UI
 /// can fall back to a binary download instead of showing garbage.

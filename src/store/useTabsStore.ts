@@ -2,8 +2,8 @@ import { create } from "zustand";
 
 import { ble, frp, mqtt, pty, serial, ssh, wsl } from "@/lib/api";
 import { tFrom } from "@/i18n";
+import { connectSshWithHostKeyPrompt } from "@/lib/sshConnect";
 import { useAppStore } from "@/store/useAppStore";
-import { useHostKeyStore } from "@/store/useHostKeyStore";
 import { useHostsStore } from "@/store/useHostsStore";
 import { useSessionStore } from "@/store/useSessionStore";
 import { normalizeDistro } from "@/components/DistroIcon";
@@ -17,7 +17,6 @@ import type {
   MqttConnection,
   SerialOpenConfig,
   SshConnectConfig,
-  SshConnectResult,
   Tab,
   TermPane,
   WslLaunchConfig,
@@ -45,28 +44,6 @@ function lang(
   params?: Record<string, string | number>,
 ): string {
   return tFrom(useAppStore.getState().settings.language, key, params);
-}
-
-/** Connect to an SSH host, prompting the user to trust an unknown/changed key. */
-async function connectSshWithHostKeyPrompt(
-  config: SshConnectConfig,
-): Promise<SshConnectResult> {
-  try {
-    return await ssh.connect(config);
-  } catch (err) {
-    const msg = (err as Error).message;
-    const m = /HOST_KEY_(UNKNOWN|MISMATCH)\|([^|]+)\|(\d+)\|(.+)$/.exec(msg);
-    if (!m) throw err;
-    const [, kind, host, portStr, fp] = m;
-    const trust = await useHostKeyStore.getState().request({
-      host,
-      port: Number(portStr),
-      fingerprint: fp,
-      mismatch: kind === "MISMATCH",
-    });
-    if (!trust) throw err;
-    return await ssh.connect({ ...config, trustHostKey: true });
-  }
 }
 
 /**

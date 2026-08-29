@@ -301,6 +301,186 @@ input[type="number"] {
 }
 
 /* ==========================================================================
+   Native form controls — fully themed so no OS chrome is visible.
+   All colours are driven by the active theme's --c-* tokens.
+   ========================================================================== */
+
+/* --- Checkbox & radio --------------------------------------------------- */
+input[type="checkbox"],
+input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface));
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+input[type="checkbox"] {
+  border-radius: 5px;
+}
+input[type="radio"] {
+  border-radius: 9999px;
+}
+input[type="checkbox"]:hover,
+input[type="radio"]:hover {
+  border-color: rgb(var(--c-accent) / 0.7);
+}
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: rgb(var(--c-accent));
+  border-color: rgb(var(--c-accent));
+}
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Checkmark (drawn with a clipped, colour-filled box). */
+input[type="checkbox"]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+  box-shadow: inset 1em 1em rgb(var(--c-accent-fg));
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+/* Radio dot. */
+input[type="radio"]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  transform: scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+  box-shadow: inset 1em 1em rgb(var(--c-accent-fg));
+}
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+/* --- Range slider ------------------------------------------------------- */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: rgb(var(--c-border));
+  cursor: pointer;
+}
+input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(var(--c-bg));
+  border-radius: 9999px;
+  background: rgb(var(--c-accent));
+  box-shadow: 0 0 0 1px rgb(var(--c-border));
+  cursor: pointer;
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 1px rgb(var(--c-accent) / 0.8);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(var(--c-bg));
+  border-radius: 9999px;
+  background: rgb(var(--c-accent));
+  box-shadow: 0 0 0 1px rgb(var(--c-border));
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(var(--c-border));
+}
+
+/* --- Color input -------------------------------------------------------- */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 2px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 7px;
+  background: rgb(var(--c-surface));
+  cursor: pointer;
+}
+input[type="color"]:hover {
+  border-color: rgb(var(--c-accent) / 0.6);
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+input[type="color"]::-moz-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* --- File input --------------------------------------------------------- */
+input[type="file"] {
+  font-size: 12px;
+  color: rgb(var(--c-muted));
+}
+input[type="file"]::file-selector-button {
+  margin-right: 10px;
+  padding: 5px 12px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 7px;
+  background: rgb(var(--c-elevated));
+  color: rgb(var(--c-fg));
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+input[type="file"]::file-selector-button:hover {
+  background: rgb(var(--c-hover));
+  border-color: rgb(var(--c-accent) / 0.5);
+}
+
+/* --- Fallback for any remaining raw <select> ---------------------------- */
+select {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 7px;
+  color: rgb(var(--c-fg));
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ==========================================================================
    xterm.js
    ========================================================================== */
 

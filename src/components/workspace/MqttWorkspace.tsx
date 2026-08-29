@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 
-import { Button, SideIconButton } from "@/components/ui";
+import { Button, Select, SideIconButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
 import { mqtt } from "@/lib/api";
@@ -533,7 +533,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                       autoFocus
                     />
                     <div className="flex items-center gap-2">
-                      <select
+                      <Select
                         className={selectCls}
                         value={subQos}
                         onChange={(e) => setSubQos(Number(e.target.value))}
@@ -541,7 +541,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                         <option value={0}>QoS 0</option>
                         <option value={1}>QoS 1</option>
                         <option value={2}>QoS 2</option>
-                      </select>
+                      </Select>
                       <Button variant="primary" size="sm" className="ml-auto" onClick={subscribe}>
                         {editingSub ? t("mqtt.save") : t("mqtt.subscribe")}
                       </Button>
@@ -695,7 +695,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                 onKeyDown={(e) => e.key === "Enter" && void publish()}
               />
 
-              <select
+              <Select
                 className={selectCls}
                 value={pubFormat}
                 onChange={(e) => setPubFormat(e.target.value as PayloadFormat)}
@@ -705,9 +705,9 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                 <option value="json">{t("mqtt.json")}</option>
                 <option value="hex">{t("mqtt.hex")}</option>
                 <option value="base64">{t("mqtt.base64")}</option>
-              </select>
+              </Select>
 
-              <select
+              <Select
                 className={selectCls}
                 value={pubQos}
                 onChange={(e) => setPubQos(Number(e.target.value))}
@@ -716,7 +716,7 @@ export function MqttWorkspace({ tab }: { tab: Tab }) {
                 <option value={0}>QoS 0</option>
                 <option value={1}>QoS 1</option>
                 <option value={2}>QoS 2</option>
-              </select>
+              </Select>
 
               <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-fg">
                 <input

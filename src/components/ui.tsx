@@ -1,12 +1,17 @@
-import { Eye, EyeOff, X } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, X } from "lucide-react";
 import {
+  Children,
   forwardRef,
+  isValidElement,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
+  type ChangeEvent,
   type InputHTMLAttributes,
+  type ReactElement,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
@@ -172,23 +177,173 @@ export const PasswordInput = forwardRef<
 PasswordInput.displayName = "PasswordInput";
 
 // --- Select ----------------------------------------------------------------
+//
+// A custom-styled dropdown that mirrors the native `<select>` API (controlled
+// `value` + `onChange` carrying a ChangeEvent with `e.target.value`), so every
+// existing call site is beautified without changes. `option`/`optgroup` children
+// are parsed into a floating menu that matches the app's dark theme.
 
-export const Select = forwardRef<
-  HTMLSelectElement,
-  SelectHTMLAttributes<HTMLSelectElement>
->(({ className, children, ...props }, ref) => (
-  <select
-    ref={ref}
-    className={cn(
-      "h-8 w-full rounded-lg border border-border bg-bg px-2 text-[13px] text-fg",
-      "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40",
-      className,
-    )}
-    {...props}
-  >
-    {children}
-  </select>
-));
+interface ParsedOption {
+  value: string;
+  label: ReactNode;
+  disabled?: boolean;
+}
+interface ParsedGroup {
+  label: string;
+  options: ParsedOption[];
+}
+
+function parseOptions(children: ReactNode): ParsedGroup[] {
+  const groups: ParsedGroup[] = [];
+  let current: ParsedGroup | null = null;
+  const push = (el: ReactElement<{ value?: string | number; disabled?: boolean; children?: ReactNode }>) => {
+    const raw = el.props.value;
+    const value = raw !== undefined && raw !== null ? String(raw) : undefined;
+    const label = (el.props.children ?? value ?? "") as ReactNode;
+    if (!current) {
+      current = { label: "", options: [] };
+      groups.push(current);
+    }
+    current.options.push({ value: value ?? String(label), label, disabled: el.props.disabled });
+  };
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return;
+    const el = child as ReactElement<{ label?: string; disabled?: boolean; children?: ReactNode }>;
+    if (el.type === "optgroup") {
+      current = { label: String(el.props.label ?? ""), options: [] };
+      groups.push(current);
+      Children.forEach(el.props.children, (c) => {
+        if (isValidElement(c)) push(c as ReactElement<{ value?: string | number; disabled?: boolean; children?: ReactNode }>);
+      });
+    } else if (el.type === "option") {
+      push(el as ReactElement<{ value?: string | number; disabled?: boolean; children?: ReactNode }>);
+    }
+  });
+  return groups;
+}
+
+export interface SelectProps {
+  className?: string;
+  value?: string | number;
+  defaultValue?: string | number;
+  onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  title?: string;
+  id?: string;
+  name?: string;
+  children?: ReactNode;
+}
+
+export function Select({
+  className,
+  children,
+  value,
+  defaultValue,
+  onChange,
+  disabled,
+  placeholder,
+  title,
+  id,
+  name,
+}: SelectProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const groups = useMemo(() => parseOptions(children), [children]);
+  const flat = groups.flatMap((g) => g.options);
+  const selected = String(value ?? defaultValue ?? "");
+  const current = flat.find((o) => o.value === selected);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const commit = (val: string) => {
+    setOpen(false);
+    // Preserve the native onChange contract so callers that read
+    // `e.target.value` keep working unchanged.
+    const evt = {
+      target: { value: val },
+      currentTarget: { value: val },
+      preventDefault: () => {},
+      stopPropagation: () => {},
+    } as unknown as ChangeEvent<HTMLSelectElement>;
+    onChange?.(evt);
+  };
+
+  return (
+    <div ref={ref} className="relative inline-block w-full">
+      <button
+        type="button"
+        id={id}
+        name={name}
+        title={title}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className={cn(
+          "flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-border bg-bg px-2 text-[13px] text-fg transition-colors hover:border-accent/40",
+          open && "border-accent/60",
+          disabled && "cursor-not-allowed opacity-50",
+          className,
+        )}
+      >
+        <span className={cn("min-w-0 truncate text-left", !current && "text-muted")}>
+          {current ? current.label : (placeholder ?? "Select…")}
+        </span>
+        <ChevronDown
+          size={14}
+          className={cn("shrink-0 text-subtle transition-transform", open && "rotate-180")}
+        />
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-border bg-elevated py-1 shadow-2xl">
+          {groups.map((g, gi) => (
+            <div key={gi}>
+              {g.label && (
+                <div className="px-2.5 pb-1 pt-1.5 text-[10px] uppercase tracking-wide text-subtle">
+                  {g.label}
+                </div>
+              )}
+              {g.options.map((o) => {
+                const active = o.value === selected;
+                return (
+                  <button
+                    type="button"
+                    key={o.value}
+                    disabled={o.disabled}
+                    onClick={() => commit(o.value)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[13px] text-fg transition-colors hover:bg-accent/10 hover:text-accent",
+                      active && "bg-accent/10 text-accent",
+                      o.disabled && "cursor-not-allowed opacity-50",
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{o.label}</span>
+                    {active && <Check size={13} className="shrink-0 text-accent" />}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 Select.displayName = "Select";
 
 // --- Field -----------------------------------------------------------------

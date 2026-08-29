@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Button, ModuleHeader } from "@/components/ui";
+import { Button, ModuleHeader, Select } from "@/components/ui";
 import { useT } from "@/i18n";
 import { useTabsStore } from "@/store/useTabsStore";
 import { mqttConnections, dash } from "@/lib/api";
@@ -350,7 +350,7 @@ function MqttConnectionDialog({
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-1">
               <label className={labelCls}>{t("mqtt.protocol")}</label>
-              <select
+              <Select
                 className={inputCls}
                 value={form.protocol}
                 onChange={(e) => set({ protocol: e.target.value as MqttProtocol })}
@@ -360,7 +360,7 @@ function MqttConnectionDialog({
                     {p}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="col-span-2">
               <label className={labelCls}>{t("mqtt.host")}</label>

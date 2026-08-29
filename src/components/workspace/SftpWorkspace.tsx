@@ -9,8 +9,9 @@ import type { Tab } from "@/lib/types";
 
 /**
  * A dedicated SFTP tab: opens a saved SSH host's session and renders the
- * dual-pane file manager (remote host on the left, local machine on the right,
- * drag-and-drop between the two). Credentials are resolved like SSH tabs.
+ * dual-pane file manager (remote host on the left; the right pane defaults to
+ * the local machine but can be switched to another host, with drag-and-drop
+ * between the two). Credentials are resolved like SSH tabs.
  */
 export function SftpWorkspace({ tab }: { tab: Tab }) {
   const t = useT();

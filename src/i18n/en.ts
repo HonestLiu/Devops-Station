@@ -692,6 +692,9 @@ export const en: Record<keyof typeof zh, string> = {
   "sftp.previewTooLarge": "File is too large to preview inline — download it to view locally.",
   "sftp.previewUnsupported": "This file type can't be previewed yet — download it to open with another app.",
   "sftp.previewReadError": "Read failed: {msg}",
+  "sftp.sourceLocal": "This machine",
+  "sftp.sourceRemote": "Remote host",
+  "sftp.disconnectRight": "Disconnect right pane",
 
   // --- terminal / split -----------------------------------------------------
   "term.copy": "Copy",

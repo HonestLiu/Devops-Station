@@ -170,6 +170,23 @@ export const sftp = {
       transferId,
       offset: offset ?? null,
     }),
+  /** Copy a file straight from one remote host to another (no local disk). */
+  remoteCopy: (
+    fromSessionId: string,
+    toSessionId: string,
+    remotePath: string,
+    remoteDir: string,
+    transferId: string,
+    offset?: number,
+  ) =>
+    call<string>("sftp_remote_copy", {
+      fromSessionId,
+      toSessionId,
+      remotePath,
+      remoteDir,
+      transferId,
+      offset: offset ?? null,
+    }),
 
   onProgress: (cb: (p: TransferProgress) => void): Promise<UnlistenFn> =>
     listen<TransferProgress>("sftp-progress", (e) => cb(e.payload)),

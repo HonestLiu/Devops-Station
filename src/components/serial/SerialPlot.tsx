@@ -10,6 +10,8 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { Select } from "@/components/ui";
+
 import { dataLink, type LinkKind } from "@/lib/dataLink";
 import { base64ToBytes } from "@/lib/utils";
 import { cssColor } from "@/lib/themes";
@@ -485,7 +487,7 @@ export function SerialPlot({
         >
           图例
         </button>
-        <select
+        <Select
           value={maxPoints}
           onChange={(e) => setMaxPoints(Number(e.target.value))}
           title="最大点数（跟随模式下的滚动窗口）"
@@ -496,7 +498,7 @@ export function SerialPlot({
               {o} 点
             </option>
           ))}
-        </select>
+        </Select>
         <span className="ml-auto font-mono text-[10px] text-subtle">{pointCount} pts</span>
       </div>
 

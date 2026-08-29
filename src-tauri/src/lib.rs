@@ -307,6 +307,32 @@ async fn sftp_upload(
     ssh::sftp::upload(&app, &session, &local_path, &remote_dir, &transfer_id, offset).await
 }
 
+/// Copy a file directly between two remote hosts (no local round-trip).
+#[tauri::command]
+async fn sftp_remote_copy(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    from_session_id: String,
+    to_session_id: String,
+    remote_path: String,
+    remote_dir: String,
+    transfer_id: String,
+    offset: Option<u64>,
+) -> AppResult<String> {
+    let src = state.ssh.get(&from_session_id).await?;
+    let dst = state.ssh.get(&to_session_id).await?;
+    ssh::sftp::remote_copy(
+        &app,
+        &src,
+        &dst,
+        &remote_path,
+        &remote_dir,
+        &transfer_id,
+        offset,
+    )
+    .await
+}
+
 #[tauri::command]
 async fn sftp_stat(
     state: State<'_, AppState>,
@@ -1301,6 +1327,7 @@ pub fn run() {
             sftp_rename,
             sftp_download,
             sftp_upload,
+            sftp_remote_copy,
             sftp_stat,
             sftp_read,
             sftp_write,

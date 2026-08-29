@@ -22,7 +22,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { Button, Dialog, Drawer, SideIconButton } from "@/components/ui";
+import { Button, Dialog, Drawer, Select, SideIconButton } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqtt, mqttConnections } from "@/lib/api";
 import type { DashPanel, DashPanelJson, DashWidget, MqttConnection, MqttMessage } from "@/lib/types";
@@ -1272,13 +1272,13 @@ function ConfigField({
   if (field.options && field.options.length) {
     return (
       <Field label={field.label}>
-        <select className={inputCls} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
+        <Select className={inputCls} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
           {field.options.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
     );
   }

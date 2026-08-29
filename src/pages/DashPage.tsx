@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { Button, Dialog, EmptyState } from "@/components/ui";
+import { Button, Dialog, EmptyState, Select } from "@/components/ui";
 import { useT } from "@/i18n";
 import { dash, mqttConnections } from "@/lib/api";
 import type { DashPanel, MqttConnection } from "@/lib/types";
@@ -315,7 +315,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
-            <select
+            <Select
               className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
               value={newConn}
               onChange={(e) => setNewConn(e.target.value)}
@@ -326,7 +326,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
                   {c.name} ({c.host}:{c.port})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
       </Dialog>
@@ -360,7 +360,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-subtle">{t("dash.connection")}</label>
-            <select
+            <Select
               className="w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent/60"
               value={editConn}
               onChange={(e) => setEditConn(e.target.value)}
@@ -371,7 +371,7 @@ export function DashPage({ embedded = false }: { embedded?: boolean } = {}) {
                   {c.name} ({c.protocol}://{c.host}:{c.port})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
       </Dialog>
